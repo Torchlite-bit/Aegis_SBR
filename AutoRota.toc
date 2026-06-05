@@ -1,7 +1,7 @@
 ## Interface: 11200
 ## Title: AutoRota
 ## Notes: Configurable one-button rotation, multi class (Turtle WoW 1.18.1 (1.12 client) / SuperWoW)
-## Author: Subtilizer (Torchlite) & Mercaius
+## Author: Mercaius & Subtilizer (Torchlite)
 ## Version: 0.4
 ## SavedVariablesPerCharacter: AutoRotaDB
 
