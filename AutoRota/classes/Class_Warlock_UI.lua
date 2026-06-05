@@ -30,19 +30,21 @@ function M:BuildBody(ui, f)
     self.fillerDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -272)
     self.petCB = ui:CreateCheck("petAttack", f, "Send pet to attack", nil, function(on) if ui.buf then ui.buf.petAttack = on; ui:Refresh() end end)
     self.petCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -300)
+    self.nightfallCB = ui:CreateCheck("nightfall", f, "Shadow Bolt on Shadow Trance", "Shadow Bolt", function(on) if ui.buf then ui.buf.nightfall = on; ui:Refresh() end end)
+    self.nightfallCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -324)
 
     -- Mana (Life Tap)
-    ui:FS(f, "GameFontNormal", "Mana (Life Tap)"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -332)
+    ui:FS(f, "GameFontNormal", "Mana (Life Tap)"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -356)
     self.tapCB = ui:CreateCheck("lifeTap", f, "Use Life Tap", "Life Tap", function(on) if ui.buf then ui.buf.lifeTap = on; ui:Refresh() end end)
-    self.tapCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -356)
+    self.tapCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -380)
     self.tapManaSlider = ui:CreateSlider("ltMana", f, "tap below mana", function(v) if ui.buf then ui.buf.lifeTapMana = v; ui:Refresh() end end)
-    self.tapManaSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -398)
+    self.tapManaSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -422)
     self.tapHpSlider = ui:CreateSlider("ltHp", f, "keep HP above", function(v) if ui.buf then ui.buf.lifeTapHpMin = v; ui:Refresh() end end)
-    self.tapHpSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -398)
+    self.tapHpSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -422)
 
     ui:Divider(f, -134)   -- above DoT
     ui:Divider(f, -236)   -- above Filler and pet
-    ui:Divider(f, -320)   -- above Mana
+    ui:Divider(f, -344)   -- above Mana
 
     ui:Tip(self.immoCB.cb, "Immolate", "Direct fire damage plus a fire damage over time.", "Kept up first in the priority.")
     ui:Tip(self.corrCB.cb, "Corruption", "Shadow damage over time, applied after the curse.")
@@ -50,6 +52,7 @@ function M:BuildBody(ui, f)
     ui:Tip(self.curseDD, "Curse", "One curse per target. Curse of Agony has exact upkeep,", "others are reapplied on a timer for now.")
     ui:Tip(self.fillerDD, "Filler", "Used when every enabled DoT is up.", "Wand conserves mana, Shadow Bolt and Drain Life spend it.")
     ui:Tip(self.petCB.cb, "Pet attack", "Send the active pet onto your target.")
+    ui:Tip(self.nightfallCB.cb, "Shadow Bolt on Shadow Trance", "When the Nightfall proc lights up, fire the free instant Shadow Bolt.", "Only used when the filler is not already Shadow Bolt.")
     ui:Tip(self.tapCB.cb, "Life Tap", "Convert health to mana when mana is low and health is high.")
     ui:Tip(self.tapManaSlider, "Tap below mana", "Life Tap only when mana is under this value.")
     ui:Tip(self.tapHpSlider, "Keep HP above", "Life Tap only while health stays over this value.")
@@ -94,6 +97,7 @@ function M:RefreshBody(ui, buf)
     setCheck(self.corrCB, buf.useCorruption, "Corruption")
     setCheck(self.siphCB, buf.useSiphonLife, "Siphon Life")
     setCheck(self.petCB, buf.petAttack, nil)
+    setCheck(self.nightfallCB, buf.nightfall, "Shadow Bolt")
     setCheck(self.tapCB, buf.lifeTap, "Life Tap")
 
     self.tapManaSlider:SetValue(buf.lifeTapMana or 0); self.tapManaSlider.valText:SetText((buf.lifeTapMana or 0) .. "%")
