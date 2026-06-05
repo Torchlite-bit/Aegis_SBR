@@ -80,6 +80,30 @@ To open the comprehensive configuration interface, manage profiles, adjust resou
 ```macro
 /ar ui
 ```
+---
+
+### Slash Command Line Interface (CLI)
+You can also change profile properties dynamically via chat or macros:
+
+| Command | Description | Example |
+| :--- | :--- | :--- |
+| `/ar list` | Lists all saved configuration profiles. | `/ar list` |
+| `/ar use <name>` | Instantly switches to the specified profile. | `/ar use Leveling` |
+| `/ar off` | Pauses/disables rotation execution. | `/ar off` |
+| `/ar reset` | Resets active profile positions and layout variables. | `/ar reset` |
+| `/ar trace` | Toggles detailed combat logic debugging. | `/ar trace` |
+| `/ar cp <1-5>` | *(Rogue Only)* Sets min. finishing Combo Points. | `/ar cp 5` |
+| `/ar seal <slot> <alias>` | *(Paladin Only)* Modifies profile seals. | `/ar seal damage sor` |
+
+Paladin Seal Aliases
+When using the /ar seal command, you can use short aliases:
+
+  * `sotc` / `crusader` → `Seal of the Crusader`
+  * `sor` / `righteousness` → `Seal of Righteousness`
+  * `soc` / `command` → `Seal of Command`
+  * `sow` / `wisdom` → `Seal of Wisdom`
+  * `sol` / `light` → `Seal of Light`
+  * `none` → `Clears slot`
 
 ---
 
