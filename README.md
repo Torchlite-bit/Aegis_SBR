@@ -93,7 +93,7 @@ You can also change profile properties dynamically via chat or macros:
 | `/ar reset` | Resets active profile positions and layout variables. | `/ar reset` |
 | `/ar trace` | Toggles detailed combat logic debugging. | `/ar trace` |
 | `/ar cp <1-5>` | *(Rogue Only)* Sets min. finishing Combo Points. | `/ar cp 5` |
-| `/ar seal <slot> <alias>` | *(Paladin Only)* Modifies profile seals. | `/ar seal damage sor` |
+| `/ar seal <slot> debuff/damage <alias>` | *(Paladin Only)* Modifies profile seals. | `/ar seal DPS damage sor` |
 
 Paladin Seal Aliases
 When using the /ar seal command, you can use short aliases:
@@ -104,6 +104,14 @@ When using the /ar seal command, you can use short aliases:
   * `sow` / `wisdom` → `Seal of Wisdom`
   * `sol` / `light` → `Seal of Light`
   * `none` → `Clears slot`
+
+Combat Utility Macros:
+
+You can maintain a single spammable combat macro while using separate keybinds to hot-swap seals during an encounter:
+
+`/ar seal <profile> debuff <alias>` : Updates your current rotation debuff mid-fight.
+
+`/ar seal <profile> damage <alias>` : Updates your current rotation damage seal mid-fight.
 
 ---
 
