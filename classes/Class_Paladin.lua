@@ -16,7 +16,7 @@
 
 local M = AutoRota:NewClassModule("PALADIN")
 M.uiTitle = "Paladin"
-M.uiHeight = 648
+M.uiHeight = 676
 
 local function msgOut(text, r, g, b)
     DEFAULT_CHAT_FRAME:AddMessage("AutoRota: " .. text, r or 1, g or 0.8, b or 0.0)
@@ -83,6 +83,8 @@ M.spellAlias = {
     holyshield = "holyShield",
     hammer = "hammerOfWrath", how = "hammerOfWrath",
     repentance = "repentance", rep = "repentance",
+    consecration = "consecration", consec = "consecration", cons = "consecration",
+    exorcism = "exorcism", exo = "exorcism",
 }
 
 -- Fills any missing field with a default and migrates old-format profiles
@@ -95,7 +97,7 @@ function M:NormalizeProfile(c)
     c.seals.mana = nil
 
     c.spells = c.spells or {}
-    local sk = { "holyStrike", "crusaderStrike", "holyShield", "hammerOfWrath", "repentance" }
+    local sk = { "holyStrike", "crusaderStrike", "holyShield", "hammerOfWrath", "repentance", "consecration", "exorcism" }
     for i = 1, table.getn(sk) do
         if c.spells[sk[i]] == nil then c.spells[sk[i]] = false end
     end
@@ -130,6 +132,8 @@ function M:ProfileValidity(cfg)
     if cfg.spells.holyShield     and not self:KnowsSpell("Holy Shield")     then table.insert(missing, "Holy Shield")     end
     if cfg.spells.hammerOfWrath  and not self:KnowsSpell("Hammer of Wrath") then table.insert(missing, "Hammer of Wrath") end
     if cfg.spells.repentance     and not self:KnowsSpell("Repentance")      then table.insert(missing, "Repentance")      end
+    if cfg.spells.consecration   and not self:KnowsSpell("Consecration")    then table.insert(missing, "Consecration")    end
+    if cfg.spells.exorcism       and not self:KnowsSpell("Exorcism")        then table.insert(missing, "Exorcism")        end
     if cfg.manaManage and not self:KnowsSpell("Seal of Wisdom") then table.insert(missing, "Seal of Wisdom (mana)") end
     if cfg.hpManage   and not self:KnowsSpell("Seal of Light")  then table.insert(missing, "Seal of Light (hp)")    end
     return (table.getn(missing) == 0), missing
@@ -306,6 +310,12 @@ function M:DesiredOpenerSeal(cfg)
     return nil
 end
 
+-- Exorcism only works on Undead and Demon targets.
+function M:TargetIsUndeadOrDemon()
+    local t = UnitCreatureType("target")
+    return t == "Undead" or t == "Demon"
+end
+
 -- ============================================================
 -- Rotation. Strict single-cast priority with early returns, so exactly
 -- one spell is chosen per press. Casting more than one CastSpellByName
@@ -313,7 +323,10 @@ end
 -- one), which would invert the priority. The strike queues on the next
 -- swing even out of range, so the swing start stays smooth.
 -- Priority: 0 pre-cast seal while running in, 1 strike, 2 Holy Shield,
--- 3 seals/judgement, 4 Hammer, 5 Repentance.
+-- 3 seals/judgement, 4 Hammer, 5 Repentance, 6 Exorcism (undead/demon),
+-- 7 Consecration (AoE toggle). The two extras sit last so they never
+-- delay a strike, Holy Shield, seal upkeep, or the execute, and they are
+-- skipped during mana recovery so they do not undo it.
 -- ============================================================
 function M:Rotate(cfg)
     self:UpdateManagement(cfg)
@@ -364,6 +377,21 @@ function M:Rotate(cfg)
     if cfg.spells.repentance and self:IsReady("Repentance") then
         if self:Cast("Repentance") then return end
     end
+    -- 6. Exorcism, a strong nuke but only against Undead and Demon targets.
+    -- Skipped during mana recovery so it does not burn the mana we are saving.
+    if cfg.spells.exorcism and not self.manaMgmtActive
+        and self:KnowsSpell("Exorcism") and self:TargetIsUndeadOrDemon()
+        and self:IsReady("Exorcism") then
+        if self:Cast("Exorcism") then return end
+    end
+    -- 7. Consecration as an AoE filler. Manual toggle (checkbox or /ar aoe),
+    -- since 1.12 cannot reliably count nearby enemies. Held during mana
+    -- recovery. Note it is ground-targeted; on most 1.12 setups a plain
+    -- cast drops it at your feet, which is what we want here.
+    if cfg.spells.consecration and not self.manaMgmtActive
+        and self:KnowsSpell("Consecration") and self:IsReady("Consecration") then
+        if self:Cast("Consecration") then return end
+    end
 end
 
 function M:CmdSeal(name, slot, alias)
@@ -385,11 +413,21 @@ function M:CmdSpell(name, alias, onoff)
     msgOut("'" .. name .. "' " .. key .. " = " .. (cfg.spells[key] and "on" or "off") .. ".")
 end
 
+-- Quick AoE toggle: flips Consecration on the active profile, for binding to
+-- a key. There is no reliable enemy count on 1.12, so this stays manual.
+function M:CmdAoe()
+    local cfg = AutoRota:GetActiveProfile()
+    if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
+    cfg.spells.consecration = not cfg.spells.consecration
+    msgOut("Consecration " .. (cfg.spells.consecration and "on (AoE)" or "off") .. ".")
+end
+
 -- ============================================================
 -- Class specific slash subcommands, dispatched from the core
 -- ============================================================
 function M:HandleCommand(cmd, t)
     if cmd == "seal"  then self:CmdSeal(t[2], string.lower(t[3] or ""), t[4]); return true end
     if cmd == "spell" then self:CmdSpell(t[2], t[3], t[4]); return true end
+    if cmd == "aoe"   then self:CmdAoe(); return true end
     return false
 end
