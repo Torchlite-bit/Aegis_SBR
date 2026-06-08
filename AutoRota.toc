@@ -7,6 +7,7 @@
 
 AutoRota.lua
 AutoRota_UI.lua
+AutoRota_Minimap.lua
 classes\Class_Paladin.lua
 classes\Class_Paladin_UI.lua
 classes\Class_Rogue.lua
