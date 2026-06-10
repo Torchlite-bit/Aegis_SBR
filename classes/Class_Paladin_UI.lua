@@ -32,61 +32,70 @@ function M:BuildBody(ui, f)
 
     ui:FS(f, "GameFontNormal", "Spells"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -222)
     self.spellCB = {}
-    self.spellCB.holyStrike     = ui:CreateCheck("holyStrike",     f, "Holy Strike",     "Holy Strike",     function(v) if ui.buf then ui.buf.spells.holyStrike = v; ui:Refresh() end end)
-    self.spellCB.crusaderStrike = ui:CreateCheck("crusaderStrike", f, "Crusader Strike", "Crusader Strike", function(v) if ui.buf then ui.buf.spells.crusaderStrike = v; ui:Refresh() end end)
     self.spellCB.holyShield     = ui:CreateCheck("holyShield",     f, "Holy Shield",     "Holy Shield",     function(v) if ui.buf then ui.buf.spells.holyShield = v; ui:Refresh() end end)
     self.spellCB.hammerOfWrath  = ui:CreateCheck("hammerOfWrath",  f, "Hammer of Wrath", "Hammer of Wrath", function(v) if ui.buf then ui.buf.spells.hammerOfWrath = v; ui:Refresh() end end)
     self.spellCB.repentance     = ui:CreateCheck("repentance",     f, "Repentance",      "Repentance",      function(v) if ui.buf then ui.buf.spells.repentance = v; ui:Refresh() end end)
     self.spellCB.consecration   = ui:CreateCheck("consecration",   f, "Consecration (AoE)", "Consecration",  function(v) if ui.buf then ui.buf.spells.consecration = v; ui:Refresh() end end)
     self.spellCB.exorcism       = ui:CreateCheck("exorcism",       f, "Exorcism",        "Exorcism",        function(v) if ui.buf then ui.buf.spells.exorcism = v; ui:Refresh() end end)
-    self.spellCB.holyStrike.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -240)
-    self.spellCB.crusaderStrike.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -240)
-    self.spellCB.holyShield.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -262)
-    self.spellCB.hammerOfWrath.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -262)
-    self.spellCB.repentance.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -284)
-    self.spellCB.consecration.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -306)
-    self.spellCB.exorcism.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -306)
+
+    -- Strike mode leads the Spells section: it both enables the strikes and picks
+    -- the style, so Holy and Crusader Strike no longer need separate checkboxes.
+    ui:FS(f, "GameFontNormalSmall", "Strike mode"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -242)
+    self.strikeModeDD = ui:CreateDropdown("strikeMode", f, 170, function(v) if ui.buf then ui.buf.strikeMode = v; ui:Refresh() end end)
+    self.strikeModeDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -240)
+
+    self.spellCB.holyShield.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -268)
+    self.spellCB.hammerOfWrath.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -268)
+    self.spellCB.repentance.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -290)
+    self.spellCB.consecration.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -312)
+    self.spellCB.exorcism.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -312)
 
     self.twistCB = ui:CreateCheck("sealTwist", f, "Seal twisting", nil, function(v) if ui.buf then ui.buf.sealTwist = v; ui:Refresh() end end)
-    self.twistCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -284)
+    self.twistCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -290)
+
+    self.prioZealCB = ui:CreateCheck("prioZeal", f, "Prioritize Zeal", nil, function(v) if ui.buf then ui.buf.prioZeal = v; ui:Refresh() end end)
+    self.prioZealCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -336)
+    self.downrankCB = ui:CreateCheck("strikeDownrank", f, "Downrank when low", nil, function(v) if ui.buf then ui.buf.strikeDownrank = v; ui:Refresh() end end)
+    self.downrankCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -336)
 
     self.manaCB = ui:CreateCheck("manaManage", f, "Mana management (Seal of Wisdom)", "Seal of Wisdom", function(v) if ui.buf then ui.buf.manaManage = v; ui:Refresh() end end)
-    self.manaCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -342)
+    self.manaCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -372)
     self.manaLowSlider  = ui:CreateSlider("manaLow",  f, "switch below", function(v) if ui.buf then ui.buf.manaLow  = v; ui:Refresh() end end)
     self.manaHighSlider = ui:CreateSlider("manaHigh", f, "back above",   function(v) if ui.buf then ui.buf.manaHigh = v; ui:Refresh() end end)
-    self.manaLowSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -384)
-    self.manaHighSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -384)
+    self.manaLowSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -414)
+    self.manaHighSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -414)
     self.weaveCB = ui:CreateCheck("manaWeave", f, "Judgement weaving", nil, function(v) if ui.buf then ui.buf.manaWeave = v; ui:Refresh() end end)
-    self.weaveCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 40, -416)
+    self.weaveCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 40, -446)
     self.weaveMinSlider = ui:CreateSlider("manaWeaveMin", f, "skip weaving below", function(v) if ui.buf then ui.buf.manaWeaveMin = v; ui:Refresh() end end)
-    self.weaveMinSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 46, -454)
+    self.weaveMinSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 46, -484)
     self.wisdomCB = ui:CreateCheck("manaWisdomDebuff", f, "Use Wisdom debuff in mana mode", nil, function(v) if ui.buf then ui.buf.manaWisdomDebuff = v; ui:Refresh() end end)
-    self.wisdomCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 40, -484)
+    self.wisdomCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 40, -514)
 
     self.hpCB = ui:CreateCheck("hpManage", f, "HP management (Seal of Light)", "Seal of Light", function(v) if ui.buf then ui.buf.hpManage = v; ui:Refresh() end end)
-    self.hpCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -518)
+    self.hpCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -548)
     self.hpLowSlider  = ui:CreateSlider("hpLow",  f, "switch below", function(v) if ui.buf then ui.buf.hpLow  = v; ui:Refresh() end end)
     self.hpHighSlider = ui:CreateSlider("hpHigh", f, "back above",   function(v) if ui.buf then ui.buf.hpHigh = v; ui:Refresh() end end)
-    self.hpLowSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -560)
-    self.hpHighSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -560)
+    self.hpLowSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -590)
+    self.hpHighSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -590)
 
     -- section separators for easier scanning
     ui:Divider(f, -134)   -- above Seals
     ui:Divider(f, -214)   -- above Spells
-    ui:Divider(f, -334)   -- above Mana management
-    ui:Divider(f, -508)   -- above HP management, below the Wisdom debuff toggle
+    ui:Divider(f, -364)   -- above Mana management
+    ui:Divider(f, -538)   -- above HP management, below the Wisdom debuff toggle
 
 
     ui:Tip(self.debuffDD, "Debuff seal", "Judged once to apply its debuff to the target.", "Autoattacks keep the debuff up afterwards.")
     ui:Tip(self.damageDD, "Damage seal", "Judged continuously for damage.", "Leaves no debuff, so it never overwrites the one above.")
 
-    ui:Tip(self.spellCB.holyStrike.cb,     "Holy Strike",     "Shares a cooldown with Crusader Strike.")
-    ui:Tip(self.spellCB.crusaderStrike.cb, "Crusader Strike", "Shares a cooldown with Holy Strike.")
     ui:Tip(self.spellCB.holyShield.cb,     "Holy Shield",     "Cast right after the strike, before seals.", "Fires whenever its own cooldown is ready.")
     ui:Tip(self.spellCB.hammerOfWrath.cb,  "Hammer of Wrath", "Execute, used only at or below 20 percent target HP.")
     ui:Tip(self.spellCB.repentance.cb,     "Repentance",      "Cast on cooldown as a damage proc on Turtle.")
     ui:Tip(self.spellCB.consecration.cb,   "Consecration",    "AoE filler, cast on cooldown. Manual toggle (also /ar aoe), since 1.12 cannot count nearby enemies.", "Held during mana recovery.")
     ui:Tip(self.spellCB.exorcism.cb,       "Exorcism",        "Strong nuke, used on cooldown but only against Undead and Demon targets.", "Held during mana recovery.")
+    ui:Tip(self.strikeModeDD, "Strike mode", "Enables and styles Holy/Crusader Strike. Auto: Vengeful Strike talent -> keep Holy Might up; shield or Righteous Strike -> Holy lean for threat; otherwise Crusader lean. Off disables strikes.", "CS / HS / Holy then Crusader force a fixed style.")
+    ui:Tip(self.prioZealCB.cb, "Prioritize Zeal", "Build Zeal to 3 stacks first, then follow the mode above.")
+    ui:Tip(self.downrankCB.cb, "Downrank when low", "Use lower ranks of Holy/Crusader Strike as raw mana drops, to keep swinging while leveling.", "Full rank until mana nears a rank's cost; a large pool rarely downranks.")
 
     ui:Tip(self.manaCB.cb, "Mana management", "Below the lower value, hold Seal of Wisdom to recover mana.", "Above the upper value, return to normal damage seals.")
     ui:Tip(self.hpCB.cb, "HP management", "Below the lower value, hold Seal of Light to recover health.", "Above the upper value, return to normal damage seals.")
@@ -123,8 +132,22 @@ function M:RefreshBody(ui, buf)
         elseif not known then item.label:SetText(item.baseText .. " (not learned)"); ui:Color(item.label, ui.COL.grey)
         else item.label:SetText(item.baseText); ui:Color(item.label, ui.COL.white) end
     end
-    setCB("holyStrike"); setCB("crusaderStrike"); setCB("holyShield"); setCB("hammerOfWrath"); setCB("repentance")
+    setCB("holyShield"); setCB("hammerOfWrath"); setCB("repentance")
     setCB("consecration"); setCB("exorcism")
+
+    -- strike mode dropdown + tuning toggles
+    local modeOpts = {
+        { label = "Off",                value = "off" },
+        { label = "Auto (talent/weapon)", value = "auto" },
+        { label = "Crusader Strike",    value = "cs" },
+        { label = "Holy Strike",        value = "hs" },
+        { label = "Holy then Crusader", value = "hscs" },
+    }
+    local modeLabel = { off = "Off", auto = "Auto (talent/weapon)", cs = "Crusader Strike", hs = "Holy Strike", hscs = "Holy then Crusader" }
+    local mcur = buf.strikeMode or "auto"
+    ui:SetDropdown(self.strikeModeDD, modeOpts, mcur, modeLabel[mcur] or mcur, ui.COL.white)
+    self.prioZealCB.cb:SetChecked(buf.prioZeal and true or false)
+    self.downrankCB.cb:SetChecked(buf.strikeDownrank and true or false)
 
     -- seal twisting needs a damage seal to time the judge against
     local twistOK = buf.seals.damage ~= "" and self:KnowsSpell(buf.seals.damage)
