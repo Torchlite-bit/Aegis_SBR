@@ -84,21 +84,12 @@ function M:RefreshBody(ui, buf)
     else fshown, fc = fcur .. " (not learned)", ui.COL.red end
     ui:SetDropdown(self.fillerDD, fo, fcur, fshown, fc)
 
-    local function setCheck(item, on, spellName)
-        item.cb:SetChecked(on and true or false)
-        item.cb:Enable()
-        if not spellName then item.label:SetText(item.baseText); ui:Color(item.label, ui.COL.white); return end
-        local known = self:KnowsSpell(spellName)
-        if on and not known then item.label:SetText(item.baseText .. " (not learned)"); ui:Color(item.label, ui.COL.red)
-        elseif not known then item.label:SetText(item.baseText .. " (not learned)"); ui:Color(item.label, ui.COL.grey)
-        else item.label:SetText(item.baseText); ui:Color(item.label, ui.COL.white) end
-    end
-    setCheck(self.immoCB, buf.useImmolate, "Immolate")
-    setCheck(self.corrCB, buf.useCorruption, "Corruption")
-    setCheck(self.siphCB, buf.useSiphonLife, "Siphon Life")
-    setCheck(self.petCB, buf.petAttack, nil)
-    setCheck(self.nightfallCB, buf.nightfall, "Shadow Bolt")
-    setCheck(self.tapCB, buf.lifeTap, "Life Tap")
+    ui:BindCheck(self.immoCB, buf.useImmolate)
+    ui:BindCheck(self.corrCB, buf.useCorruption)
+    ui:BindCheck(self.siphCB, buf.useSiphonLife)
+    ui:BindCheck(self.petCB, buf.petAttack)
+    ui:BindCheck(self.nightfallCB, buf.nightfall)
+    ui:BindCheck(self.tapCB, buf.lifeTap)
 
     self.tapManaSlider:SetValue(buf.lifeTapMana or 0); self.tapManaSlider.valText:SetText((buf.lifeTapMana or 0) .. "%")
     self.tapHpSlider:SetValue(buf.lifeTapHpMin or 0);  self.tapHpSlider.valText:SetText((buf.lifeTapHpMin or 0) .. "%")
