@@ -1,556 +1,465 @@
 -- ============================================================
--- AutoRota  -  configurable one-button rotation, multi class
--- Turtle WoW 1.12 (SuperWoW).
--- ============================================================
--- The core holds everything that is not class specific. Each class
--- ships a module (Class_<Name>.lua) that registers itself here. On
--- login the player class is detected and the matching module becomes
--- active, providing its templates, profile rules, rotation and UI.
--- ============================================================
--- Run with a bare macro, spam it:   /ar
--- Configure per character:          /ar ui
--- Other commands: list, use <name>, off, new <name> [template],
---   del <name>, check, reset, debug, trace, plus class commands.
--- /pa, /paladinauto and /autopala stay as aliases for old macros.
+-- AutoRota_UI  -  shared configuration window framework
+-- Turtle WoW 1.12 frame API. Builds the window shell and profile
+-- management, then delegates the class specific body to the active
+-- module via M:BuildBody(ui, frame) and M:RefreshBody(ui, buf).
 -- ============================================================
 
-AutoRota = {
-    ver = "0.6.0b",
-    classes = {},     -- token -> module table
-    active = nil,      -- the module for this character's class
-    Loaded = false,
-    lastMsg = 0,
+AutoRotaUI = { built = false, loading = false, editing = nil, buf = nil, openDD = nil }
+
+local CORE = AutoRota
+local function MOD() return AutoRota.active end
+
+
+local COL = {
+    gold  = {1.0, 0.82, 0.0}, white = {1.0, 1.0, 1.0},
+    green = {0.3, 1.0, 0.3},  red = {1.0, 0.35, 0.35}, grey = {0.55, 0.55, 0.55},
+}
+local BACKDROP = {
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true, tileSize = 32, edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 },
+}
+local LIST_BACKDROP = {
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 },
 }
 
--- A class module inherits every shared helper through __index, so inside
--- a module "self:Cast(...)" resolves to the core while "self.weaving" and
--- the like stay private to the module instance.
-function AutoRota:NewClassModule(token)
-    local m = setmetatable({ classToken = token }, { __index = self })
-    self.classes[token] = m
-    return m
+local function FS(parent, font, text)
+    local f = parent:CreateFontString(nil, "OVERLAY", font or "GameFontNormal")
+    if text then f:SetText(text) end
+    return f
+end
+local function color(fs, c) fs:SetTextColor(c[1], c[2], c[3]) end
+local function trim(s) local r = string.gsub(s or "", "^%s*(.-)%s*$", "%1"); return r end
+
+-- Attach a hover tooltip to any mouse-enabled frame. body lines are optional.
+local function Tip(frame, title, line1, line2)
+    if not frame then return end
+    frame:SetScript("OnEnter", function()
+        GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
+        GameTooltip:SetText(title, 1, 0.82, 0)
+        if line1 then GameTooltip:AddLine(line1, 1, 1, 1) end
+        if line2 then GameTooltip:AddLine(line2, 1, 1, 1) end
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
--- Shared chat output, inherited by every class module (so modules use
--- self:Msg(...) instead of redefining their own local printer).
-function AutoRota:Msg(text, r, g, b)
-    DEFAULT_CHAT_FRAME:AddMessage("AutoRota: " .. text, r or 1, g or 0.8, b or 0.0)
+-- Thin horizontal separator line at a given y offset from the frame top.
+local function divider(parent, y)
+    local t = parent:CreateTexture(nil, "ARTWORK")
+    t:SetTexture(0.5, 0.5, 0.5, 0.4)
+    t:SetHeight(1)
+    t:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
+    t:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, y)
 end
 
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+-- Wrappers so class body files (separate files) can use the framework helpers.
+AutoRotaUI.COL = COL
+function AutoRotaUI:FS(parent, font, text) return FS(parent, font, text) end
+function AutoRotaUI:Color(fs, c) color(fs, c) end
+function AutoRotaUI:Tip(frame, title, l1, l2) Tip(frame, title, l1, l2) end
+function AutoRotaUI:Divider(parent, y) divider(parent, y) end
 
--- ============================================================
--- Shared rotation and utility helpers (class independent)
--- ============================================================
 
--- One pass over the spellbook builds a name -> slot index (last slot wins, so
--- the highest rank is kept, same as the old linear scan) plus a name -> max
--- rank table. Every later lookup is then a table read instead of a full scan.
--- The index is built lazily and dropped on SPELLS_CHANGED, so learning a spell
--- or a new rank triggers a rebuild on the next lookup.
-function AutoRota:BuildSpellIndex()
-    local idx, ranks = {}, {}
-    local i = 1
-    while true do
-        local n, rnk = GetSpellName(i, BOOKTYPE_SPELL)
-        if not n then break end
-        idx[n] = i
-        local digits = string.gsub(rnk or "", "%D", "")
-        local num = tonumber(digits) or 1
-        if not ranks[n] or num > ranks[n] then ranks[n] = num end
-        i = i + 1
-    end
-    AutoRota.spellIndex = idx
-    AutoRota.spellRanks = ranks
+-- ------------------------------------------------------------
+-- custom dropdown
+-- ------------------------------------------------------------
+function AutoRotaUI:CreateDropdown(uniqueName, parent, width, onSelect)
+    local b = CreateFrame("Button", "ARUI_DD_" .. uniqueName, parent, "UIPanelButtonTemplate")
+    b:SetWidth(width); b:SetHeight(22)
+    b.onSelect = onSelect; b.options = {}; b.rows = {}
+    local list = CreateFrame("Frame", "ARUI_DD_" .. uniqueName .. "_List", b)
+    list:SetBackdrop(LIST_BACKDROP); list:SetBackdropColor(0, 0, 0, 0.95)
+    list:SetFrameStrata("FULLSCREEN_DIALOG"); list:SetWidth(width)
+    list:SetPoint("TOPLEFT", b, "BOTTOMLEFT", 0, 2); list:Hide()
+    b.list = list
+    b:SetScript("OnClick", function()
+        if list:IsShown() then AutoRotaUI:CloseDropdown(b) else AutoRotaUI:OpenDropdown(b) end
+    end)
+    return b
 end
 
-function AutoRota:InvalidateSpellIndex()
-    AutoRota.spellIndex = nil
-    AutoRota.spellRanks = nil
+function AutoRotaUI:CloseDropdown(b)
+    b.list:Hide()
+    if self.openDD == b then self.openDD = nil end
 end
 
-function AutoRota:FindSpellSlot(name)
-    if not AutoRota.spellIndex then AutoRota:BuildSpellIndex() end
-    return AutoRota.spellIndex[name]
-end
-
--- Highest known rank number of a spell (0 if unknown). Used for downranking.
-function AutoRota:MaxRank(name)
-    if not AutoRota.spellRanks then AutoRota:BuildSpellIndex() end
-    return AutoRota.spellRanks[name] or 0
-end
-
-function AutoRota:KnowsSpell(name)
-    return self:FindSpellSlot(name) ~= nil
-end
-
-function AutoRota:Cast(name)
-    if self:KnowsSpell(name) then CastSpellByName(name); return true end
-    return false
-end
-
-function AutoRota:IsReady(name)
-    local slot = self:FindSpellSlot(name)
-    if not slot then return false end
-    local start, dur = GetSpellCooldown(slot, BOOKTYPE_SPELL)
-    if start == 0 then return true end
-    return (start + dur - GetTime()) <= 0
-end
-
--- Human readable cooldown state for tracing
-function AutoRota:CDInfo(name)
-    local slot = self:FindSpellSlot(name)
-    if not slot then return "unknown" end
-    local start, dur = GetSpellCooldown(slot, BOOKTYPE_SPELL)
-    if start == 0 then return "ready" end
-    local rem = start + dur - GetTime()
-    if dur <= 1.55 then return string.format("gcd %.1fs", rem) end   -- only the global cooldown
-    return string.format("cd %.1fs", rem)
-end
-
--- True if the spell's OWN cooldown is free, ignoring the global cooldown.
--- A short reported duration (<= ~1.5s) means only the GCD is active, which
--- we treat as "ready" so a held priority spell does not lose the GCD-edge
--- race to the unconditional seal recast.
-function AutoRota:OwnCDReady(name)
-    local slot = self:FindSpellSlot(name)
-    if not slot then return false end
-    local start, dur = GetSpellCooldown(slot, BOOKTYPE_SPELL)
-    if start == 0 then return true end
-    if dur <= 1.55 then return true end
-    return (start + dur - GetTime()) <= 0
-end
-
--- ============================================================
--- Swing timer tracker. A plain white swing shows in the combat log as
--- "You hit/crit/miss ...", while a named ability or seal shows as
--- "Your <name> ...". Only plain swings move the timer. We predict the next
--- swing from the last one plus the main hand speed, the same idea AttackBar
--- uses. This is the foundation for seal twisting.
--- ============================================================
-function AutoRota:OnSwingMessage(msg)
-    if not msg then return end
-    if string.find(msg, "^Your ") then return end   -- a named ability or seal, not a white swing
-    if string.find(msg, "^You ") then
-        self.lastSwing = GetTime()
-        local mh = UnitAttackSpeed("player")
-        if mh and mh > 0 then self.swingSpeed = mh end
-    end
-end
-
--- Predicted seconds until the next white swing, or nil if unknown.
-function AutoRota:SwingTimeLeft()
-    if not self.lastSwing or not self.swingSpeed or self.swingSpeed <= 0 then return nil end
-    local elapsed = GetTime() - self.lastSwing
-    return self.swingSpeed - math.mod(elapsed, self.swingSpeed)
-end
-
--- Throttled per-press trace, toggled with /ar trace. Accepts any number of
--- lines; the throttle is checked once so multi-line traces are never half
--- swallowed (Lua 5.0 packs varargs into the implicit `arg` table).
-function AutoRota:Trace(...)
-    if not self.trace then return end
-    local now = GetTime()
-    if now - (self.traceT or 0) < 0.4 then return end
-    self.traceT = now
-    for i = 1, arg.n do
-        if arg[i] then DEFAULT_CHAT_FRAME:AddMessage("AR: " .. arg[i], 0.6, 0.8, 1.0) end
-    end
-end
-
--- One pass over the player's buffs per rotation press. Every HasBuff/BuffTime
--- in the same press then reads this table instead of rescanning all 32 slots.
--- Keyed by GetTime(), which is constant within a frame, so the snapshot can
--- never be read stale.
-function AutoRota:SnapshotBuffs()
-    if not GetPlayerBuff then return end
-    local snap = {}
-    for i = 0, 31 do
-        local ix = GetPlayerBuff(i, "HELPFUL")
-        if ix and ix ~= -1 then
-            local id = GetPlayerBuffID and GetPlayerBuffID(ix)
-            if id then
-                if id < -1 then id = id + 65536 end
-                local nm = SpellInfo and SpellInfo(id)
-                if nm and not snap[nm] then
-                    local tl = GetPlayerBuffTimeLeft(ix) or 0
-                    local st = (GetPlayerBuffApplications and GetPlayerBuffApplications(ix)) or 1
-                    snap[nm] = { tl, st }
-                end
-            end
+function AutoRotaUI:OpenDropdown(b)
+    if self.openDD and self.openDD ~= b then self:CloseDropdown(self.openDD) end
+    self.openDD = b
+    local n = table.getn(b.options)
+    local rowH = 18
+    for i = 1, n do
+        local row = b.rows[i]
+        if not row then
+            row = CreateFrame("Button", nil, b.list)
+            row:SetHeight(rowH)
+            row:SetPoint("TOPLEFT", b.list, "TOPLEFT", 6, -4 - (i - 1) * rowH)
+            row:SetPoint("RIGHT", b.list, "RIGHT", -6, 0)
+            local txt = FS(row, "GameFontHighlightSmall"); txt:SetPoint("LEFT", row, "LEFT", 2, 0); txt:SetJustifyH("LEFT")
+            row.txt = txt
+            local hl = row:CreateTexture(nil, "HIGHLIGHT")
+            hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight"); hl:SetBlendMode("ADD"); hl:SetAllPoints(row)
+            b.rows[i] = row
         end
+        local opt = b.options[i]
+        row.txt:SetText(opt.label); row.value = opt.value
+        row:SetScript("OnClick", function()
+            b.value = row.value
+            AutoRotaUI:CloseDropdown(b)
+            if b.onSelect then b.onSelect(row.value) end
+        end)
+        row:Show()
     end
-    self.buffSnap = snap
-    self.buffSnapT = GetTime()
+    for i = n + 1, table.getn(b.rows) do b.rows[i]:Hide() end
+    b.list:SetHeight(8 + n * rowH); b.list:Raise(); b.list:Show()
 end
 
-function AutoRota:ScanBuff(name)
-    -- fresh snapshot from this frame: O(1) read
-    if self.buffSnap and self.buffSnapT == GetTime() then
-        local e = self.buffSnap[name]
-        if e then return e[1], e[2] end
-        return nil, 0
+function AutoRotaUI:SetDropdown(b, options, value, text, c)
+    b.options = options; b.value = value; b:SetText(text)
+    local fs = b:GetFontString()
+    if fs and c then color(fs, c) end
+end
+
+-- ------------------------------------------------------------
+-- checkbox
+-- ------------------------------------------------------------
+function AutoRotaUI:CreateCheck(uniqueName, parent, labelText, spellName, onClick)
+    local cb = CreateFrame("CheckButton", "ARUI_CB_" .. uniqueName, parent, "UICheckButtonTemplate")
+    cb:SetWidth(20); cb:SetHeight(20)
+    local lab = FS(parent, "GameFontNormalSmall", labelText)
+    lab:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+    cb:SetScript("OnClick", function()
+        if AutoRotaUI.loading then return end
+        if onClick then onClick(cb:GetChecked() and true or false) end
+    end)
+    return { cb = cb, label = lab, baseText = labelText, spellName = spellName }
+end
+
+-- Bind a CreateCheck item to a value during RefreshBody. If a spell name is
+-- attached (per-call override, else the one given at creation), the label is
+-- greyed with "(not learned)" when unknown, or red when enabled-but-unknown.
+-- Every class body used to hand-roll this; now they all share it.
+function AutoRotaUI:BindCheck(item, on, spellName)
+    item.cb:SetChecked(on and true or false)
+    item.cb:Enable()
+    local name = spellName
+    if name == nil then name = item.spellName end
+    if not name then
+        item.label:SetText(item.baseText); color(item.label, COL.white)
+        return
     end
-    -- no snapshot (UI refresh, slash commands, etc.): full scan as before
-    if not GetPlayerBuff then return nil, 0 end
-    for i = 0, 31 do
-        local ix = GetPlayerBuff(i, "HELPFUL")
-        if ix and ix ~= -1 then
-            local id = GetPlayerBuffID and GetPlayerBuffID(ix)
-            if id then
-                if id < -1 then id = id + 65536 end
-                if SpellInfo and SpellInfo(id) == name then
-                    local tl = GetPlayerBuffTimeLeft(ix) or 0
-                    local st = (GetPlayerBuffApplications and GetPlayerBuffApplications(ix)) or 1
-                    return tl, st
-                end
-            end
-        end
-    end
-    return nil, 0
-end
-
-function AutoRota:HasBuff(name)
-    local tl = self:ScanBuff(name)
-    return tl ~= nil
-end
-
-function AutoRota:BuffTime(name)
-    local tl, st = self:ScanBuff(name)
-    return tl or 0, st or 0
-end
-
-function AutoRota:ManaPct()
-    local mx = UnitManaMax("player")
-    if mx and mx > 0 then return UnitMana("player") / mx * 100 end
-    return 100
-end
-
-function AutoRota:PlayerHPPct()
-    local mx = UnitHealthMax("player")
-    if mx and mx > 0 then return UnitHealth("player") / mx * 100 end
-    return 100
-end
-
-function AutoRota:TargetHPPct()
-    local mx = UnitHealthMax("target")
-    if mx and mx > 0 then return UnitHealth("target") / mx * 100 end
-    return 100
-end
-
--- The Attack action's bar slot is cached: one IsAttackAction call verifies it
--- each press, and the full 1..172 scan only runs when the cache is empty or
--- the button was moved/removed.
-function AutoRota:EnsureAutoAttack()
-    local slot = self.attackSlot
-    if not (slot and IsAttackAction(slot)) then
-        slot = nil
-        for z = 1, 172 do
-            if IsAttackAction(z) then slot = z; break end
-        end
-        self.attackSlot = slot
-    end
-    if slot and not IsCurrentAction(slot) then UseAction(slot) end
-end
-
--- A stable id for the current target. SuperWoW returns the GUID as the second
--- value of UnitExists, which lets us tell apart two mobs that share a name.
-function AutoRota:TargetId()
-    local _, guid = UnitExists("target")
-    if guid then return guid end
-    return UnitName("target") or ""
-end
-
--- Best effort melee proximity. CheckInteractDistance index 3 is about 9.9
--- yards, a practical proxy for "close enough to fight". Used only to decide
--- whether we are still running in, so we can pre-cast the seal on the way.
-function AutoRota:InMeleeRange()
-    if not UnitExists("target") then return false end
-    return CheckInteractDistance("target", 3) and true or false
-end
-
-function AutoRota:Throttle(text)
-    local now = GetTime()
-    if (now - (self.lastMsg or 0)) > 3 then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoRota: " .. text, 1, 0.5, 0.3)
-        self.lastMsg = now
-    end
-end
-
--- ============================================================
--- Debug dump
--- ============================================================
-function AutoRota:Debug()
-    DEFAULT_CHAT_FRAME:AddMessage("--- AutoRota debug ---", 1, 0.8, 0.0)
-    if UnitExists("target") then
-        DEFAULT_CHAT_FRAME:AddMessage("Target debuff textures:", 1, 0.8, 0.0)
-        local any = false
-        for i = 1, 40 do
-            local t = UnitDebuff("target", i)
-            if t then any = true; DEFAULT_CHAT_FRAME:AddMessage("  [" .. i .. "] " .. t) end
-        end
-        if not any then DEFAULT_CHAT_FRAME:AddMessage("  (none)") end
+    local known = AutoRota.active and AutoRota.active:KnowsSpell(name)
+    if known then
+        item.label:SetText(item.baseText); color(item.label, COL.white)
+    elseif on then
+        item.label:SetText(item.baseText .. " (not learned)"); color(item.label, COL.red)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("No target.", 1, 0.5, 0.5)
-    end
-    DEFAULT_CHAT_FRAME:AddMessage("Player buffs (name / time / stacks):", 1, 0.8, 0.0)
-    if GetPlayerBuff then
-        for i = 0, 31 do
-            local ix = GetPlayerBuff(i, "HELPFUL")
-            if ix and ix ~= -1 then
-                local id = GetPlayerBuffID and GetPlayerBuffID(ix)
-                local nm = "?"
-                if id then
-                    if id < -1 then id = id + 65536 end
-                    if SpellInfo then nm = SpellInfo(id) or "?" end
-                end
-                local tl = GetPlayerBuffTimeLeft(ix) or 0
-                local st = (GetPlayerBuffApplications and GetPlayerBuffApplications(ix)) or 1
-                DEFAULT_CHAT_FRAME:AddMessage("  " .. nm .. " / " .. string.format("%.0f", tl) .. "s / " .. st)
-            end
-        end
+        item.label:SetText(item.baseText .. " (not learned)"); color(item.label, COL.grey)
     end
 end
 
-function AutoRota:Tokenize(msg)
-    local t = {}
-    for w in string.gfind(msg or "", "%S+") do table.insert(t, w) end
-    return t
+-- ------------------------------------------------------------
+-- slider (Blizzard template). opts = {min,max,step,suffix}.
+-- For compatibility the 4th argument may be the onChange function,
+-- in which case default percent options are used.
+-- ------------------------------------------------------------
+function AutoRotaUI:CreateSlider(uniqueName, parent, labelText, opts, onChange)
+    if type(opts) == "function" then onChange = opts; opts = nil end
+    opts = opts or {}
+    local mn = opts.min or 0
+    local mx = opts.max or 100
+    local stp = opts.step or 5
+    local suffix = opts.suffix
+    if suffix == nil then suffix = "%" end
+    local nm = "ARUI_SL_" .. uniqueName
+    local s = CreateFrame("Slider", nm, parent, "OptionsSliderTemplate")
+    s:SetWidth(150); s:SetHeight(16)
+    s:SetMinMaxValues(mn, mx); s:SetValueStep(stp)
+    local t = getglobal(nm .. "Text");  if t then t:SetText(labelText) end
+    local lo = getglobal(nm .. "Low");  if lo then lo:SetText("") end
+    local hi = getglobal(nm .. "High"); if hi then hi:SetText("") end
+    s.labelFS = t
+    s.valText = hi
+    s.suffix = suffix
+    s:SetScript("OnValueChanged", function()
+        local v = s:GetValue()
+        if s.valText then s.valText:SetText(tostring(v) .. s.suffix) end
+        if not AutoRotaUI.loading and onChange then onChange(v) end
+    end)
+    return s
 end
 
--- ============================================================
--- Saved variables and profiles (generic, schema comes from the module)
--- ============================================================
-function AutoRota:DeepCopy(t)
-    if type(t) ~= "table" then return t end
-    local r = {}
-    for k, v in pairs(t) do r[k] = self:DeepCopy(v) end
-    return r
+
+-- ------------------------------------------------------------
+-- reusable dialog (input and yes/no), avoids StaticPopup quirks
+-- ------------------------------------------------------------
+function AutoRotaUI:EnsureDialog()
+    if self.dlg then return end
+    local d = CreateFrame("Frame", "AutoRotaDialog", UIParent)
+    d:SetWidth(300); d:SetHeight(140)
+    d:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+    d:SetBackdrop(BACKDROP)
+    d:SetFrameStrata("FULLSCREEN_DIALOG")
+    d:EnableMouse(true)
+    d:Hide()
+    local prompt = FS(d, "GameFontNormal", ""); prompt:SetPoint("TOP", d, "TOP", 0, -24)
+    prompt:SetWidth(260); prompt:SetJustifyH("CENTER")
+    d.prompt = prompt
+    local eb = CreateFrame("EditBox", "AutoRotaDialogEdit", d, "InputBoxTemplate")
+    eb:SetWidth(220); eb:SetHeight(20); eb:SetPoint("TOP", prompt, "BOTTOM", 0, -14)
+    eb:SetAutoFocus(false); eb:SetMaxLetters(32)
+    eb:SetScript("OnEscapePressed", function() d:Hide() end)
+    d.eb = eb
+    local ok = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
+    ok:SetWidth(100); ok:SetHeight(24); ok:SetPoint("BOTTOMLEFT", d, "BOTTOMLEFT", 24, 16)
+    d.ok = ok
+    local cancel = CreateFrame("Button", nil, d, "UIPanelButtonTemplate")
+    cancel:SetWidth(100); cancel:SetHeight(24); cancel:SetPoint("BOTTOMRIGHT", d, "BOTTOMRIGHT", -24, 16)
+    cancel:SetScript("OnClick", function() d:Hide() end)
+    d.cancel = cancel
+    self.dlg = d
 end
 
--- A full copy of a profile, then normalized by the active module. Every UI
--- save/activate commits through here, so the cached validity is dropped.
-function AutoRota:CopyProfile(p)
-    self.validCacheName = nil
-    local c = self:DeepCopy(p)
-    if self.active and self.active.NormalizeProfile then self.active:NormalizeProfile(c) end
-    return c
-end
-
-function AutoRota:InitDB()
-    if type(AutoRotaDB) ~= "table" then AutoRotaDB = {} end
-    if type(AutoRotaDB.profiles) ~= "table" then AutoRotaDB.profiles = {} end
-    if not self.active or not self.active.templates then return end
-    if not next(AutoRotaDB.profiles) then
-        for name, tpl in pairs(self.active.templates) do
-            AutoRotaDB.profiles[name] = self:CopyProfile(tpl)
-        end
+function AutoRotaUI:ShowDialog(opts)
+    self:EnsureDialog()
+    local d = self.dlg
+    d.prompt:SetText(opts.prompt or "")
+    local function accept()
+        local txt = opts.withInput and d.eb:GetText() or nil
+        d:Hide()
+        if opts.onAccept then opts.onAccept(txt) end
     end
-    -- migrate any already-stored profiles to the current format
-    for _, cfg in pairs(AutoRotaDB.profiles) do self.active:NormalizeProfile(cfg) end
-end
-
-function AutoRota:GetActiveProfile()
-    if not AutoRotaDB or not AutoRotaDB.active then return nil end
-    return AutoRotaDB.profiles[AutoRotaDB.active]
-end
-
--- Validity is a class rule. Without a module nothing is missing.
-function AutoRota:Validity(cfg)
-    if self.active and self.active.ProfileValidity then return self.active:ProfileValidity(cfg) end
-    return true, {}
-end
-
--- ============================================================
--- Generic profile commands (the text interface, UI is primary)
--- ============================================================
-function AutoRota:CmdList()
-    msgOut("Profiles:")
-    local active = AutoRotaDB.active
-    local any = false
-    for name, cfg in pairs(AutoRotaDB.profiles) do
-        any = true
-        local ok, missing = self:Validity(cfg)
-        local mark = (name == active) and " [active]" or ""
-        local valid = ok and "valid" or ("INVALID, missing " .. table.concat(missing, ", "))
-        msgOut("  " .. name .. mark .. " - " .. valid)
+    if opts.withInput then
+        d.eb:Show(); d.eb:SetText(opts.initialText or "")
+        d.eb:SetScript("OnEnterPressed", accept)
+    else
+        d.eb:Hide()
     end
-    if not any then msgOut("  (none, use /ar reset)") end
-    if not active then msgOut("No profile is active.") end
+    d.ok:SetText(opts.acceptLabel or "OK")
+    d.cancel:SetText(opts.cancelLabel or "Cancel")
+    d.ok:SetScript("OnClick", accept)
+    d:Show(); d:Raise()
+    if opts.withInput then d.eb:SetFocus() end
 end
 
-function AutoRota:CmdUse(name)
-    local cfg = name and AutoRotaDB.profiles[name]
-    if not cfg then msgOut("profile '" .. tostring(name) .. "' not found.", 1, 0.5, 0.3); return end
-    local ok, missing = self:Validity(cfg)
-    if not ok then msgOut("cannot activate '" .. name .. "', missing " .. table.concat(missing, ", "), 1, 0.5, 0.3); return end
-    AutoRotaDB.active = name
-    msgOut("activated '" .. name .. "'.")
+-- ============================================================
+-- build (shell, then class body)
+-- ============================================================
+function AutoRotaUI:Build()
+    if self.built then return end
+
+    local f = CreateFrame("Frame", "AutoRotaUIFrame", UIParent)
+    f:SetWidth(380); f:SetHeight((MOD() and MOD().uiHeight) or 520)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    f:SetBackdrop(BACKDROP)
+    f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", function() f:StartMoving() end)
+    f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+    f:Hide()
+    self.frame = f
+
+    local title = FS(f, "GameFontNormalLarge", "AutoRota" .. (MOD() and (" - " .. (MOD().uiTitle or "")) or "")); title:SetPoint("TOP", f, "TOP", 0, -16); color(title, COL.gold)
+    local sub = FS(f, "GameFontDisableSmall", "Pick or create a profile, configure below, then Activate")
+    sub:SetPoint("TOP", f, "TOP", 0, -34)
+    local xb = CreateFrame("Button", nil, f, "UIPanelCloseButton"); xb:SetPoint("TOPRIGHT", f, "TOPRIGHT", -8, -8)
+
+    FS(f, "GameFontNormalSmall", "Profile being edited"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -46)
+    self.profileDD = self:CreateDropdown("profile", f, 150, function(v) self:Load(v) end)
+    self.profileDD:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -60)
+    self.activateBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    self.activateBtn:SetWidth(90); self.activateBtn:SetHeight(22)
+    self.activateBtn:SetPoint("LEFT", self.profileDD, "RIGHT", 8, 0)
+    self.activateBtn:SetText("Activate")
+    self.activateBtn:SetScript("OnClick", function() self:DoActivate() end)
+
+    -- management buttons
+    self.newBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    self.newBtn:SetWidth(75); self.newBtn:SetHeight(22); self.newBtn:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -88)
+    self.newBtn:SetText("New"); self.newBtn:SetScript("OnClick", function() self:AskNew() end)
+    self.renBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    self.renBtn:SetWidth(85); self.renBtn:SetHeight(22); self.renBtn:SetPoint("LEFT", self.newBtn, "RIGHT", 6, 0)
+    self.renBtn:SetText("Rename"); self.renBtn:SetScript("OnClick", function() self:AskRename() end)
+    self.delBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    self.delBtn:SetWidth(75); self.delBtn:SetHeight(22); self.delBtn:SetPoint("LEFT", self.renBtn, "RIGHT", 6, 0)
+    self.delBtn:SetText("Delete"); self.delBtn:SetScript("OnClick", function() self:AskDelete() end)
+
+    self.status = FS(f, "GameFontNormalSmall", ""); self.status:SetPoint("TOPLEFT", f, "TOPLEFT", 20, -116)
+    self.status:SetWidth(340); self.status:SetJustifyH("LEFT")
+
+    self.saveBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    self.saveBtn:SetWidth(90); self.saveBtn:SetHeight(24)
+    self.saveBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -110, 16)
+    self.saveBtn:SetText("Save")
+    self.saveBtn:SetScript("OnClick", function() self:DoSave() end)
+    self.closeBtn = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    self.closeBtn:SetWidth(90); self.closeBtn:SetHeight(24)
+    self.closeBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 16)
+    self.closeBtn:SetText("Close")
+    self.closeBtn:SetScript("OnClick", function() f:Hide() end)
+
+    -- plain language tooltips for new users
+    Tip(self.profileDD, "Profile", "The set of seals and spells the rotation uses.", "Switch here to edit a different one.")
+    Tip(self.activateBtn, "Activate", "Saves this profile and makes the macro use it.", "The macro always runs the active profile.")
+    Tip(self.saveBtn, "Save", "Stores your changes to this profile.", "Does not change which profile the macro uses.")
+    Tip(self.closeBtn, "Close", "Closes the window. Unsaved changes are discarded.")
+    Tip(self.newBtn, "New", "Creates a new profile from a blank starter.")
+    Tip(self.renBtn, "Rename", "Renames the profile being edited.")
+    Tip(self.delBtn, "Delete", "Deletes the profile being edited, after a prompt.")
+
+    if MOD() and MOD().BuildBody then MOD():BuildBody(self, f) end
+
+    self.built = true
 end
 
-function AutoRota:CmdOff()
-    AutoRotaDB.active = nil
-    msgOut("deactivated. No profile active.")
+-- ============================================================
+-- data binding
+-- ============================================================
+function AutoRotaUI:CopyBuf(name)
+    local src = AutoRotaDB.profiles[name]
+    if not src then return nil end
+    return CORE.CopyProfile(CORE, src)
 end
 
-function AutoRota:CmdNew(name, template)
-    if not self.active or not self.active.templates then msgOut("no class module loaded.", 1, 0.5, 0.3); return end
-    if not name then msgOut("usage: /ar new <name> [template]", 1, 0.5, 0.3); return end
-    if AutoRotaDB.profiles[name] then msgOut("'" .. name .. "' already exists.", 1, 0.5, 0.3); return end
-    local tpl = self.active.templates[template or "starter"]
-    if not tpl then msgOut("unknown template '" .. tostring(template) .. "'.", 1, 0.5, 0.3); return end
-    AutoRotaDB.profiles[name] = self:CopyProfile(tpl)
-    msgOut("created '" .. name .. "' from template '" .. (template or "starter") .. "'.")
+function AutoRotaUI:Load(name)
+    if not AutoRotaDB.profiles[name] then return end
+    self.editing = name
+    self.buf = self:CopyBuf(name)
+    self:Refresh()
 end
 
-function AutoRota:CmdDel(name)
-    if not name or not AutoRotaDB.profiles[name] then msgOut("profile not found.", 1, 0.5, 0.3); return end
+function AutoRotaUI:ProfileNameList()
+    local list = {}
+    for n in pairs(AutoRotaDB.profiles) do table.insert(list, n) end
+    table.sort(list)
+    return list
+end
+
+function AutoRotaUI:Toggle()
+    self:Build()
+    if self.frame:IsShown() then self.frame:Hide(); return end
+    local pick = AutoRotaDB.active
+    if not pick or not AutoRotaDB.profiles[pick] then pick = self:ProfileNameList()[1] end
+    if pick then self.editing = pick; self.buf = self:CopyBuf(pick) else self.editing = nil; self.buf = nil end
+    self.frame:Show()
+    self:Refresh()
+end
+
+-- ============================================================
+-- refresh (profile bar and validity, then class body)
+-- ============================================================
+function AutoRotaUI:Refresh()
+    if not self.built then return end
+    self.loading = true
+
+    local names = self:ProfileNameList()
+    local opts = {}
+    for i = 1, table.getn(names) do opts[i] = { label = names[i], value = names[i] } end
+    self:SetDropdown(self.profileDD, opts, self.editing, self.editing or "(none)", COL.white)
+
+    if not self.buf then
+        self.status:SetText("No profile. Use New to create one."); color(self.status, COL.grey)
+        self.saveBtn:Disable(); self.activateBtn:Disable()
+        self.loading = false
+        return
+    end
+
+    if MOD() and MOD().RefreshBody then MOD():RefreshBody(self, self.buf) end
+
+    local ok, missing = MOD():ProfileValidity(self.buf)
+    if ok then
+        self.status:SetText("Profile valid."); color(self.status, COL.green)
+        self.saveBtn:Enable(); self.activateBtn:Enable()
+    else
+        self.status:SetText("Invalid, missing " .. table.concat(missing, ", ")); color(self.status, COL.red)
+        self.saveBtn:Disable(); self.activateBtn:Disable()
+    end
+
+    self.loading = false
+end
+
+-- ------------------------------------------------------------
+-- profile management
+-- ------------------------------------------------------------
+function AutoRotaUI:AskNew()
+    self:ShowDialog({
+        prompt = "New profile name:", withInput = true, acceptLabel = "Create",
+        onAccept = function(txt) self:NewProfile(txt) end,
+    })
+end
+
+function AutoRotaUI:NewProfile(name)
+    name = trim(name)
+    if name == "" then DEFAULT_CHAT_FRAME:AddMessage("AutoRota: name required.", 1, 0.5, 0.3); return end
+    if AutoRotaDB.profiles[name] then DEFAULT_CHAT_FRAME:AddMessage("AutoRota: '" .. name .. "' already exists.", 1, 0.5, 0.3); return end
+    AutoRotaDB.profiles[name] = CORE.CopyProfile(CORE, MOD().templates.starter)
+    self.editing = name
+    self.buf = self:CopyBuf(name)
+    self:Refresh()
+end
+
+function AutoRotaUI:AskRename()
+    if not self.editing then return end
+    self:ShowDialog({
+        prompt = "Rename '" .. self.editing .. "' to:", withInput = true, initialText = self.editing, acceptLabel = "Rename",
+        onAccept = function(txt) self:RenameProfile(txt) end,
+    })
+end
+
+function AutoRotaUI:RenameProfile(newName)
+    newName = trim(newName)
+    if newName == "" or not self.editing then return end
+    if newName == self.editing then return end
+    if AutoRotaDB.profiles[newName] then DEFAULT_CHAT_FRAME:AddMessage("AutoRota: '" .. newName .. "' already exists.", 1, 0.5, 0.3); return end
+    local old = self.editing
+    AutoRotaDB.profiles[newName] = AutoRotaDB.profiles[old]
+    AutoRotaDB.profiles[old] = nil
+    if AutoRotaDB.active == old then AutoRotaDB.active = newName end
+    self.editing = newName
+    self.buf = self:CopyBuf(newName)
+    self:Refresh()
+end
+
+function AutoRotaUI:AskDelete()
+    if not self.editing then return end
+    self:ShowDialog({
+        prompt = "Delete profile '" .. self.editing .. "'?", withInput = false,
+        acceptLabel = "Yes", cancelLabel = "No",
+        onAccept = function() self:DeleteProfile() end,
+    })
+end
+
+function AutoRotaUI:DeleteProfile()
+    if not self.editing then return end
+    local name = self.editing
     AutoRotaDB.profiles[name] = nil
     if AutoRotaDB.active == name then AutoRotaDB.active = nil end
-    msgOut("deleted '" .. name .. "'.")
+    local nxt = self:ProfileNameList()[1]
+    if nxt then self.editing = nxt; self.buf = self:CopyBuf(nxt) else self.editing = nil; self.buf = nil end
+    self:Refresh()
 end
 
-function AutoRota:CmdCheck()
-    local cfg = self:GetActiveProfile()
-    if not cfg then msgOut("no profile active."); return end
-    local ok, missing = self:Validity(cfg)
-    if ok then msgOut("active profile '" .. AutoRotaDB.active .. "' is valid.")
-    else msgOut("active profile invalid, missing " .. table.concat(missing, ", "), 1, 0.5, 0.3) end
+-- ------------------------------------------------------------
+-- commit
+-- ------------------------------------------------------------
+function AutoRotaUI:DoSave()
+    if not self.buf or not self.editing then return end
+    if not MOD():ProfileValidity(self.buf) then return end
+    AutoRotaDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
+    DEFAULT_CHAT_FRAME:AddMessage("AutoRota: saved '" .. self.editing .. "'.", 1, 0.8, 0)
+    self:Refresh()
 end
 
-function AutoRota:CmdReset()
-    if not self.active or not self.active.templates then msgOut("no class module loaded.", 1, 0.5, 0.3); return end
-    AutoRotaDB.profiles = {}
-    for n, tpl in pairs(self.active.templates) do AutoRotaDB.profiles[n] = self:CopyProfile(tpl) end
-    AutoRotaDB.active = nil
-    msgOut("profile list reseeded from templates, nothing active.")
+function AutoRotaUI:DoActivate()
+    if not self.buf or not self.editing then return end
+    if not MOD():ProfileValidity(self.buf) then return end
+    AutoRotaDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
+    AutoRotaDB.active = self.editing
+    DEFAULT_CHAT_FRAME:AddMessage("AutoRota: activated '" .. self.editing .. "'.", 1, 0.8, 0)
+    self:Refresh()
 end
-
--- ============================================================
--- Rotation entry point
--- ============================================================
-function AutoRota:RunRotation()
-    if not self.active then self:Throttle("no module for your class yet."); return end
-    local cfg = self:GetActiveProfile()
-    if not cfg then
-        self:Throttle("no profile active. Open /ar ui or use /ar use <name>.")
-        return
-    end
-    -- Validity is cached per active profile, not recomputed every press: it only
-    -- changes when a spell is learned (SPELLS_CHANGED clears it) or the active
-    -- profile switches/saves (those paths clear it too).
-    if self.validCacheName ~= AutoRotaDB.active then
-        local ok, missing = self:Validity(cfg)
-        self.validCacheName = AutoRotaDB.active
-        self.validCacheOK = ok
-        self.validCacheMissing = missing
-    end
-    if not self.validCacheOK then
-        self:Throttle("active profile incomplete, missing " .. table.concat(self.validCacheMissing, ", ") .. ". Running with what is available.")
-    end
-
-    if not UnitExists("target") or UnitIsDead("target") then TargetNearestEnemy() end
-    if not UnitCanAttack("player", "target") then return end
-
-    if self.active.meleeAutoAttack ~= false and not IsAddOnLoaded("SuperCleveRoidMacros") then self:EnsureAutoAttack() end
-
-    self:SnapshotBuffs()
-    self.active:Rotate(cfg)
-    UIErrorsFrame:Clear()
-end
-
--- ============================================================
--- Command dispatch
--- ============================================================
-function AutoRota:EvalCommand(msg)
-    local t = self:Tokenize(msg)
-    local cmd = string.lower(t[1] or "")
-
-    if cmd == "" then self:RunRotation(); return end
-    if cmd == "list"  then self:CmdList(); return end
-    if cmd == "use"   then self:CmdUse(t[2]); return end
-    if cmd == "off" or cmd == "none" then self:CmdOff(); return end
-    if cmd == "new"   then self:CmdNew(t[2], string.lower(t[3] or "")); return end
-    if cmd == "del" or cmd == "delete" then self:CmdDel(t[2]); return end
-    if cmd == "check" then self:CmdCheck(); return end
-    if cmd == "reset" then self:CmdReset(); return end
-    if cmd == "debug" then self:Debug(); return end
-    if cmd == "trace" then
-        self.trace = not self.trace
-        msgOut("trace " .. (self.trace and "on (per-press log)" or "off"))
-        return
-    end
-    if cmd == "ui" or cmd == "config" then
-        if self.active and self.active.OpenConfig then self.active:OpenConfig()
-        else msgOut("no configuration UI for this class yet.", 1, 0.5, 0.3) end
-        return
-    end
-    -- class specific subcommands (e.g. seal, spell on the paladin). These can
-    -- mutate the active profile in place, so the cached validity is dropped.
-    if self.active and self.active.HandleCommand and self.active:HandleCommand(cmd, t) then
-        self.validCacheName = nil
-        return
-    end
-
-    msgOut("commands: ui, list, use, off, new, del, check, reset, debug, trace (plus class commands).")
-end
-
--- ============================================================
--- Class detection and load
--- ============================================================
-function AutoRota:OnAddonLoaded()
-    local _, class = UnitClass("player")
-    self.active = self.classes[class]
-    self:InitDB()
-end
-
--- Printed once at PLAYER_LOGIN, when the chat frame is ready. ADDON_LOADED
--- fires too early in the login for a banner to reliably show.
-function AutoRota:Banner()
-    if self.Loaded then return end
-    self.Loaded = true
-    if not self.active then
-        local _, class = UnitClass("player")
-        self.active = self.classes[class]
-    end
-    if self.active then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoRota v" .. self.ver .. " loaded for " .. (self.active.uiTitle or "?")
-            .. ". Configure with /ar ui, run with a bare /ar macro.", 1, 0.8, 0.0)
-    else
-        DEFAULT_CHAT_FRAME:AddMessage("AutoRota v" .. self.ver .. " loaded, but there is no module for your class yet.", 1, 0.6, 0.3)
-    end
-end
-
--- Slash commands. /ar is primary, the paladin era names stay as aliases.
-SLASH_AUTOROTA1 = "/ar"
-SLASH_AUTOROTA2 = "/autorota"
-SLASH_AUTOROTA3 = "/paladinauto"
-SLASH_AUTOROTA4 = "/pa"
-SLASH_AUTOROTA5 = "/autopala"
-SlashCmdList["AUTOROTA"] = function(msg) AutoRota:EvalCommand(msg) end
-
--- Event wiring. The swing tracker runs on the active module so its state
--- stays with the class instance that reads it.
-local ev = CreateFrame("Frame")
-ev:RegisterEvent("ADDON_LOADED")
-ev:RegisterEvent("PLAYER_LOGIN")
-ev:RegisterEvent("SPELLS_CHANGED")
-ev:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
-ev:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
-ev:RegisterEvent("PLAYER_REGEN_ENABLED")
-ev:SetScript("OnEvent", function()
-    if event == "ADDON_LOADED" and arg1 == "AutoRota" then
-        AutoRota:OnAddonLoaded()
-    elseif event == "PLAYER_LOGIN" then
-        AutoRota:Banner()
-    elseif event == "SPELLS_CHANGED" then
-        -- learning a spell or rank invalidates the spellbook index and any
-        -- cached profile validity, both rebuilt lazily on the next use
-        AutoRota:InvalidateSpellIndex()
-        AutoRota.validCacheName = nil
-    elseif event == "CHAT_MSG_COMBAT_SELF_HITS" or event == "CHAT_MSG_COMBAT_SELF_MISSES" then
-        if AutoRota.active then AutoRota.active:OnSwingMessage(arg1) end
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        if AutoRota.active then AutoRota.active.lastSwing = nil end
-    end
-end)
