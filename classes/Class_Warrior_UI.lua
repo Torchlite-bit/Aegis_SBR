@@ -128,24 +128,9 @@ end
 -- refresh body (warrior binding)
 -- ============================================================
 function M:RefreshBody(ui, buf)
-    local function setCheck(key)
-        local item = self.cb[key]
-        local spell = SPELL_OF[key]
-        local on = buf[key] and true or false
-        item.cb:SetChecked(on); item.cb:Enable()
-        if not spell then
-            item.label:SetText(item.baseText); ui:Color(item.label, ui.COL.white); return
-        end
-        local known = self:KnowsSpell(spell)
-        if on and not known then
-            item.label:SetText(item.baseText .. " (not learned)"); ui:Color(item.label, ui.COL.red)
-        elseif not known then
-            item.label:SetText(item.baseText .. " (not learned)"); ui:Color(item.label, ui.COL.grey)
-        else
-            item.label:SetText(item.baseText); ui:Color(item.label, ui.COL.white)
-        end
+    for key, item in pairs(self.cb) do
+        ui:BindCheck(item, buf[key], SPELL_OF[key] or false)
     end
-    for key in pairs(self.cb) do setCheck(key) end
 
     -- home stance dropdown
     local stanceOpts = {
