@@ -4,6 +4,24 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.6.2b — Druid Defensive Bear
+
+Adds an adaptive **HP-managed defensive form switch** to the Druid, built on
+the same hysteresis pattern as the Paladin's mana/HP sliders. Other classes
+are unchanged.
+
+### 🛡️ Added: Defensive Bear (HP Management)
+- New **Defense (HP management)** section in the Druid panel: a checkbox plus the familiar two sliders — *switch below* (default **35%**) and *back above* (default **70%**).
+- Drop under the low threshold and the rotation **forces Bear Form from any form** — Cat, Moonkin, or caster; form-to-form shifts are direct one-cast moves in 1.12 — and holds it. Climb back over the high threshold and it **releases you to your preferred form automatically**. The two-threshold hysteresis prevents form-flapping when HP hovers near a single boundary.
+- While turtled up it keeps fighting: **Frenzied Regeneration** fires on cooldown when known (rage → health), then the full bear rotation runs — Faerie Fire, Demoralizing Roar, Maul/Swipe — so the mob still dies behind 4× armor while you stabilize.
+- **Safety rails:** off by default (a mid-fight form swap should be opt-in), and completely inert — logic and UI both — until a bear form is learned, so it cannot misfire on a low-level character. The bear trace line gains a `def=Y/N` flag and the shift itself logs `DEFENSE: hp NN%, shifting to Bear Form`.
+
+### 📝 Notes
+- Expectation setting: bear form does not regenerate health quickly by itself — *Frenzied Regeneration* and out-of-combat regen do the recovering. The practical loop is: dip low → bear up → kill the mob behind the armor → regen → release. Leveling insurance, not a healing replacement.
+- The hysteresis pattern is portable; a Warrior Defensive-Stance/Shield-Wall or Rogue Evasion equivalent can ride the same design if wanted.
+
+---
+
 ## v0.6.1b — Druid Balance & Level 1+
 
 The Druid module gains the **Balance (Caster/Moonkin)** rotation and now
