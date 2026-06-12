@@ -1,4 +1,4 @@
-# AutoRota (v0.5.3b)
+# AutoRota (v0.6.0b)
 
 AutoRota is a lightweight, robust, Configurable one-button rotation, multi class (Turtle WoW 1.12 / SuperWoW). Unlike standard "monolithic" 1.12 macros or basic script loops, AutoRota uses a modern modular architecture, automated frame-by-frame management, and smart situational logic to execute combat rotations.
 
@@ -56,6 +56,17 @@ Optimized for efficient DoT upkeep and resource management:
 * **Life Tap Integration:** Hysteresis-style management that triggers *Life Tap* only when mana dips below your threshold **and** health is safely above your floor.
 * **Configurable Filler:** When every enabled DoT is up — wand (mana-free), *Shadow Bolt*, or *Drain Life*. A *Nightfall* option fires the free instant *Shadow Bolt* the moment *Shadow Trance* procs.
 * **Cast Queueing & Pet Support:** Cast-time spells use SuperWoW's `QueueSpellByName` so the rotation never clips a cast (with a smart exception while wanding, where a direct cast fires immediately). Optionally sends your pet onto the target every press.
+
+### 🐾 Druid (Feral) `(Beta)`
+
+Cat (DPS) and Bear (Tank) in one form-adaptive engine:
+
+* **Form-Adaptive Rotation:** Each press follows the form you are actually in — Cat Form runs the DPS rotation, Bear/Dire Bear runs the tank rotation, and caster form shifts you into your profile's preferred form (panel dropdown or `/ar form cat|bear`). One profile, one macro, both jobs.
+* **Two Turtle Cat Styles:** *Claw & Bleed* keeps *Rake* and *Rip* rolling and builds with *Claw* (pairs with bleed-energy talents like *Ancient Brutality*); *Shred & Powershift* builds with *Shred* and finishes with *Ferocious Bite* for bleed-immune bosses (MC/BWL). Swap mid-fight with `/ar style bleed|shred`.
+* **Smart Finishers:** At your combo threshold the bleed style applies *Rip* if it is not ticking and spends *Ferocious Bite* while it is — combo points are never dumped into a redundant bleed.
+* **Powershifting (opt-in):** In the Shred style, when energy bottoms out below your slider the rotation shifts to caster and straight back into Cat for a fresh energy bar — and **never while Tiger's Fury is active**, so the buff is not thrown away.
+* **Stealth Opener & Upkeep:** Opens from *Prowl* with *Ravage* (auto, if known) or *Pounce*, and keeps *Faerie Fire (Feral)* and *Tiger's Fury* running.
+* **Bear Tanking:** *Faerie Fire* and *Demoralizing Roar* upkeep, *Maul* as the single-target rage dump, *Swipe* leading the priority when AoE mode is toggled (`/ar aoe`), and optional *Enrage* when rage-starved (in combat only — it lowers armor, so it is off by default).
 
 ---
 
@@ -118,7 +129,9 @@ You can also change profile properties dynamically via chat or macros:
 | `/ar seal <slot> debuff/damage <alias>` | *(Paladin Only)* Modifies profile seals. | `/ar seal DPS damage sor` |
 | `/ar strike <mode>` | *(Paladin Only)* Sets strike mode (`off`/`auto`/`cs`/`hs`/`hscs`). | `/ar strike hs` |
 | `/ar curse <alias>` | *(Warlock Only)* Switches the curse on the active profile. | `/ar curse coe` |
-| `/ar aoe` | *(Warrior & Paladin Only)* Toggles AoE mode (Cleave + Whirlwind / Consecration). | `/ar aoe` |
+| `/ar style <bleed/shred>` | *(Druid Only)* Switches the cat style mid-fight. | `/ar style shred` |
+| `/ar form <cat/bear>` | *(Druid Only)* Sets the preferred combat form. | `/ar form bear` |
+| `/ar aoe` | *(Warrior, Paladin & Druid)* Toggles AoE mode (Cleave + Whirlwind / Consecration / Swipe). | `/ar aoe` |
 | `/ar cd <on/elite/off>` | *(Warrior Only)* Sets cooldown usage mode. | `/ar cd elite` |
 | `/ar dance` | *(Warrior Only)* Toggles experimental stance dancing. | `/ar dance` |
 | `/ar spell <alias> <on/off>` | *(Warrior & Paladin)* Flips an ability on the active profile. | `/ar spell ms on` |
