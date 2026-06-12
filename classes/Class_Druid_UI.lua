@@ -50,11 +50,24 @@ function M:BuildBody(ui, f)
     self.enrageCB = ui:CreateCheck("useEnrage", f, "Enrage when rage starved", "Enrage", function(on) if ui.buf then ui.buf.useEnrage = on; ui:Refresh() end end)
     self.enrageCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -468)
 
+    -- Balance / Caster
+    ui:FS(f, "GameFontNormal", "Balance / Caster"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -504)
+    ui:FS(f, "GameFontNormalSmall", "Nuke"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -530)
+    self.nukeDD = ui:CreateDropdown("nuke", f, 170, function(v) if ui.buf then ui.buf.nuke = v; ui:Refresh() end end)
+    self.nukeDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -528)
+    self.mfCB = ui:CreateCheck("useMoonfire", f, "Moonfire", "Moonfire", function(on) if ui.buf then ui.buf.useMoonfire = on; ui:Refresh() end end)
+    self.mfCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -556)
+    self.isCB = ui:CreateCheck("useInsectSwarm", f, "Insect Swarm", "Insect Swarm", function(on) if ui.buf then ui.buf.useInsectSwarm = on; ui:Refresh() end end)
+    self.isCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -556)
+    self.eclipseCB = ui:CreateCheck("eclipse", f, "React to Eclipse procs", nil, function(on) if ui.buf then ui.buf.eclipse = on; ui:Refresh() end end)
+    self.eclipseCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -580)
+
     ui:Divider(f, -134)   -- above Form
     ui:Divider(f, -194)   -- above Cat
     ui:Divider(f, -388)   -- above Bear
+    ui:Divider(f, -496)   -- above Balance
 
-    ui:Tip(self.formDD, "Preferred form", "Entered when you press the macro in caster form.", "In combat the rotation always follows the form you are actually in.")
+    ui:Tip(self.formDD, "Preferred form", "Entered when you press the macro in caster form. Caster/Moonkin runs the Balance rotation (and enters Moonkin when learned).", "Before any form is learned, the caster rotation runs automatically, so this works from level 1.")
     ui:Tip(self.styleDD, "Cat style", "Claw & Bleed keeps Rake and Rip rolling (pairs with bleed-energy talents). Shred & Powershift builds with Shred and finishes with Ferocious Bite.", "Use Shred for bleed-immune bosses (MC/BWL). Swap mid-fight with /ar style.")
     ui:Tip(self.openerDD, "Stealth opener", "Used on the first press while Prowl is up.", "Auto picks Ravage if known (needs behind), else Pounce.")
     ui:Tip(self.tfCB.cb, "Tiger's Fury", "Recast just before the buff falls off.")
@@ -67,6 +80,10 @@ function M:BuildBody(ui, f)
     ui:Tip(self.maulCB.cb, "Maul", "Queued on the next swing as the single-target rage dump.")
     ui:Tip(self.swipeCB.cb, "Swipe (AoE)", "When on, Swipe leads the priority for multi-target threat.", "Manual toggle, also /ar aoe, since 1.12 cannot count nearby enemies.")
     ui:Tip(self.enrageCB.cb, "Enrage", "Used in combat when rage is starved. Lowers your armor while active, so it is off by default.")
+    ui:Tip(self.nukeDD, "Primary nuke", "Chain-cast to fish for Eclipse procs.", "Casting Wraths empowers Starfire and vice versa, the rotation swaps automatically on the proc.")
+    ui:Tip(self.mfCB.cb, "Moonfire", "Kept up first. At low levels this plus the nuke IS the rotation.")
+    ui:Tip(self.isCB.cb, "Insect Swarm", "Kept up right after Moonfire.")
+    ui:Tip(self.eclipseCB.cb, "Eclipse reaction", "On a proc, cast the empowered opposite nuke. Casts are queued, so the swap lands the moment the window opens.", "If procs are not detected, run /ar debug with the proc up and report the buff name.")
 end
 
 -- ============================================================
@@ -76,8 +93,9 @@ function M:RefreshBody(ui, buf)
     local formOpts = {
         { label = "Cat Form",  value = "cat" },
         { label = "Bear Form", value = "bear" },
+        { label = "Caster / Moonkin", value = "caster" },
     }
-    local formLabel = { cat = "Cat Form", bear = "Bear Form" }
+    local formLabel = { cat = "Cat Form", bear = "Bear Form", caster = "Caster / Moonkin" }
     local fcur = buf.form or "cat"
     ui:SetDropdown(self.formDD, formOpts, fcur, formLabel[fcur] or fcur, ui.COL.white)
 
@@ -111,6 +129,17 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.maulCB, buf.useMaul)
     ui:BindCheck(self.swipeCB, buf.aoeSwipe)
     ui:BindCheck(self.enrageCB, buf.useEnrage)
+    ui:BindCheck(self.mfCB, buf.useMoonfire)
+    ui:BindCheck(self.isCB, buf.useInsectSwarm)
+    ui:BindCheck(self.eclipseCB, buf.eclipse)
+
+    -- nuke dropdown: Wrath always (level 1), Starfire once known
+    local nOpts = { { label = "Wrath", value = "Wrath" } }
+    if self:KnowsSpell("Starfire") then table.insert(nOpts, { label = "Starfire", value = "Starfire" }) end
+    local ncur = buf.nuke or "Wrath"
+    local nshown, nc = ncur, ui.COL.white
+    if ncur ~= "Wrath" and not self:KnowsSpell(ncur) then nshown, nc = ncur .. " (not learned)", ui.COL.red end
+    ui:SetDropdown(self.nukeDD, nOpts, ncur, nshown, nc)
 
     -- powershift is only meaningful in the Shred style
     if (buf.catStyle or "bleed") == "shred" then
