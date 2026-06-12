@@ -64,22 +64,11 @@ function M:RefreshBody(ui, buf)
     else shown, c = cur .. " (not learned)", ui.COL.red end
     ui:SetDropdown(self.builderDD, o, cur, shown, c)
 
-    local function setCheck(item, on, spellName)
-        item.cb:SetChecked(on and true or false)
-        if not spellName then
-            item.cb:Enable(); item.label:SetText(item.baseText); ui:Color(item.label, ui.COL.white); return
-        end
-        item.cb:Enable()
-        local known = self:KnowsSpell(spellName)
-        if on and not known then item.label:SetText(item.baseText .. " (not learned)"); ui:Color(item.label, ui.COL.red)
-        elseif not known then item.label:SetText(item.baseText .. " (not learned)"); ui:Color(item.label, ui.COL.grey)
-        else item.label:SetText(item.baseText); ui:Color(item.label, ui.COL.white) end
-    end
-    setCheck(self.sndCB, buf.useSnd, "Slice and Dice")
-    setCheck(self.envCB, buf.useEnvenom, "Envenom")
-    setCheck(self.ripCB, buf.useRiposte, "Riposte")
-    setCheck(self.cdCB, buf.popCDs, nil)
-    setCheck(self.cdEliteCB, buf.autoCDElite, nil)
+    ui:BindCheck(self.sndCB, buf.useSnd)
+    ui:BindCheck(self.envCB, buf.useEnvenom)
+    ui:BindCheck(self.ripCB, buf.useRiposte)
+    ui:BindCheck(self.cdCB, buf.popCDs)
+    ui:BindCheck(self.cdEliteCB, buf.autoCDElite)
 
     local cpv = buf.cpFinish or 4
     self.cpSlider:SetValue(cpv)
