@@ -1,4 +1,4 @@
-# AutoRota (v0.5.2b)
+# AutoRota (v0.5.3b)
 
 AutoRota is a lightweight, robust, Configurable one-button rotation, multi class (Turtle WoW 1.12 / SuperWoW). Unlike standard "monolithic" 1.12 macros or basic script loops, AutoRota uses a modern modular architecture, automated frame-by-frame management, and smart situational logic to execute combat rotations.
 
@@ -12,6 +12,7 @@ Version 0.4 introduces a complete graphical configuration panel and database sys
 - **Smart Profile Management:** Create, save, rename, and activate multiple custom setup profiles (e.g., *Starter*, *Leveling*, *PvP*, *Raid-DPS*) seamlessly in-game.
 - **Turtle WoW & SuperWoW Optimized:** Fully compatible with custom SuperWoW features such as spell queueing (`QueueSpellByName`), weapon swing timing, and custom custom class expansions (e.g., Rogue's *Noxious Assault*, Paladin's *Holy Strike*).
 - **Zero-Clipping Logic:** Rotations run on strict single-cast priorities with early returns. The addon ensures exactly one primary action executes per frame to prevent spell clipping or overlapping global cooldowns (GCD).
+- **Lightweight Per-Press Cost:** Spellbook lookups, profile validity, the auto-attack button, and player buffs are all cached or snapshotted (and refreshed automatically when you learn spells or edit profiles), so spamming the macro costs a handful of table reads instead of repeated full spellbook, action-bar, and buff scans.
 - **Minimap Button:** A draggable minimap button opens the configuration panel with a click (right-click runs the rotation once). Hide or show it with `/armap`.
 
 ---
@@ -46,14 +47,15 @@ A roleless, toggle-driven engine covering Arms, Fury, and Protection from early 
 - **Cooldown Automation:** *Death Wish*, *Recklessness*, and *Berserker Rage* fire on cooldown, only on Elite/Boss targets, or fully manually — the same three-state model as the other classes — while *Bloodrage* tops up rage on demand, even before the pull.
 - **Threat Toolkit:** Maintains *Sunder Armor* up to a chosen stack count and weaves *Shield Slam*, *Revenge*, and *Shield Block* upkeep for Protection tanking.
 
-### 🔮 Warlock 
+### 🔮 Warlock
 
-Optimized for efficient DoT (Damage over Time) multi-dotting and resource management:
+Optimized for efficient DoT upkeep and resource management:
 
-* **Curse/DoT Upkeep:** Dynamically prioritizes debuff application based on target health percentage and remaining DoT duration, ensuring minimal GCD waste.
-* **Life Tap Integration:** Hysteresis-based management that automatically triggers *Life Tap* when mana dips below your defined threshold and health is safely above your safety floor.
-* **Pet Management:** Automated support for pet attack commands on primary target engagement and conditional health-monitoring for *Health Funnel* usage.
-* **Drain-Tanking Logic:** Specialized rotation mode that intelligently switches to *Drain Life* or *Drain Soul* when the target is below execution health thresholds or when player health requires stabilization.
+* **DoT Priority Engine:** Keeps your enabled damage-over-time effects up in strict priority — *Immolate*, then your chosen Curse, then *Corruption*, then *Siphon Life* — detected by target debuff texture, with a per-target landing memory so cast-time DoTs are never double-queued while still in the air.
+* **Curse Selection:** One curse per target, switchable from the panel or mid-fight with `/ar curse <alias>` (`coa`, `coe`, `cos`, `cow`, `cor`, `cot`, `cod`, `none`).
+* **Life Tap Integration:** Hysteresis-style management that triggers *Life Tap* only when mana dips below your threshold **and** health is safely above your floor.
+* **Configurable Filler:** When every enabled DoT is up — wand (mana-free), *Shadow Bolt*, or *Drain Life*. A *Nightfall* option fires the free instant *Shadow Bolt* the moment *Shadow Trance* procs.
+* **Cast Queueing & Pet Support:** Cast-time spells use SuperWoW's `QueueSpellByName` so the rotation never clips a cast (with a smart exception while wanding, where a direct cast fires immediately). Optionally sends your pet onto the target every press.
 
 ---
 
@@ -89,7 +91,7 @@ Because all configuration logic is handled by the visual interface and database,
 /ar
 ```
 
-> #### 🗡️ MELEE CLASSES: Put **Attack** on an action bar
+> #### 🗡️ Melee classes: put **Attack** on an action bar
 > For melee classes (Paladin, Rogue, Warrior), AutoRota keeps your white swing going by toggling the standard **Attack** ability — but it can only do this if that ability is on one of your action bars. Open your spellbook (**P**), find **Attack** in the *General* tab, and drag it onto any free action slot. Without it, the rotation will fire abilities but you may notice you are not auto-attacking between them.
 >
 > *Exception:* if you run **SuperCleveRoidMacros**, AutoRota leaves auto-attack handling to SCRM and skips this step.
@@ -115,6 +117,7 @@ You can also change profile properties dynamically via chat or macros:
 | `/ar cp <1-5>` | *(Rogue Only)* Sets min. finishing Combo Points. | `/ar cp 5` |
 | `/ar seal <slot> debuff/damage <alias>` | *(Paladin Only)* Modifies profile seals. | `/ar seal DPS damage sor` |
 | `/ar strike <mode>` | *(Paladin Only)* Sets strike mode (`off`/`auto`/`cs`/`hs`/`hscs`). | `/ar strike hs` |
+| `/ar curse <alias>` | *(Warlock Only)* Switches the curse on the active profile. | `/ar curse coe` |
 | `/ar aoe` | *(Warrior & Paladin Only)* Toggles AoE mode (Cleave + Whirlwind / Consecration). | `/ar aoe` |
 | `/ar cd <on/elite/off>` | *(Warrior Only)* Sets cooldown usage mode. | `/ar cd elite` |
 | `/ar dance` | *(Warrior Only)* Toggles experimental stance dancing. | `/ar dance` |
@@ -176,4 +179,4 @@ If you use macro validation addons like MacroErrorChecker, you may see a warning
 This is a false positive. External macro checkers look for a static list of default Blizzard interface commands. They cannot scan third-party custom slash engines. As long as typing /ar ui opens your addon profile window, AutoRota is working perfectly and you can safely ignore or disable the validation warning. This can be added to the whitelist with some addons like `SuperCleveRoidMacros` to avoid the chat error.
 
 ### My character casts abilities but doesn't auto-attack
-On a melee class, AutoRota starts your white swing by toggling the standard **Attack** ability, which it locates by scanning your action bars. If **Attack** is not on any bar, there is nothing for it to toggle and you will fire abilities without swinging in between. Drag **Attack** from your spellbook (**P** → *General* tab) onto any action slot. (If you use **SuperCleveRoidMacros**, it manages attacks instead and AutoRota leaves this alone.)qqqq
+On a melee class, AutoRota starts your white swing by toggling the standard **Attack** ability, which it locates by scanning your action bars. If **Attack** is not on any bar, there is nothing for it to toggle and you will fire abilities without swinging in between. Drag **Attack** from your spellbook (**P** → *General* tab) onto any action slot. (If you use **SuperCleveRoidMacros**, it manages attacks instead and AutoRota leaves this alone.)
