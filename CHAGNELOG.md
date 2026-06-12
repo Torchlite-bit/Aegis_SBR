@@ -4,6 +4,35 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.6.0b — Feral Druid Beta
+
+Adds the fifth class module: **Druid (Feral)**, covering both Cat (DPS) and
+Bear (Tank) in a single form-adaptive engine built for Turtle WoW's custom
+feral balance. Other classes are unchanged.
+
+### 🐾 Added: Druid (Feral) Module
+- **Form-adaptive rotation:** each press follows the form you are actually in — Cat Form runs the DPS rotation, Bear/Dire Bear Form runs the tank rotation, and caster form shifts you into the profile's preferred form (panel dropdown, or `/ar form cat|bear`). One profile and one macro cover both jobs, and the design closes the powershift loop for free: shifting out lands in caster form, the next press shifts straight back into Cat with a fresh energy bar.
+- **Two cat styles**, matching the two competitive Turtle WoW playstyles, switchable from the panel or mid-fight with `/ar style bleed|shred`:
+  - **Claw & Bleed** *(default)* — keeps *Rake* and *Rip* rolling and builds with *Claw*; pairs with bleed-energy talents like *Ancient Brutality*.
+  - **Shred & Powershift** — builds with *Shred*, finishes with *Ferocious Bite* (no bleed globals), for bleed-immune raid targets (Molten Core / BWL).
+- **Smart finishers:** at the combo threshold (slider, 1–5) the bleed style applies *Rip* when it is not ticking and spends *Ferocious Bite* while it is, so combo points never refresh a bleed that is already running. If the finisher is not yet affordable the rotation waits rather than wasting a builder at full points.
+- **Powershifting (opt-in, Shred style):** when energy falls below the slider, shift out and back in for a fresh energy bar — **never while Tiger's Fury is active**, so the buff is not thrown away; the shift waits for it to expire. Each re-shift costs mana; the tooltip says to watch the blue bar.
+- **Stealth opener:** while *Prowl* is up the first press uses *Ravage* (auto, when known) or *Pounce*, or can be disabled; an unaffordable opener falls through and the builder breaks stealth instead of stalling.
+- **Upkeep:** *Faerie Fire (Feral)* and *Tiger's Fury* are maintained ahead of the builders in Cat.
+- **Bear tanking:** *Faerie Fire* and *Demoralizing Roar* upkeep, *Maul* queued as the single-target rage dump, **Swipe leading the priority when AoE mode is on** (`/ar aoe`, the same toggle Warriors and Paladins use), and optional *Enrage* when rage-starved — in combat only and off by default, since it lowers armor.
+- New slash commands: `/ar style <bleed|shred>`, `/ar form <cat|bear>`, and `/ar aoe` now also serves the Druid (Swipe).
+
+### 🔧 Changed
+- `.toc` loads `classes\Class_Druid.lua` / `Class_Druid_UI.lua`; version bumped to **0.6.0b** (login banner matches).
+- The minimap button shows the Druid class crest automatically (its class table already included it).
+
+### 📝 Notes & Tips
+- **Bleed-immune bosses:** keep a shred profile (template `catshred`) or just hit `/ar style shred` on the pull and `/ar style bleed` after — your Plan A / Plan B switch.
+- A vanilla casting trap is handled internally: `Faerie Fire (Feral)` contains parentheses, which `CastSpellByName` would misparse as a rank spec; the module appends `()` to such names.
+- **Please verify on Turtle and report:** (1) the four debuff texture fragments (*Faerie Fire*, *Rake*, *Rip*, *Demoralizing Roar*) — if an upkeep misfires, run `/ar debug` with the debuff applied; (2) whether recasting Cat Form still shifts **out** (vanilla behaviour) or Turtle's custom powershift spell should be used instead — if the latter, its name drops into the module in one place; (3) energy costs, if Turtle rebalanced any (table at the top of `Class_Druid.lua`).
+
+---
+
 ## v0.5.3b — Core Optimization Pass
 
 A performance and cleanup release. No rotation behaviour changes — every class
