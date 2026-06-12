@@ -18,9 +18,8 @@ local M = AutoRota:NewClassModule("PALADIN")
 M.uiTitle = "Paladin"
 M.uiHeight = 706
 
-local function msgOut(text, r, g, b)
-    DEFAULT_CHAT_FRAME:AddMessage("AutoRota: " .. text, r or 1, g or 0.8, b or 0.0)
-end
+-- Chat output is shared in the core; this shim keeps call sites unchanged.
+local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
 
 -- Tunable buff renew thresholds for the strike buffs
 local HM_RENEW    = 7
@@ -268,21 +267,8 @@ function M:HolyMightWorthwhile()
     return self:TalentRank(TALENT_HOLY_MIGHT) > 0
 end
 
--- Highest known rank number of a spell (0 if unknown). Used for downranking.
-function M:MaxRank(name)
-    local i, maxR = 1, 0
-    while true do
-        local n, rnk = GetSpellName(i, BOOKTYPE_SPELL)
-        if not n then break end
-        if n == name then
-            local digits = string.gsub(rnk or "", "%D", "")   -- keep only the rank number
-            local num = tonumber(digits) or 1
-            if num > maxR then maxR = num end
-        end
-        i = i + 1
-    end
-    return maxR
-end
+-- MaxRank(name) is inherited from the core, which serves it from the cached
+-- spellbook index (rebuilt on SPELLS_CHANGED).
 
 -- The downrank ceiling tells which rank to use for the current raw mana, or
 -- nil when mana is above all ceilings (use full rank).
@@ -511,12 +497,10 @@ function M:Rotate(cfg)
     self:UpdateManagement(cfg)
 
     if self.trace then
-        local now = GetTime()
-        if now - (self.traceT or 0) >= 0.4 then
-            self.traceT = now
-            local db = cfg.seals.debuff
-            local strk = (self:StrikeEnabled(cfg) and self:SharedStrikeReady(cfg)) and "Y" or "N"
-            DEFAULT_CHAT_FRAME:AddMessage("AR: strike=" .. strk
+        local db = cfg.seals.debuff
+        local strk = (self:StrikeEnabled(cfg) and self:SharedStrikeReady(cfg)) and "Y" or "N"
+        self:Trace(
+            "strike=" .. strk
                 .. " HShld(use=" .. (cfg.spells.holyShield and "Y" or "N")
                 .. ",k=" .. (self:KnowsSpell("Holy Shield") and "Y" or "N")
                 .. "," .. self:CDInfo("Holy Shield") .. ")"
@@ -526,8 +510,7 @@ function M:Rotate(cfg)
                 .. " dmg=" .. (cfg.seals.damage ~= "" and cfg.seals.damage or "-")
                 .. " range=" .. (self:InMeleeRange() and "Y" or "N")
                 .. " swing=" .. (self:SwingTimeLeft() and string.format("%.2fs", self:SwingTimeLeft()) or "-"),
-                0.6, 0.8, 1.0)
-            DEFAULT_CHAT_FRAME:AddMessage("AR: mode=" .. (cfg.strikeMode or "auto")
+            "mode=" .. (cfg.strikeMode or "auto")
                 .. " HS(k=" .. (self:KnowsSpell("Holy Strike") and "Y" or "N")
                 .. ",R=" .. self:EffectiveStrikeRank("Holy Strike", cfg) .. "/" .. self:MaxRank("Holy Strike") .. ")"
                 .. " CS(k=" .. (self:KnowsSpell("Crusader Strike") and "Y" or "N")
@@ -537,9 +520,7 @@ function M:Rotate(cfg)
                 .. " dr=" .. (cfg.strikeDownrank and "on" or "off")
                 .. " mana=" .. UnitMana("player")
                 .. " veng=" .. self:TalentRank(TALENT_HOLY_MIGHT)
-                .. " rght=" .. self:TalentRank(TALENT_THREAT),
-                0.6, 0.8, 1.0)
-        end
+                .. " rght=" .. self:TalentRank(TALENT_THREAT))
     end
 
     -- 0. Pre-cast the seal while running in (out of melee range), so the first
