@@ -13,7 +13,7 @@ Version 0.4 introduces a complete graphical configuration panel and database sys
 - **Turtle WoW & SuperWoW Optimized:** Fully compatible with custom SuperWoW features such as spell queueing (`QueueSpellByName`), weapon swing timing, and custom custom class expansions (e.g., Rogue's *Noxious Assault*, Paladin's *Holy Strike*).
 - **Exact Debuff Detection:** Target debuffs are resolved to their precise spell name via SuperWoW spell ids (built once per press in the core), so upkeep is rank- and locale-proof for every class. Clients without SuperWoW fall back automatically to icon-texture matching.
 - **Zero-Clipping Logic:** Rotations run on strict single-cast priorities with early returns. The addon ensures exactly one primary action executes per frame to prevent spell clipping or overlapping global cooldowns (GCD).
-- **Lightweight Per-Press Cost:** Spellbook lookups, profile validity, the auto-attack button, and player buffs are all cached or snapshotted (and refreshed automatically when you learn spells or edit profiles), so spamming the macro costs a handful of table reads instead of repeated full spellbook, action-bar, and buff scans.
+- **Lightweight Per-Press Cost:** Spellbook lookups, profile validity, the auto-attack button, player buffs, and target debuffs are all cached or snapshotted (and refreshed automatically when you learn spells or edit profiles), so spamming the macro costs a handful of table reads instead of repeated full spellbook, action-bar, buff, and debuff scans.
 - **Minimap Button:** A draggable minimap button opens the configuration panel with a click (right-click runs the rotation once). Hide or show it with `/armap`.
 
 ---
@@ -122,6 +122,9 @@ Because all configuration logic is handled by the visual interface and database,
 >
 > *Exception:* if you run **SuperCleveRoidMacros**, AutoRota leaves auto-attack handling to SCRM and skips this step.
 
+> #### 🏹 Hunter: put **Auto Shot** on an action bar
+> AutoRota keeps your **Auto Shot** firing between instants. It detects the shot most reliably when **Auto Shot** is on one of your action bars, so drag it there from your spellbook (**P** → *General* tab). If you enable the **melee weave** option, also place **Attack** on a bar so *Raptor Strike* has white swings to ride.
+
 ## 🔨 Configuration & Settings
 To open the comprehensive configuration interface, manage profiles, adjust resource sliders, or toggle specific spells on or off, type:
 ```macro
@@ -137,19 +140,24 @@ You can also change profile properties dynamically via chat or macros:
 | `/ar list` | Lists all saved configuration profiles. | `/ar list` |
 | `/ar use <name>` | Instantly switches to the specified profile. | `/ar use Leveling` |
 | `/ar off` | Pauses/disables rotation execution. | `/ar off` |
-| `/ar reset` | Resets active profile positions and layout variables. | `/ar reset` |
+| `/ar new <name> [template]` | Creates a new profile from a class template. | `/ar new Raid fury` |
+| `/ar del <name>` | Deletes a saved profile. | `/ar del Raid` |
+| `/ar check` | Reports whether the active profile is valid for your learned spells. | `/ar check` |
+| `/ar reset` | Reseeds the profile list from the class templates and deactivates. | `/ar reset` |
+| `/ar debug` | Dumps target debuffs (name / stacks / texture) and your player buffs. | `/ar debug` |
 | `/ar trace` | Toggles detailed combat logic debugging. | `/ar trace` |
 | `/armap` | Hides or shows the minimap button. | `/armap` |
 | `/ar cp <1-5>` | *(Rogue Only)* Sets min. finishing Combo Points. | `/ar cp 5` |
-| `/ar seal <slot> debuff/damage <alias>` | *(Paladin Only)* Modifies profile seals. | `/ar seal DPS damage sor` |
+| `/ar seal <profile> <debuff/damage> <alias>` | *(Paladin Only)* Sets a seal slot on the named profile. | `/ar seal DPS damage sor` |
 | `/ar strike <mode>` | *(Paladin Only)* Sets strike mode (`off`/`auto`/`cs`/`hs`/`hscs`). | `/ar strike hs` |
 | `/ar curse <alias>` | *(Warlock Only)* Switches the curse on the active profile. | `/ar curse coe` |
+| `/ar sting <alias>` | *(Hunter Only)* Sets the maintained sting (`serpent`/`scorpid`/`viper`/`none`). | `/ar sting serpent` |
 | `/ar style <bleed/shred>` | *(Druid Only)* Switches the cat style mid-fight. | `/ar style shred` |
 | `/ar form <cat/bear/caster>` | *(Druid Only)* Sets the preferred combat form (caster = Balance/Moonkin). | `/ar form caster` |
-| `/ar aoe` | *(Warrior, Paladin & Druid)* Toggles AoE mode (Cleave + Whirlwind / Consecration / Swipe). | `/ar aoe` |
-| `/ar cd <on/elite/off>` | *(Warrior Only)* Sets cooldown usage mode. | `/ar cd elite` |
+| `/ar aoe` | *(Warrior, Paladin, Druid & Hunter)* Toggles AoE mode (Cleave + Whirlwind / Consecration / Swipe / Volley + Multi-Shot). | `/ar aoe` |
+| `/ar cd <on/elite/off>` | *(Warrior & Hunter)* Sets cooldown usage mode. | `/ar cd elite` |
 | `/ar dance` | *(Warrior Only)* Toggles experimental stance dancing. | `/ar dance` |
-| `/ar spell <alias> <on/off>` | *(Warrior & Paladin)* Flips an ability on the active profile. | `/ar spell ms on` |
+| `/ar spell <alias> <on/off>` | *(Warrior & Hunter)* Flips an ability on the active profile. Paladin uses `/ar spell <profile> <alias> <on/off>`. | `/ar spell ms on` |
 
 ### Paladin Seal Aliases
 When using the /ar seal command, you can use short aliases:
@@ -197,6 +205,34 @@ When using the /ar spell command, you can use short aliases:
   * `hs` / `heroicstrike` → `Heroic Strike`, `cleave` → `Cleave`, `sweep` / `sweeping` → `Sweeping Strikes`
   * `dw` / `deathwish` → `Death Wish`, `reck` / `recklessness` → `Recklessness`, `br` / `berserkerrage` → `Berserker Rage`
   * `bld` / `bloodrage` → `Bloodrage`, `sb` / `shieldblock` → `Shield Block`
+
+## Hunter Combat Toggles:
+
+The Hunter module adds quick toggles you can bind to separate keys to adjust the rotation mid-fight without opening the panel:
+
+  * `/ar sting serpent|scorpid|viper|none` : Switches the maintained sting on the active profile.
+
+  * `/ar aoe` : Toggles AoE mode (*Volley* leads, then *Multi-Shot* fills).
+
+  * `/ar cd on|elite|off` : Sets cooldown usage (*Rapid Fire*, *Bestial Wrath*) to always, Elite/Boss only, or fully manual.
+
+  * `/ar spell <alias> on|off` : Flips an individual ability on the active profile (e.g., `/ar spell aimed on`).
+
+### Hunter Spell Aliases
+When using the /ar spell command, you can use short aliases:
+
+  * `mark` / `hm` → `Hunter's Mark`
+  * `arcane` / `as` → `Arcane Shot`, `multi` / `ms` → `Multi-Shot`, `aimed` / `aim` → `Aimed Shot`
+  * `volley` → `Volley`, `aspect` / `hawk` → `Aspect of the Hawk`
+  * `raptor` / `rs` → `Raptor Strike`, `mend` → `Mend Pet`
+
+### Hunter Sting Aliases
+When using the /ar sting command, you can use short aliases:
+
+  * `serpent` / `ss` → `Serpent Sting`
+  * `scorpid` / `sco` → `Scorpid Sting`
+  * `vs` / `viper` → `Viper Sting`
+  * `none` → `Clears slot`
 
 ---
 
