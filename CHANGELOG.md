@@ -4,6 +4,29 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.7.0b — Hunter Module & Spell-ID Debuff Detection
+
+Adds the sixth class module, **Hunter**, and replaces the addon's icon-fragment
+debuff detection with exact **SuperWoW spell-id** matching across every class.
+
+### 🏹 Added: Hunter (Beta)
+- A ranged-priority engine built around **Auto Shot**. Auto Shot is a toggle, so it is kept running rather than recast every press — a press that fires an instant never stops the shot. When Auto Shot is on an action bar it is detected via `IsAutoRepeatAction`; when it is not, an assumed-on flag per target prevents accidentally toggling it off, and leaving combat resets it.
+- **Priority:** Mend Pet when the pet drops below your slider → *Aspect of the Hawk* upkeep → *Hunter's Mark* → the chosen *Sting* → AoE (*Volley* then *Multi-Shot* when `/ar aoe` is on) → melee weave → *Multi-Shot* → *Arcane Shot* → *Aimed Shot* (queued so it never clips). One GCD ability per press, off-GCD layers (pet attack, *Rapid Fire* / *Bestial Wrath*) fire and continue.
+- **One sting slot** (Serpent / Scorpid / Viper / none), switchable from the panel or `/ar sting serpent|scorpid|viper|none`. Stings and *Hunter's Mark* are applied once per target and refreshed only when they fall off.
+- **Melee weave (opt-in):** when the target is in melee range, melee auto-attack is started and *Raptor Strike* is used, so a mob in your face still takes hits instead of standing in the ranged dead zone.
+- **Cooldown automation** (always / elite only / off) for *Rapid Fire* and *Bestial Wrath*, the same three-state model as the other classes, plus four templates: `starter`, `marksmanship`, `beastmastery`, `survival`.
+
+### 🎯 Changed: Exact Debuff Detection (all classes)
+- Target debuffs are now resolved to their exact **spell name** through SuperWoW's spell id (the same id path the player-buff snapshot already used), built once per press into a shared snapshot in the core. The previous **icon-texture fragment** match is kept as an automatic fallback for clients without SuperWoW, so detection degrades to the old behaviour rather than breaking.
+- This makes upkeep exact and rank/locale-proof everywhere: the **Warlock** now tracks *every* curse precisely instead of blind-timer reapplying any curse without a hand-verified texture (the old "Add more textures once confirmed" limitation is gone when SuperWoW is present); the **Paladin** judgement debuffs, **Druid** bleeds/DoTs, and **Warrior** *Sunder Armor* stacks all read from the same exact source.
+- `/ar debug` now prints each target debuff as **name / stacks / texture**, so any remaining unmapped effect is easy to identify.
+
+### 📝 Notes
+- The spell-id path requires SuperWoW (already a hard requirement). Without it, every class falls back to the prior texture-fragment behaviour automatically.
+- Hunter sting/Hunter's Mark icon textures are intentionally not hard-coded: with SuperWoW the exact name is used, and without it a short reapply timer keeps them up.
+
+---
+
 ## v0.6.2b — Druid Defensive Bear
 
 Adds an adaptive **HP-managed defensive form switch** to the Druid, built on

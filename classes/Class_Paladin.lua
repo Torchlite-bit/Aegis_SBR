@@ -43,7 +43,16 @@ local DOWNRANK = {
 local TALENT_HOLY_MIGHT = "Vengeful Strike"
 local TALENT_THREAT     = "Righteous Strike"
 
--- Judgement debuff detection (texture fragment on the TARGET)
+-- Judgement debuff detection. The exact debuff name (resolved through
+-- SuperWoW spell ids) is matched first; the icon fragment is the fallback for
+-- clients without SuperWoW. A seal applies a judgement debuff of a different
+-- name, so the seal -> judgement-name map is kept alongside the textures.
+M.debuffName = {
+    ["Seal of Wisdom"]       = "Judgement of Wisdom",
+    ["Seal of the Crusader"] = "Judgement of the Crusader",
+    ["Seal of Light"]        = "Judgement of Light",
+    ["Seal of Justice"]      = "Judgement of Justice",
+}
 M.debuffTex = {
     ["Seal of Wisdom"]       = "RighteousnessAura",  -- Judgement of Wisdom
     ["Seal of the Crusader"] = "HolySmite",          -- Judgement of the Crusader
@@ -181,13 +190,10 @@ function M:ProfileValidity(cfg)
 end
 
 function M:TargetHasJudgementDebuff(sealName)
+    local nm   = self.debuffName[sealName]
     local frag = self.debuffTex[sealName]
-    if not frag or frag == "" then return false end
-    for i = 1, 40 do
-        local t = UnitDebuff("target", i)
-        if t and string.find(t, frag) then return true end
-    end
-    return false
+    if not nm and (not frag or frag == "") then return false end
+    return self:TargetDebuffUp(nm, frag)
 end
 
 -- ============================================================

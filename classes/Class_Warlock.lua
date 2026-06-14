@@ -147,11 +147,7 @@ end
 
 function M:TargetHasTexture(frag)
     if not frag or frag == "" then return false end
-    for i = 1, 40 do
-        local t = UnitDebuff("target", i)
-        if t and string.find(t, frag) then return true end
-    end
-    return false
+    return self:TargetDebuffUp(nil, frag)
 end
 
 function M:CurseTex(name)
@@ -165,17 +161,20 @@ M.dotThrottle = {}
 --   "up"   the effect is present (or assumed present within its interval)
 --   "cast" a cast was queued this press
 --   "wait" recently cast and still landing, do nothing further this press
--- With a known texture, missing-but-recent counts as "wait" (let it land).
--- Without a texture, recent counts as "up" so the rotation moves on and
--- the effect is simply reapplied once the interval elapses.
+-- Detection prefers the exact spell name (SuperWoW id path), then the icon
+-- fragment. When the effect is detectable (a texture is known, or SuperWoW can
+-- resolve names), missing-but-recent counts as "wait" so the cast is allowed to
+-- land before re-queuing. Otherwise recent counts as "up" and the effect is
+-- simply reapplied on the interval, the old texture-less blind-timer path.
 function M:ApplyDot(spellName, texFrag, interval)
     interval = interval or 3
-    if texFrag and self:TargetHasTexture(texFrag) then return "up" end
+    if self:TargetDebuffUp(spellName, texFrag) then return "up" end
+    local detectable = (texFrag ~= nil) or AutoRota:CanResolveDebuffNames()
     local id = self:TargetId()
     local rec = self.dotThrottle[spellName]
     local now = GetTime()
     if rec and rec.id == id and rec.t and (now - rec.t) <= interval then
-        if texFrag then return "wait" else return "up" end
+        if detectable then return "wait" else return "up" end
     end
     self.dotThrottle[spellName] = { id = id, t = now }
     self:Queue(spellName)
@@ -201,7 +200,11 @@ function M:Rotate(cfg)
     if cfg.useImmolate then table.insert(order, { "Immolate", self.dotTex["Immolate"], 3 }) end
     if cfg.curse ~= "" then
         local tex = self:CurseTex(cfg.curse)
-        table.insert(order, { cfg.curse, tex, tex and 3 or 20 })
+        -- Exact upkeep when the curse is detectable (known icon, or SuperWoW
+        -- name resolution); only a curse we cannot see at all falls back to the
+        -- 20s blind reapply timer.
+        local detectable = tex or AutoRota:CanResolveDebuffNames()
+        table.insert(order, { cfg.curse, tex, detectable and 3 or 20 })
     end
     if cfg.useCorruption then table.insert(order, { "Corruption", self.dotTex["Corruption"], 3 }) end
     if cfg.useSiphonLife then table.insert(order, { "Siphon Life", self.dotTex["Siphon Life"], 3 }) end

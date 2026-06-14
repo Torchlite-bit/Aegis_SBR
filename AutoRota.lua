@@ -15,7 +15,7 @@
 -- ============================================================
 
 AutoRota = {
-    ver = "0.6.2b",
+    ver = "0.7.0b",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -220,6 +220,81 @@ function AutoRota:BuffTime(name)
     return tl or 0, st or 0
 end
 
+-- ============================================================
+-- Target debuff detection. One pass per press over the target's debuffs,
+-- resolving each to its spell NAME through SuperWoW's spell id (the id is
+-- returned by UnitDebuff and mapped with SpellInfo, the same id path the
+-- player buff snapshot uses). Name matching is exact and rank/locale proof,
+-- so it replaces the old icon-fragment guessing. The icon texture is kept in
+-- the snapshot as a fallback for clients without SuperWoW (or ids we cannot
+-- map), so detection degrades to the previous behaviour rather than breaking.
+-- ============================================================
+function AutoRota:SnapshotTargetDebuffs()
+    local byName, list = {}, {}
+    if UnitExists("target") then
+        for i = 1, 40 do
+            -- vanilla returns (texture, applications, dispelType); SuperWoW
+            -- appends the spell id. applications is always the 2nd return, so
+            -- the id is the first NUMERIC value among the trailing returns
+            -- (dispelType is a string or nil and is skipped naturally).
+            local tex, stacks, d3, d4, d5 = UnitDebuff("target", i)
+            if not tex then break end
+            stacks = stacks or 0
+            local id
+            if type(d3) == "number" then id = d3
+            elseif type(d4) == "number" then id = d4
+            elseif type(d5) == "number" then id = d5 end
+            if id and SpellInfo then
+                if id < -1 then id = id + 65536 end
+                local nm = SpellInfo(id)
+                if nm and nm ~= "" and byName[nm] == nil then byName[nm] = stacks end
+            end
+            table.insert(list, { tex = tex, stacks = stacks })
+        end
+    end
+    self.tdebuffSnap = { byName = byName, list = list }
+    self.tdebuffSnapT = GetTime()
+end
+
+-- Returns up (bool), stacks. Tries the exact spell name first (SuperWoW id
+-- path), then the optional icon-fragment fallback. Builds the snapshot on
+-- demand when it is stale, so slash commands and the UI work outside a press.
+function AutoRota:ScanTargetDebuff(name, texFrag)
+    if not (self.tdebuffSnap and self.tdebuffSnapT == GetTime()) then
+        self:SnapshotTargetDebuffs()
+    end
+    local snap = self.tdebuffSnap
+    if name and name ~= "" then
+        local s = snap.byName[name]
+        if s ~= nil then return true, s end
+    end
+    if texFrag and texFrag ~= "" then
+        for i = 1, table.getn(snap.list) do
+            local e = snap.list[i]
+            if e.tex and string.find(e.tex, texFrag) then return true, e.stacks end
+        end
+    end
+    return false, 0
+end
+
+function AutoRota:TargetDebuffUp(name, texFrag)
+    local up = self:ScanTargetDebuff(name, texFrag)
+    return up
+end
+
+function AutoRota:TargetDebuffStacks(name, texFrag)
+    local up, st = self:ScanTargetDebuff(name, texFrag)
+    if up then return st or 0 end
+    return 0
+end
+
+-- True when SuperWoW's id->name path is available, so a debuff without a
+-- known icon fragment can still be tracked exactly (used by modules to decide
+-- between exact upkeep and a blind reapply timer).
+function AutoRota:CanResolveDebuffNames()
+    return SpellInfo ~= nil
+end
+
 function AutoRota:ManaPct()
     local mx = UnitManaMax("player")
     if mx and mx > 0 then return UnitMana("player") / mx * 100 end
@@ -283,11 +358,22 @@ end
 function AutoRota:Debug()
     DEFAULT_CHAT_FRAME:AddMessage("--- AutoRota debug ---", 1, 0.8, 0.0)
     if UnitExists("target") then
-        DEFAULT_CHAT_FRAME:AddMessage("Target debuff textures:", 1, 0.8, 0.0)
+        DEFAULT_CHAT_FRAME:AddMessage("Target debuffs (name / stacks / texture):", 1, 0.8, 0.0)
         local any = false
         for i = 1, 40 do
-            local t = UnitDebuff("target", i)
-            if t then any = true; DEFAULT_CHAT_FRAME:AddMessage("  [" .. i .. "] " .. t) end
+            local t, stacks, d3, d4, d5 = UnitDebuff("target", i)
+            if not t then break end
+            any = true
+            local id
+            if type(d3) == "number" then id = d3
+            elseif type(d4) == "number" then id = d4
+            elseif type(d5) == "number" then id = d5 end
+            local nm = "?"
+            if id and SpellInfo then
+                if id < -1 then id = id + 65536 end
+                nm = SpellInfo(id) or "?"
+            end
+            DEFAULT_CHAT_FRAME:AddMessage("  [" .. i .. "] " .. nm .. " / " .. (stacks or 0) .. " / " .. t)
         end
         if not any then DEFAULT_CHAT_FRAME:AddMessage("  (none)") end
     else
@@ -455,6 +541,7 @@ function AutoRota:RunRotation()
     if self.active.meleeAutoAttack ~= false and not IsAddOnLoaded("SuperCleveRoidMacros") then self:EnsureAutoAttack() end
 
     self:SnapshotBuffs()
+    self:SnapshotTargetDebuffs()
     self.active:Rotate(cfg)
     UIErrorsFrame:Clear()
 end

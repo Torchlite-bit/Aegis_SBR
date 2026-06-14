@@ -173,15 +173,13 @@ end
 
 function M:TargetHasTexture(frag)
     if not frag or frag == "" then return false end
-    for i = 1, 40 do
-        local t = UnitDebuff("target", i)
-        if t and string.find(t, frag) then return true end
-    end
-    return false
+    return self:TargetDebuffUp(nil, frag)
 end
 
+-- The debuffTex keys are the spell names, so they also serve as the exact
+-- name match (SuperWoW id path); the texture stays as the fallback.
 function M:DebuffUp(spellName)
-    return self:TargetHasTexture(self.debuffTex[spellName])
+    return self:TargetDebuffUp(spellName, self.debuffTex[spellName])
 end
 
 -- Affordable and learned. UnitMana("player") reads the active power, so

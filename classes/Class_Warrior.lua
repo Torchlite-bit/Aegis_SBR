@@ -259,13 +259,9 @@ end
 -- Sunder Armor stack tracking on the target
 -- ============================================================
 function M:SunderStacksOnTarget()
-    for i = 1, 40 do
-        local tex, stacks = UnitDebuff("target", i)
-        if tex and string.find(tex, "Sunder") then
-            return stacks or 1
-        end
-    end
-    return 0
+    -- Exact name match first (SuperWoW id path), "Sunder" icon fragment as the
+    -- fallback. The snapshot carries the application count on either path.
+    return self:TargetDebuffStacks("Sunder Armor", "Sunder")
 end
 
 function M:NeedSunder(cfg)

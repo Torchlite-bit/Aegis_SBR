@@ -1,4 +1,4 @@
-# AutoRota (v0.6.2b)
+# AutoRota (v0.7.0b)
 
 AutoRota is a lightweight, robust, Configurable one-button rotation, multi class (Turtle WoW 1.12 / SuperWoW). Unlike standard "monolithic" 1.12 macros or basic script loops, AutoRota uses a modern modular architecture, automated frame-by-frame management, and smart situational logic to execute combat rotations.
 
@@ -11,6 +11,7 @@ Version 0.4 introduces a complete graphical configuration panel and database sys
 - **Multi-Class Architecture:** A unified, lightweight UI shell dynamically swaps control panels and rotation rules based on the class you are currently playing.
 - **Smart Profile Management:** Create, save, rename, and activate multiple custom setup profiles (e.g., *Starter*, *Leveling*, *PvP*, *Raid-DPS*) seamlessly in-game.
 - **Turtle WoW & SuperWoW Optimized:** Fully compatible with custom SuperWoW features such as spell queueing (`QueueSpellByName`), weapon swing timing, and custom custom class expansions (e.g., Rogue's *Noxious Assault*, Paladin's *Holy Strike*).
+- **Exact Debuff Detection:** Target debuffs are resolved to their precise spell name via SuperWoW spell ids (built once per press in the core), so upkeep is rank- and locale-proof for every class. Clients without SuperWoW fall back automatically to icon-texture matching.
 - **Zero-Clipping Logic:** Rotations run on strict single-cast priorities with early returns. The addon ensures exactly one primary action executes per frame to prevent spell clipping or overlapping global cooldowns (GCD).
 - **Lightweight Per-Press Cost:** Spellbook lookups, profile validity, the auto-attack button, and player buffs are all cached or snapshotted (and refreshed automatically when you learn spells or edit profiles), so spamming the macro costs a handful of table reads instead of repeated full spellbook, action-bar, and buff scans.
 - **Minimap Button:** A draggable minimap button opens the configuration panel with a click (right-click runs the rotation once). Hide or show it with `/armap`.
@@ -21,7 +22,7 @@ Version 0.4 introduces a complete graphical configuration panel and database sys
 
 ### 🛡️ Paladin `(Beta)`
 Engineered around an intelligent "Roleless Seal Model" optimized for low-level leveling up to high-tier raiding:
-- **Debuff Upkeep:** Automatically tracks target debuffs via texture fragments. Applies your chosen *Debuff Seal* (e.g., *Seal of the Crusader* or *Seal of Wisdom*) exactly once per mob, then switches immediately to your *Damage Seal*.
+- **Debuff Upkeep:** Automatically tracks target judgement debuffs by exact spell name (SuperWoW spell ids, with texture fallback). Applies your chosen *Debuff Seal* (e.g., *Seal of the Crusader* or *Seal of Wisdom*) exactly once per mob, then switches immediately to your *Damage Seal*.
 - **Low-Level Safety Guard:** Built-in safeguards automatically bypass the Judgement/Debuff loop if your Paladin is under level 10 and hasn't learned `Judgement` yet, keeping your damage seal active as a permanent auto-attack buff.
 - **Hysteresis Resource Management:** Fully configurable independent health and mana safety floors. When triggered, the engine swaps to *Seal of Light* or *Seal of Wisdom* until your resource stabilizes back to your high threshold.
 - **Seal Twisting Support:** If enabled, delays damage judgements until precisely `< 0.4s` before your next white swing to combine weapon procs and judgements simultaneously.
@@ -51,7 +52,7 @@ A roleless, toggle-driven engine covering Arms, Fury, and Protection from early 
 
 Optimized for efficient DoT upkeep and resource management:
 
-* **DoT Priority Engine:** Keeps your enabled damage-over-time effects up in strict priority — *Immolate*, then your chosen Curse, then *Corruption*, then *Siphon Life* — detected by target debuff texture, with a per-target landing memory so cast-time DoTs are never double-queued while still in the air.
+* **DoT Priority Engine:** Keeps your enabled damage-over-time effects up in strict priority — *Immolate*, then your chosen Curse, then *Corruption*, then *Siphon Life* — detected by exact spell name (SuperWoW spell ids, with texture fallback), with a per-target landing memory so cast-time DoTs are never double-queued while still in the air. Every curse is now tracked precisely, not just the ones with a hand-verified icon.
 * **Curse Selection:** One curse per target, switchable from the panel or mid-fight with `/ar curse <alias>` (`coa`, `coe`, `cos`, `cow`, `cor`, `cot`, `cod`, `none`).
 * **Life Tap Integration:** Hysteresis-style management that triggers *Life Tap* only when mana dips below your threshold **and** health is safely above your floor.
 * **Configurable Filler:** When every enabled DoT is up — wand (mana-free), *Shadow Bolt*, or *Drain Life*. A *Nightfall* option fires the free instant *Shadow Bolt* the moment *Shadow Trance* procs.
@@ -70,6 +71,17 @@ Cat (DPS), Bear (Tank), and Balance (Caster/Moonkin) in one form-adaptive engine
 * **Powershifting (opt-in):** In the Shred style, when energy bottoms out below your slider the rotation shifts to caster and straight back into Cat for a fresh energy bar — and **never while Tiger's Fury is active**, so the buff is not thrown away.
 * **Stealth Opener & Upkeep:** Opens from *Prowl* with *Ravage* (auto, if known) or *Pounce*, and keeps *Faerie Fire (Feral)* and *Tiger's Fury* running.
 * **Bear Tanking:** *Faerie Fire* and *Demoralizing Roar* upkeep, *Maul* as the single-target rage dump, *Swipe* leading the priority when AoE mode is toggled (`/ar aoe`), and optional *Enrage* when rage-starved (in combat only — it lowers armor, so it is off by default).
+
+### 🏹 Hunter `(Beta)`
+
+A ranged-priority engine built around **Auto Shot**, with optional melee weave and pet support:
+
+* **Auto Shot Upkeep:** Auto Shot is a toggle, so the rotation keeps it *running* rather than recasting it each press — an instant fired between shots never stops it. Detected via `IsAutoRepeatAction` when it is on a bar, with an assumed-on safeguard per target when it is not, so it is never accidentally toggled off.
+* **Shot Priority:** Mend Pet (below your slider) → *Aspect of the Hawk* upkeep → *Hunter's Mark* → your chosen *Sting* → AoE → *Multi-Shot* → *Arcane Shot* → *Aimed Shot*. Exactly one GCD ability per press; off-GCD cooldowns and pet attack fire and continue. *Aimed Shot* is queued through SuperWoW so it never clips the current shot.
+* **One Sting Slot:** *Serpent*, *Scorpid*, or *Viper* (or none), from the panel or `/ar sting serpent|scorpid|viper|none`. Stings and *Hunter's Mark* are applied once per target and refreshed only when they fall off.
+* **Melee Weave (opt-in):** When the target is in melee range, melee auto-attack starts and *Raptor Strike* is used, so a mob in your face still takes hits instead of standing in the ranged dead zone.
+* **AoE & Cooldowns:** *Volley* leads then *Multi-Shot* fills when AoE mode is on (`/ar aoe`). *Rapid Fire* and *Bestial Wrath* automate on the usual three-state model — always, elite/boss only, or off.
+* **Pet Support:** Sends the pet to attack each press and heals it with *Mend Pet* when it drops below your configured health percent.
 
 ---
 
