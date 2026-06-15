@@ -4,21 +4,12 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
-## v0.8.0b — Hunter Reworked for 1.18.1 & Druid Tank Pull
+## v0.7.1b — Hunter Reworked for 1.18.1 & Druid Tank Pull
 
 Rebuilds the Hunter around **Turtle WoW 1.18.1's** hunter changes (the earlier
 module was vanilla-1.12 based), and sharpens the Druid bear opener and
 auto-attack.
 
-### 🏹 Reworked: Hunter (Turtle 1.18.1)
-- **Two playstyles per profile**, switchable with `/ar mode ranged|melee`:
-  - **Ranged (BM / MM):** Auto Shot backbone with **Steady Shot** (baseline at 20) as the 1:1 weave, plus *Arcane Shot* / *Multi-Shot* instants. All shots are queued through SuperWoW/Nampower so the weave never clips the shot in progress.
-  - **Melee (Survival / BM-melee):** keeps **Aspect of the Wolf** up, starts melee swings, uses **Raptor Strike** on cooldown and **Mongoose Bite** reactively after a dodge, optional *Wing Clip*, and drops **Immolation Trap** on cooldown (1.18.1 allows in-combat traps).
-- **Lock and Load capstone:** *Aimed Shot* is no longer hard-cast on cooldown (it clips Auto Shot). The rotation watches for the **Lock and Load** buff and fires *Aimed Shot* the moment it procs; a per-profile toggle can re-enable cast-on-cooldown.
-- **Aspect management:** keeps Hawk (ranged) / Wolf (melee) up and can **swap to the mana aspect** below a threshold with hysteresis so it does not flap.
-- **Pet:** attack, *Mend Pet* below a slider, **Kill Command** on cooldown (BM), and an optional **Baited Shot** in the window after the pet crits.
-- New panel (mode, sting, ranged shots with the Lock-and-Load guard, AoE/Survival, melee, aspect + mana swap, pet, cooldowns) and templates: `starter`, `beastmastery`, `marksmanship`, `survival`, `melee`. New command `/ar mode`; refreshed spell aliases.
-- **Honesty note:** a few 1.18.1 names are best-effort and gated by `KnowsSpell` (so an unknown name no-ops). The mana aspect tries *Aspect of the Viper* then *Aspect of the Beast*; *Kill Command*, *Baited Shot*, and the *Lock and Load* buff name are the items to confirm with `/ar debug` if they do not fire.
 
 ### 🐾 Improved: Druid bear pull & auto-attack
 - **Faerie Fire (Feral)** is the bear's **ranged opener** — instant, 30yd, threat + damage on the pull before the mob arrives. (Moonfire cannot be cast in bear form, so this is its bear analog.)
@@ -32,12 +23,15 @@ auto-attack.
 Adds the sixth class module, **Hunter**, and replaces the addon's icon-fragment
 debuff detection with exact **SuperWoW spell-id** matching across every class.
 
-### 🏹 Added: Hunter (Beta)
-- A ranged-priority engine built around **Auto Shot**. Auto Shot is a toggle, so it is kept running rather than recast every press — a press that fires an instant never stops the shot. When Auto Shot is on an action bar it is detected via `IsAutoRepeatAction`; when it is not, an assumed-on flag per target prevents accidentally toggling it off, and leaving combat resets it.
-- **Priority:** Mend Pet when the pet drops below your slider → *Aspect of the Hawk* upkeep → *Hunter's Mark* → the chosen *Sting* → AoE (*Volley* then *Multi-Shot* when `/ar aoe` is on) → melee weave → *Multi-Shot* → *Arcane Shot* → *Aimed Shot* (queued so it never clips). One GCD ability per press, off-GCD layers (pet attack, *Rapid Fire* / *Bestial Wrath*) fire and continue.
-- **One sting slot** (Serpent / Scorpid / Viper / none), switchable from the panel or `/ar sting serpent|scorpid|viper|none`. Stings and *Hunter's Mark* are applied once per target and refreshed only when they fall off.
-- **Melee weave (opt-in):** when the target is in melee range, melee auto-attack is started and *Raptor Strike* is used, so a mob in your face still takes hits instead of standing in the ranged dead zone.
-- **Cooldown automation** (always / elite only / off) for *Rapid Fire* and *Bestial Wrath*, the same three-state model as the other classes, plus four templates: `starter`, `marksmanship`, `beastmastery`, `survival`.
+### 🏹 Reworked: Hunter (Turtle 1.18.1)
+- **Two playstyles per profile**, switchable with `/ar mode ranged|melee`:
+  - **Ranged (BM / MM):** Auto Shot backbone with **Steady Shot** (baseline at 20) as the 1:1 weave, plus *Arcane Shot* / *Multi-Shot* instants. All shots are queued through SuperWoW/Nampower so the weave never clips the shot in progress.
+  - **Melee (Survival / BM-melee):** keeps **Aspect of the Wolf** up, starts melee swings, uses **Raptor Strike** on cooldown and **Mongoose Bite** reactively after a dodge, optional *Wing Clip*, and drops **Immolation Trap** on cooldown (1.18.1 allows in-combat traps).
+- **Lock and Load capstone:** *Aimed Shot* is no longer hard-cast on cooldown (it clips Auto Shot). The rotation watches for the **Lock and Load** buff and fires *Aimed Shot* the moment it procs; a per-profile toggle can re-enable cast-on-cooldown.
+- **Aspect management:** keeps Hawk (ranged) / Wolf (melee) up and can **swap to the mana aspect** below a threshold with hysteresis so it does not flap.
+- **Pet:** attack, *Mend Pet* below a slider, **Kill Command** on cooldown (BM), and an optional **Baited Shot** in the window after the pet crits.
+- New panel (mode, sting, ranged shots with the Lock-and-Load guard, AoE/Survival, melee, aspect + mana swap, pet, cooldowns) and templates: `starter`, `beastmastery`, `marksmanship`, `survival`, `melee`. New command `/ar mode`; refreshed spell aliases.
+- **Honesty note:** a few 1.18.1 names are best-effort and gated by `KnowsSpell` (so an unknown name no-ops). The mana aspect tries *Aspect of the Viper* then *Aspect of the Beast*; *Kill Command*, *Baited Shot*, and the *Lock and Load* buff name are the items to confirm with `/ar debug` if they do not fire.
 
 ### 🎯 Changed: Exact Debuff Detection (all classes)
 - Target debuffs are now resolved to their exact **spell name** through SuperWoW's spell id (the same id path the player-buff snapshot already used), built once per press into a shared snapshot in the core. The previous **icon-texture fragment** match is kept as an automatic fallback for clients without SuperWoW, so detection degrades to the old behaviour rather than breaking.
