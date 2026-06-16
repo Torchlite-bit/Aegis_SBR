@@ -15,7 +15,7 @@
 -- ============================================================
 
 AutoRota = {
-    ver = "0.7.3b",
+    ver = "0.7.4b",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -353,6 +353,33 @@ function AutoRota:Throttle(text)
 end
 
 -- ============================================================
+-- Talent dump: prints every talent's exact GetTalentInfo name and rank, tab by
+-- tab. Used to verify the strings the class modules match against (e.g. the
+-- paladin's "Vengeful Strikes"/"Righteous Strikes"), since a one-character
+-- mismatch makes a talent read as rank 0.
+-- ============================================================
+function AutoRota:Talents()
+    DEFAULT_CHAT_FRAME:AddMessage("--- AutoRota talents ---", 1, 0.8, 0.0)
+    local tabs = GetNumTalentTabs and GetNumTalentTabs() or 0
+    if tabs == 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("no talent API available.", 1, 0.5, 0.3)
+        return
+    end
+    for tab = 1, tabs do
+        local tabName = GetTalentTabInfo and GetTalentTabInfo(tab) or ("Tab " .. tab)
+        DEFAULT_CHAT_FRAME:AddMessage(tab .. " - " .. (tabName or ("Tab " .. tab)) .. ":", 1, 0.82, 0.0)
+        for i = 1, GetNumTalents(tab) do
+            local n, _, _, _, rank = GetTalentInfo(tab, i)
+            if n then
+                local r = rank or 0
+                DEFAULT_CHAT_FRAME:AddMessage("    " .. n .. "  (" .. r .. ")",
+                    (r > 0 and 0.6 or 0.7), (r > 0 and 1 or 0.7), (r > 0 and 0.6 or 0.7))
+            end
+        end
+    end
+end
+
+-- ============================================================
 -- Debug dump
 -- ============================================================
 function AutoRota:Debug()
@@ -568,6 +595,7 @@ function AutoRota:EvalCommand(msg)
     if cmd == "check" then self:CmdCheck(); return end
     if cmd == "reset" then self:CmdReset(); return end
     if cmd == "debug" then self:Debug(); return end
+    if cmd == "talents" then self:Talents(); return end
     if cmd == "trace" then
         self.trace = not self.trace
         msgOut("trace " .. (self.trace and "on (per-press log)" or "off"))
@@ -585,7 +613,7 @@ function AutoRota:EvalCommand(msg)
         return
     end
 
-    msgOut("commands: ui, list, use, off, new, del, check, reset, debug, trace (plus class commands).")
+    msgOut("commands: ui, list, use, off, new, del, check, reset, debug, talents, trace (plus class commands).")
 end
 
 -- ============================================================

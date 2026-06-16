@@ -1,4 +1,4 @@
-# AutoRota (v0.7.3b)
+# AutoRota (v0.7.4b)
 
 AutoRota is a lightweight, robust, Configurable one-button rotation, multi class (Turtle WoW 1.12 / SuperWoW). Unlike standard "monolithic" 1.12 macros or basic script loops, AutoRota uses a modern modular architecture, automated frame-by-frame management, and smart situational logic to execute combat rotations.
 
@@ -153,6 +153,7 @@ You can also change profile properties dynamically via chat or macros:
 | `/ar check` | Reports whether the active profile is valid for your learned spells. | `/ar check` |
 | `/ar reset` | Reseeds the profile list from the class templates and deactivates. | `/ar reset` |
 | `/ar debug` | Dumps target debuffs (name / stacks / texture) and your player buffs. | `/ar debug` |
+| `/ar talents` | Dumps every talent tab and talent with its current rank (ranked ones highlighted), to confirm exact talent names. | `/ar talents` |
 | `/ar trace` | Toggles detailed combat logic debugging. | `/ar trace` |
 | `/armap` | Hides or shows the minimap button. | `/armap` |
 | `/ar cp <1-5>` | *(Rogue Only)* Sets min. finishing Combo Points. | `/ar cp 5` |

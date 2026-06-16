@@ -4,6 +4,27 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.7.4b — Talent-Name Fixes, Rogue Rupture & a Talent Dump
+
+A talent-tree cross-reference pass against Turtle 1.18.1, plus the tooling to verify talent and buff names in-game.
+
+### 🛡️ Fixed: Paladin talent names (the strikes now work as designed)
+- The talent scan looked for `"Vengeful Strike"` and `"Righteous Strike"` (singular), but the actual in-game talents are **"Vengeful Strikes"** (Retribution → Holy Strike grants the Holy Might Strength buff) and **"Righteous Strikes"** (Protection → Holy Strike threat), both **plural**. A name mismatch makes `GetTalentInfo` return rank 0, which silently disabled `HolyMightWorthwhile()` — so a Ret paladin's Holy Might maintenance never fired, and Prot lost its talent-based threat lean (only the equipped-shield half still worked).
+- Both constants corrected to the exact in-game strings (verified with the new `/ar talents` dump). Holy Might upkeep (Ret) and the Holy Strike threat lean (Prot) now activate correctly.
+
+### 🗡️ Added: Rogue Rupture upkeep (Taste for Blood)
+- Rupture is now applied as a finisher at your combo-point threshold when it falls off the target, slotted before the Eviscerate dump. Toggle in the panel's Finishers section (on by default in the `assassination` template, off elsewhere), detected on the target by name/texture.
+- Turtle's **Taste for Blood** (Assassination) makes a maintained Rupture a stacking damage buff on top of the bleed; Rupture is baseline, so the talent just sweetens an already-worthwhile DoT and a simple toggle is enough (no talent gate needed).
+
+### 🔍 Added: `/ar talents` debug dump
+- Prints every talent tab and talent with its current rank (ranked talents highlighted), so you can confirm the exact in-game name of any talent — useful for the proc-style talents the rotations read (Paladin's strikes, Warlock's Nightfall) where the string must match `GetTalentInfo` precisely. Sits alongside `/ar debug`.
+
+### 📝 Cross-reference notes (no code change needed)
+- **Hunter:** already correct — the rotation reacts to the real **Lock and Load** proc buff for Aimed Shot and fires **Kill Command** on cooldown (the game gates its after-a-crit requirement). Verify the buff is named "Lock and Load" in-game with `/ar talents`-style checking if a proc ever seems missed.
+- **Druid:** already optimal for **Open Wounds** — the bleed rotation keeps Rake (and Rip) up before Claw, which is exactly what the talent rewards. Feral Adrenaline / Blood Frenzy are defensive or flat passives that don't change button priority.
+
+---
+
 ## v0.7.3b — Warlock Toolkit & Talent-Aware Nightfall
 
 Expands the Warlock from a DoT-and-filler loop into a full survival / execute /
