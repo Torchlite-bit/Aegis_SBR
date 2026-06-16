@@ -4,6 +4,15 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.8.1b — Hunter: Steady Shot weave fix
+
+### 🏹 Fixed: Steady Shot starving Auto Shot
+- Steady Shot was queued on every press with no timing gate. Steady Shot has a cast time and, with Nampower, casting it pauses the Auto Shot swing — so mashing the macro chained Steady Shots back to back and Auto Shot was delayed or never fired.
+- Steady Shot is now **swing-gated**: it fires at most once per ranged-swing cycle (`UnitRangedDamage` gives the interval, ranged haste included) and is locked out for the rest of the cycle, leaving Auto Shot a clear window. This produces the intended 1:1 weave — Steady, gap-with-Auto-Shot, Steady — instead of a Steady chain. The weave timer resets on leaving combat, and `/ar trace` now shows `steady=ready|wait` so you can see the gate working.
+- Instant weaves (Arcane Shot, Multi-Shot) and the Lock-and-Load Aimed Shot reaction are unaffected; only the cast-time Steady Shot needed gating.
+
+---
+
 ## v0.8.0b — Shaman
 
 Adds the **Shaman** as a full mode-adaptive class module — the eighth class — built to the same standards as the rest: usable from level 1, talent-aware, and with its mechanics matched to Turtle 1.18.1. Minor version bump for a new class.
