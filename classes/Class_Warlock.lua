@@ -1,6 +1,6 @@
 -- ============================================================
 -- Class_Warlock  -  warlock module for AutoRota
--- Turtle WoW 1.12 (SuperWoW). DoT priority, configurable.
+-- Turtle WoW 1.12 (SuperWoW). DoT priority, configurable, level 1+.
 -- ============================================================
 -- Model (mirrors the proven leveling macro):
 --  * Keep the enabled damage-over-time effects up in priority order,
@@ -8,9 +8,22 @@
 --  * Detection is by debuff texture on the target. A short per-effect
 --    memory keyed by target GUID prevents re-queuing a cast-time DoT
 --    while it is still landing.
---  * When every enabled DoT is up, fall back to the filler, either the
---    wand, Shadow Bolt or Drain Life.
+--  * Survival / execute / pet tools, each optional:
+--      - Drain Life kicks in as a self-heal channel when your health dips
+--        below a threshold (the drain-tank safety net).
+--      - Health Funnel tops the pet when it drops, as long as you are not
+--        low yourself (it costs your health).
+--      - Shadowburn executes the target under 20% (instant, costs a shard).
+--      - Drain Soul channels in the target's last seconds to bank a Soul
+--        Shard and regen mana (the leveling finisher).
+--  * When nothing above applies, fall back to the filler: the wand, Shadow
+--    Bolt, or Drain Life. The wand filler degrades to Shadow Bolt when no
+--    wand is equipped, so a level 1 warlock (Shadow Bolt only) still nukes.
 --  * Optional Life Tap when mana is low and health is high.
+--  * Nightfall reaction: a free instant Shadow Bolt the moment Shadow Trance
+--    procs. This auto-enables when the Nightfall talent is detected (the one
+--    place a talent-tree read helps here; almost everything else is covered
+--    by KnowsSpell since talented spells appear in the spellbook).
 --  * The pet is sent onto the target when enabled.
 -- Cast-time spells are queued with QueueSpellByName when available, so
 -- the rotation never clips the current cast.
@@ -18,8 +31,13 @@
 
 local M = AutoRota:NewClassModule("WARLOCK")
 M.uiTitle = "Warlock"
-M.uiHeight = 500
+M.uiHeight = 716
 M.meleeAutoAttack = false   -- caster, no white melee swing
+
+-- Talent that turns on the free instant Shadow Bolt proc (Shadow Trance).
+-- It grants no spell, so KnowsSpell cannot see it; reading the talent rank is
+-- the only way to know it is present. Adjust the name here if Turtle renames it.
+local TALENT_NIGHTFALL = "Nightfall"
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
 local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
@@ -46,20 +64,36 @@ M.curseTex = {
 M.FILLERS = { "Shoot", "Shadow Bolt", "Drain Life" }
 
 M.templates = {
-    starter = {  -- matches the leveling macro, valid early
+    starter = {  -- usable from level 1: the filler is the wand, which falls
+                 -- back to Shadow Bolt when no wand is equipped, so a fresh
+                 -- warlock nukes with Shadow Bolt and the DoTs/curse switch
+                 -- themselves on as they are learned. Drain-tank survival and
+                 -- the Drain Soul shard finisher are on for leveling.
         useImmolate = true, curse = "Curse of Agony", useCorruption = true, useSiphonLife = false,
         filler = "Shoot", petAttack = true,
         lifeTap = false, lifeTapMana = 20, lifeTapHpMin = 40,
+        drainLifeSustain = true, drainLifeHp = 35,
+        healthFunnel = true, healthFunnelPetHp = 50, healthFunnelHpMin = 45,
+        useShadowburn = false, shadowburnHp = 20,
+        useDrainSoul = true, drainSoulHp = 20,
     },
     affliction = {
         useImmolate = false, curse = "Curse of Agony", useCorruption = true, useSiphonLife = true,
         filler = "Shadow Bolt", petAttack = true,
         lifeTap = true, lifeTapMana = 25, lifeTapHpMin = 40,
+        drainLifeSustain = true, drainLifeHp = 35,
+        healthFunnel = true, healthFunnelPetHp = 50, healthFunnelHpMin = 45,
+        useShadowburn = false, shadowburnHp = 20,
+        useDrainSoul = false, drainSoulHp = 20,
     },
     destruction = {
         useImmolate = true, curse = "Curse of the Elements", useCorruption = false, useSiphonLife = false,
         filler = "Shadow Bolt", petAttack = true,
         lifeTap = true, lifeTapMana = 25, lifeTapHpMin = 40,
+        drainLifeSustain = false, drainLifeHp = 35,
+        healthFunnel = true, healthFunnelPetHp = 50, healthFunnelHpMin = 45,
+        useShadowburn = true, shadowburnHp = 20,
+        useDrainSoul = false, drainSoulHp = 20,
     },
 }
 
@@ -85,6 +119,15 @@ function M:NormalizeProfile(c)
     if c.lifeTapMana == nil then c.lifeTapMana = 20 end
     if c.lifeTapHpMin == nil then c.lifeTapHpMin = 40 end
     if c.nightfall == nil then c.nightfall = false end
+    if c.drainLifeSustain == nil then c.drainLifeSustain = false end
+    if c.drainLifeHp == nil then c.drainLifeHp = 35 end
+    if c.healthFunnel == nil then c.healthFunnel = false end
+    if c.healthFunnelPetHp == nil then c.healthFunnelPetHp = 50 end
+    if c.healthFunnelHpMin == nil then c.healthFunnelHpMin = 45 end
+    if c.useShadowburn == nil then c.useShadowburn = false end
+    if c.shadowburnHp == nil then c.shadowburnHp = 20 end
+    if c.useDrainSoul == nil then c.useDrainSoul = false end
+    if c.drainSoulHp == nil then c.drainSoulHp = 20 end
     return c
 end
 
@@ -96,16 +139,15 @@ function M:AvailableCursesOf()
     return out
 end
 
+-- Everything in the warlock kit is gated by KnowsSpell in the rotation, and
+-- the filler falls back to Shadow Bolt when the chosen one is not usable yet
+-- (see ResolveFiller), so nothing here is strictly required. A profile is
+-- never flagged just because an ability is not trained yet: a level 1 warlock
+-- whose only damage is Shadow Bolt reads as a clean, usable profile and the
+-- DoTs/curse switch themselves on as they are learned. Mirrors the hunter and
+-- druid, which do not flag not-yet-learned abilities.
 function M:ProfileValidity(cfg)
-    local missing = {}
-    if cfg.useImmolate   and not self:KnowsSpell("Immolate")    then table.insert(missing, "Immolate")    end
-    if cfg.useCorruption and not self:KnowsSpell("Corruption")  then table.insert(missing, "Corruption")  end
-    if cfg.useSiphonLife and not self:KnowsSpell("Siphon Life") then table.insert(missing, "Siphon Life") end
-    if cfg.curse ~= "" and not self:KnowsSpell(cfg.curse)       then table.insert(missing, cfg.curse)      end
-    if cfg.filler ~= "Shoot" and not self:KnowsSpell(cfg.filler) then table.insert(missing, cfg.filler)    end
-    if cfg.lifeTap and not self:KnowsSpell("Life Tap")          then table.insert(missing, "Life Tap")     end
-    if cfg.nightfall and not self:KnowsSpell("Shadow Bolt")     then table.insert(missing, "Shadow Bolt")  end
-    return (table.getn(missing) == 0), missing
+    return true, {}
 end
 
 -- True while the wand is auto-repeating. The last seen auto-repeat slot is
@@ -118,6 +160,30 @@ function M:Wanding()
         if IsAutoRepeatAction(s) then self.wandSlot = s; return true end
     end
     return false
+end
+
+-- A wand is equipped when there is an item in the ranged slot (18); warlocks
+-- can only put wands there. Used so the "Shoot" filler degrades gracefully
+-- when no wand is available (notably at level 1).
+function M:HasWand()
+    return GetInventoryItemLink("player", 18) ~= nil
+end
+
+-- Resolve the configured filler to one that can actually fire right now.
+-- The wand filler needs a wand equipped; a spell filler needs to be learned.
+-- When neither holds, fall back to Shadow Bolt (the warlock's level 1 nuke and
+-- universal filler) so the rotation always has something to cast while
+-- leveling. Returns nil only if even Shadow Bolt is somehow unknown.
+function M:ResolveFiller(cfg)
+    local f = cfg.filler or "Shoot"
+    if f == "Shoot" then
+        if self:HasWand() then return "Shoot" end
+        if self:KnowsSpell("Shadow Bolt") then return "Shadow Bolt" end
+        return nil
+    end
+    if self:KnowsSpell(f) then return f end
+    if self:KnowsSpell("Shadow Bolt") then return "Shadow Bolt" end
+    return nil
 end
 
 -- Queue a known spell. Normally this uses SuperWoW's cast queue so a
@@ -143,6 +209,39 @@ function M:ShadowTranceUp()
         if b and string.find(b, "Spell_Shadow_Twilight") then return true end
     end
     return false
+end
+
+function M:PetHPPct()
+    if not UnitExists("pet") then return 100 end
+    local mx = UnitHealthMax("pet")
+    if mx and mx > 0 then return UnitHealth("pet") / mx * 100 end
+    return 100
+end
+
+-- Talent rank by name, cached and cleared on CHARACTER_POINTS_CHANGED / login
+-- (see the frame at the bottom of this file). Same approach as the paladin.
+-- Used only for talents that grant no spell (so KnowsSpell cannot see them).
+function M:TalentRank(name)
+    if not self.talentCache then self.talentCache = {} end
+    if self.talentCache[name] ~= nil then return self.talentCache[name] end
+    local rank = 0
+    local tabs = GetNumTalentTabs and GetNumTalentTabs() or 0
+    for tab = 1, tabs do
+        for i = 1, GetNumTalents(tab) do
+            local n, _, _, _, r = GetTalentInfo(tab, i)
+            if n == name then rank = r or 0; break end
+        end
+        if rank > 0 then break end
+    end
+    self.talentCache[name] = rank
+    return rank
+end
+
+-- Nightfall (Shadow Trance proc) is a passive talent with no spell of its own,
+-- so we read the talent tree to know it is present and react to the proc
+-- automatically, even if the manual toggle is off.
+function M:HasNightfall()
+    return self:TalentRank(TALENT_NIGHTFALL) > 0
 end
 
 function M:TargetHasTexture(frag)
@@ -188,10 +287,46 @@ end
 function M:Rotate(cfg)
     if cfg.petAttack and UnitExists("pet") then PetAttack() end
 
-    -- Nightfall reaction: when a filler other than Shadow Bolt is chosen,
-    -- spend the free instant Shadow Bolt as soon as Shadow Trance is up.
-    if cfg.nightfall and cfg.filler ~= "Shadow Bolt" and self:KnowsSpell("Shadow Bolt") and self:ShadowTranceUp() then
+    local hp     = self:PlayerHPPct()
+    local thp    = self:TargetHPPct()
+    local nightfall = cfg.nightfall or self:HasNightfall()
+
+    -- P0 Drain Life self-heal: your survival comes first. Channels Drain Life
+    -- when you drop below the threshold (the drain-tank safety net).
+    if cfg.drainLifeSustain and self:KnowsSpell("Drain Life") and hp < (cfg.drainLifeHp or 35) then
+        self:Queue("Drain Life")
+        return
+    end
+
+    -- P1 Nightfall reaction: spend the free instant Shadow Bolt as soon as
+    -- Shadow Trance is up. Auto-on when the Nightfall talent is detected, even
+    -- if the manual toggle is off. Skipped when Shadow Bolt is already the
+    -- filler (it would be cast anyway, instant during the proc).
+    if nightfall and cfg.filler ~= "Shadow Bolt" and self:KnowsSpell("Shadow Bolt") and self:ShadowTranceUp() then
         self:Queue("Shadow Bolt")
+        return
+    end
+
+    -- P2 Health Funnel: keep the pet alive when it drops, but only while you
+    -- can spare the health (it transfers yours to the pet).
+    if cfg.healthFunnel and self:KnowsSpell("Health Funnel") and UnitExists("pet")
+        and self:PetHPPct() < (cfg.healthFunnelPetHp or 50) and hp > (cfg.healthFunnelHpMin or 45) then
+        self:Queue("Health Funnel")
+        return
+    end
+
+    -- P3 Shadowburn execute: instant finish under the execute threshold (costs
+    -- a Soul Shard). On a cooldown, so it is gated by IsReady.
+    if cfg.useShadowburn and self:KnowsSpell("Shadowburn") and self:IsReady("Shadowburn")
+        and thp < (cfg.shadowburnHp or 20) then
+        if self:Queue("Shadowburn") then return end
+    end
+
+    -- P4 Drain Soul finisher: channel in the target's last seconds to bank a
+    -- Soul Shard and regen mana. (If both this and Shadowburn are enabled,
+    -- Shadowburn fires first when ready; this fills otherwise.)
+    if cfg.useDrainSoul and self:KnowsSpell("Drain Soul") and thp < (cfg.drainSoulHp or 20) then
+        self:Queue("Drain Soul")
         return
     end
 
@@ -235,12 +370,12 @@ function M:Rotate(cfg)
         end
     end
 
-    local filler = cfg.filler or "Shoot"
+    local filler = self:ResolveFiller(cfg)
     if filler == "Shoot" then
         -- spammable wand, only start it if it is not already auto repeating
         if self:Wanding() then return end
         CastSpellByName("Shoot")
-    else
+    elseif filler then
         self:Queue(filler)
     end
 end
@@ -262,3 +397,16 @@ function M:HandleCommand(cmd, t)
     end
     return false
 end
+
+-- ============================================================
+-- Talent cache invalidation. Cleared at login and whenever talent points
+-- change, so TalentRank() (used for Nightfall detection) re-reads fresh data
+-- on its next call. Same approach as the paladin.
+-- ============================================================
+local talentFrame = CreateFrame("Frame")
+talentFrame:RegisterEvent("PLAYER_LOGIN")
+talentFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+talentFrame:RegisterEvent("CHARACTER_POINTS_CHANGED")
+talentFrame:SetScript("OnEvent", function()
+    M.talentCache = nil
+end)

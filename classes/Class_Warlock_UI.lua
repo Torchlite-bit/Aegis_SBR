@@ -42,9 +42,35 @@ function M:BuildBody(ui, f)
     self.tapHpSlider = ui:CreateSlider("ltHp", f, "keep HP above", function(v) if ui.buf then ui.buf.lifeTapHpMin = v; ui:Refresh() end end)
     self.tapHpSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -422)
 
+    -- Execute (target low HP)
+    ui:FS(f, "GameFontNormal", "Execute (target low HP)"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -454)
+    self.sburnCB = ui:CreateCheck("useShadowburn", f, "Shadowburn", "Shadowburn", function(on) if ui.buf then ui.buf.useShadowburn = on; ui:Refresh() end end)
+    self.sburnCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -478)
+    self.dsoulCB = ui:CreateCheck("useDrainSoul", f, "Drain Soul (shard)", "Drain Soul", function(on) if ui.buf then ui.buf.useDrainSoul = on; ui:Refresh() end end)
+    self.dsoulCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -478)
+    self.sburnSlider = ui:CreateSlider("sbHp", f, "burn below", function(v) if ui.buf then ui.buf.shadowburnHp = v; ui:Refresh() end end)
+    self.sburnSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -520)
+    self.dsoulSlider = ui:CreateSlider("dsHp", f, "drain below", function(v) if ui.buf then ui.buf.drainSoulHp = v; ui:Refresh() end end)
+    self.dsoulSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -520)
+
+    -- Survival
+    ui:FS(f, "GameFontNormal", "Survival"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -556)
+    self.drainCB = ui:CreateCheck("drainLifeSustain", f, "Drain Life when low", "Drain Life", function(on) if ui.buf then ui.buf.drainLifeSustain = on; ui:Refresh() end end)
+    self.drainCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -580)
+    self.funnelCB = ui:CreateCheck("healthFunnel", f, "Health Funnel pet", "Health Funnel", function(on) if ui.buf then ui.buf.healthFunnel = on; ui:Refresh() end end)
+    self.funnelCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -580)
+    self.drainSlider = ui:CreateSlider("dlHp", f, "heal below", function(v) if ui.buf then ui.buf.drainLifeHp = v; ui:Refresh() end end)
+    self.drainSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -622)
+    self.funnelPetSlider = ui:CreateSlider("hfPet", f, "pet below", function(v) if ui.buf then ui.buf.healthFunnelPetHp = v; ui:Refresh() end end)
+    self.funnelPetSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -622)
+    self.funnelSelfSlider = ui:CreateSlider("hfSelf", f, "keep your HP above", function(v) if ui.buf then ui.buf.healthFunnelHpMin = v; ui:Refresh() end end)
+    self.funnelSelfSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -664)
+
     ui:Divider(f, -134)   -- above DoT
     ui:Divider(f, -236)   -- above Filler and pet
     ui:Divider(f, -344)   -- above Mana
+    ui:Divider(f, -446)   -- above Execute
+    ui:Divider(f, -548)   -- above Survival
 
     ui:Tip(self.immoCB.cb, "Immolate", "Direct fire damage plus a fire damage over time.", "Kept up first in the priority.")
     ui:Tip(self.corrCB.cb, "Corruption", "Shadow damage over time, applied after the curse.")
@@ -52,10 +78,19 @@ function M:BuildBody(ui, f)
     ui:Tip(self.curseDD, "Curse", "One curse per target. Curse of Agony has exact upkeep,", "others are reapplied on a timer for now.")
     ui:Tip(self.fillerDD, "Filler", "Used when every enabled DoT is up.", "Wand conserves mana, Shadow Bolt and Drain Life spend it.")
     ui:Tip(self.petCB.cb, "Pet attack", "Send the active pet onto your target.")
-    ui:Tip(self.nightfallCB.cb, "Shadow Bolt on Shadow Trance", "When the Nightfall proc lights up, fire the free instant Shadow Bolt.", "Only used when the filler is not already Shadow Bolt.")
+    ui:Tip(self.nightfallCB.cb, "Shadow Bolt on Shadow Trance", "When the Nightfall proc lights up, fire the free instant Shadow Bolt.", "Auto-enabled when the Nightfall talent is detected; this toggle forces it on otherwise. Only used when the filler is not already Shadow Bolt.")
     ui:Tip(self.tapCB.cb, "Life Tap", "Convert health to mana when mana is low and health is high.")
     ui:Tip(self.tapManaSlider, "Tap below mana", "Life Tap only when mana is under this value.")
     ui:Tip(self.tapHpSlider, "Keep HP above", "Life Tap only while health stays over this value.")
+    ui:Tip(self.sburnCB.cb, "Shadowburn", "Instant execute under the threshold below. Costs a Soul Shard and has a cooldown.", "Burst finish; if you want the shard instead, use Drain Soul.")
+    ui:Tip(self.dsoulCB.cb, "Drain Soul", "Channel in the target's last seconds to bank a Soul Shard and regen mana.", "If both this and Shadowburn are on, Shadowburn fires first when ready.")
+    ui:Tip(self.sburnSlider, "Burn below", "Target health percent under which Shadowburn fires.")
+    ui:Tip(self.dsoulSlider, "Drain below", "Target health percent under which Drain Soul channels.")
+    ui:Tip(self.drainCB.cb, "Drain Life when low", "Self-heal channel when your health dips below the value — the drain-tank safety net.")
+    ui:Tip(self.funnelCB.cb, "Health Funnel pet", "Top the pet up when it drops, as long as your own health is safe (it transfers yours to the pet).")
+    ui:Tip(self.drainSlider, "Heal below", "Your health percent under which Drain Life is channeled.")
+    ui:Tip(self.funnelPetSlider, "Pet below", "Pet health percent under which Health Funnel is cast.")
+    ui:Tip(self.funnelSelfSlider, "Keep your HP above", "Never Health Funnel while your own health is under this value.")
 end
 
 -- ============================================================
@@ -101,6 +136,25 @@ function M:RefreshBody(ui, buf)
         self.tapManaSlider:EnableMouse(false); self.tapManaSlider:SetAlpha(0.35)
         self.tapHpSlider:EnableMouse(false);   self.tapHpSlider:SetAlpha(0.35)
     end
+
+    -- Execute
+    ui:BindCheck(self.sburnCB, buf.useShadowburn)
+    ui:BindCheck(self.dsoulCB, buf.useDrainSoul)
+    self.sburnSlider:SetValue(buf.shadowburnHp or 0); self.sburnSlider.valText:SetText((buf.shadowburnHp or 0) .. "%")
+    self.dsoulSlider:SetValue(buf.drainSoulHp or 0);  self.dsoulSlider.valText:SetText((buf.drainSoulHp or 0) .. "%")
+    ui:SliderEnable(self.sburnSlider, self:KnowsSpell("Shadowburn") and buf.useShadowburn)
+    ui:SliderEnable(self.dsoulSlider, self:KnowsSpell("Drain Soul") and buf.useDrainSoul)
+
+    -- Survival
+    ui:BindCheck(self.drainCB, buf.drainLifeSustain)
+    ui:BindCheck(self.funnelCB, buf.healthFunnel)
+    self.drainSlider:SetValue(buf.drainLifeHp or 0);       self.drainSlider.valText:SetText((buf.drainLifeHp or 0) .. "%")
+    self.funnelPetSlider:SetValue(buf.healthFunnelPetHp or 0); self.funnelPetSlider.valText:SetText((buf.healthFunnelPetHp or 0) .. "%")
+    self.funnelSelfSlider:SetValue(buf.healthFunnelHpMin or 0); self.funnelSelfSlider.valText:SetText((buf.healthFunnelHpMin or 0) .. "%")
+    ui:SliderEnable(self.drainSlider, self:KnowsSpell("Drain Life") and buf.drainLifeSustain)
+    local funnelOn = self:KnowsSpell("Health Funnel") and buf.healthFunnel
+    ui:SliderEnable(self.funnelPetSlider, funnelOn)
+    ui:SliderEnable(self.funnelSelfSlider, funnelOn)
 end
 
 -- Open the shared window for this class.
