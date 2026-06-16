@@ -35,15 +35,15 @@ M.BUILDERS = { "Sinister Strike", "Backstab", "Hemorrhage", "Noxious Assault", "
 
 M.templates = {
     starter = {  -- valid for any rogue, only Slice and Dice upkeep
-        builder = "", useSnd = true, useEnvenom = false, useRiposte = false,
+        builder = "", useSnd = true, useEnvenom = false, useRupture = false, useRiposte = false,
         cpFinish = 4, popCDs = false, autoCDElite = false,
     },
     assassination = {
-        builder = "", useSnd = true, useEnvenom = true, useRiposte = true,
+        builder = "", useSnd = true, useEnvenom = true, useRupture = true, useRiposte = true,
         cpFinish = 4, popCDs = false, autoCDElite = false,
     },
     combat = {
-        builder = "", useSnd = true, useEnvenom = false, useRiposte = false,
+        builder = "", useSnd = true, useEnvenom = false, useRupture = false, useRiposte = false,
         cpFinish = 5, popCDs = false, autoCDElite = true,
     },
 }
@@ -62,6 +62,7 @@ function M:NormalizeProfile(c)
     if c.builder == nil then c.builder = "" end
     if c.useSnd == nil then c.useSnd = true end
     if c.useEnvenom == nil then c.useEnvenom = false end
+    if c.useRupture == nil then c.useRupture = false end
     if c.useRiposte == nil then c.useRiposte = false end
     if c.cpFinish == nil then c.cpFinish = 4 end
     if c.popCDs == nil then c.popCDs = false end
@@ -129,6 +130,7 @@ function M:Rotate(cfg)
     end
     local useSnd = cfg.useSnd and self:KnowsSpell("Slice and Dice")
     local useEnv = cfg.useEnvenom and self:KnowsSpell("Envenom")
+    local useRup = cfg.useRupture and self:KnowsSpell("Rupture")
     local cpEvis = cfg.cpFinish or 4
 
     local cp = GetComboPoints("player", "target")
@@ -139,6 +141,7 @@ function M:Rotate(cfg)
             .. " build=" .. builder
             .. " snd=" .. (useSnd and (self:SelfBuffUp("Slice and Dice", "SliceDice") and "up" or "down") or "-")
             .. " env=" .. (useEnv and (self:SelfBuffUp("Envenom", "Sword_31") and "up" or "down") or "-")
+            .. " rup=" .. (useRup and (self:TargetDebuffUp("Rupture", "Ability_Rogue_Rupture") and "up" or "down") or "-")
             .. " rip=" .. ((cfg.useRiposte and now < (self.riposteExpiry or 0)) and "Y" or "N")
             .. " elite=" .. (isElite and "Y" or "N"))
     end
@@ -189,13 +192,22 @@ function M:Rotate(cfg)
         end
     end
 
-    -- P5 buffs healthy, enough combo points, Eviscerate
+    -- P5 Rupture upkeep: a finisher that applies the bleed and, with the
+    -- Assassination talent Taste for Blood, a stacking damage buff. Refreshed at
+    -- the finisher threshold when it is missing on the target, before dumping
+    -- the rest into Eviscerate. Rupture is baseline (no talent required); the
+    -- talent just sweetens an already-worthwhile DoT, so the toggle is enough.
+    if useRup and cp >= cpEvis and not self:TargetDebuffUp("Rupture", "Ability_Rogue_Rupture") then
+        if self:Cast("Rupture") then return end
+    end
+
+    -- P6 buffs healthy, enough combo points, Eviscerate
     if cp >= cpEvis then
         self:Cast("Eviscerate")
         return
     end
 
-    -- P6 otherwise build
+    -- P7 otherwise build
     self:Cast(builder)
 end
 

@@ -36,12 +36,16 @@ local DOWNRANK = {
     ["Holy Strike"]     = { 12, 25, 38, 51, 64, 75, 90 },   -- R1..R7 ceilings, else max
 }
 
--- Talents that change what the strikes do (Turtle WoW). Vengeful Strike is
--- what makes Holy Strike apply the Holy Might buff at all; Righteous Strike
--- makes Holy Strike a high-threat tanking tool. We read their ranks so the
--- rotation never maintains a buff the player cannot actually get.
-local TALENT_HOLY_MIGHT = "Vengeful Strike"
-local TALENT_THREAT     = "Righteous Strike"
+-- Talents that change what the strikes do (Turtle WoW). Exact talent names as
+-- they appear in GetTalentInfo (verified via /ar talents):
+--  * "Vengeful Strikes" (Retribution) is what makes Holy Strike apply the Holy
+--    Might Strength buff at all.
+--  * "Righteous Strikes" (Protection) makes Holy Strike a high-threat tank tool.
+-- TalentRank matches the name exactly, so the trailing "s" matters: a mismatch
+-- silently reads rank 0 and the rotation would never maintain a buff the player
+-- in fact has. We read their ranks so it never maintains one they cannot get.
+local TALENT_HOLY_MIGHT = "Vengeful Strikes"
+local TALENT_THREAT     = "Righteous Strikes"
 
 -- Judgement debuff detection. The exact debuff name (resolved through
 -- SuperWoW spell ids) is matched first; the icon fragment is the fallback for
