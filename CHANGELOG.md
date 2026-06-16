@@ -4,6 +4,18 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.8.2b — Hunter: frame-accurate Steady Shot weave (SuperWoW)
+
+Builds on 0.8.1b's swing gate with exact timing from SuperWoW (a hard requirement for this addon anyway).
+
+### 🏹 Improved: precise Auto Shot weave via UNIT_CASTEVENT
+- 0.8.1b gated Steady Shot on the ranged-swing *interval* (`UnitRangedDamage`), which kept Auto Shot firing but couldn't see the actual swing phase. This release hooks SuperWoW's **UNIT_CASTEVENT** to record the exact moment each Auto Shot launches and Steady Shot's real, haste-adjusted cast time.
+- Steady Shot now weaves only when it will **finish before the next Auto Shot's windup** (with a margin for the ~0.5s shot windup plus latency) — frame-accurate: weave immediately after a shot lands, then hold for the next one. No clipping, no starvation, maximum Steady uptime in the gap.
+- Robust fallback: if no Auto Shot event has been seen yet (or SuperWoW is somehow absent), it falls back to the 0.8.1b interval throttle automatically. `/ar trace` now shows `steady=ready/precise` or `steady=wait/interval` so you can confirm which path is live.
+- Implementation detail: events are filtered by the player's GUID before the spell-name lookup, so it stays cheap even with many units casting nearby; Steady's cast time is measured live from the event rather than assumed.
+
+---
+
 ## v0.8.1b — Hunter: Steady Shot weave fix
 
 ### 🏹 Fixed: Steady Shot starving Auto Shot
