@@ -1,4 +1,4 @@
-# AutoRota (v0.8.0b)
+# AutoRota (v0.8.1b)
 
 AutoRota is a lightweight, robust, Configurable one-button rotation, multi class (Turtle WoW 1.12 / SuperWoW). Unlike standard "monolithic" 1.12 macros or basic script loops, AutoRota uses a modern modular architecture, automated frame-by-frame management, and smart situational logic to execute combat rotations.
 
