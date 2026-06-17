@@ -83,6 +83,7 @@ M.spellAlias = {
     raptor = "useRaptorStrike", rs = "useRaptorStrike",
     mongoose = "useMongooseBite", mb = "useMongooseBite",
     wingclip = "useWingClip", wc = "useWingClip",
+    lacerate = "useLacerate", lac = "useLacerate",
     immolation = "useImmolationTrap", trap = "useImmolationTrap",
     aspect = "useAspect",
     killcommand = "useKillCommand", kc = "useKillCommand",
@@ -141,7 +142,7 @@ M.templates = {
         useSteadyShot = true, useArcaneShot = true, useMultiShot = true,
         useAimedShot = false, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = true,
-        useRaptorStrike = true, useMongooseBite = true, useWingClip = false,
+        useRaptorStrike = true, useMongooseBite = true, useWingClip = false, useLacerate = true,
         useAspect = true, rangedAspect = "Aspect of the Hawk",
         useManaAspect = true, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 50,
@@ -154,7 +155,7 @@ M.templates = {
         useSteadyShot = false, useArcaneShot = false, useMultiShot = false,
         useAimedShot = false, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = false,
-        useRaptorStrike = true, useMongooseBite = true, useWingClip = false,
+        useRaptorStrike = true, useMongooseBite = true, useWingClip = false, useLacerate = true,
         useAspect = true, rangedAspect = "Aspect of the Hawk",
         useManaAspect = false, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 60,
@@ -174,7 +175,7 @@ function M:NormalizeProfile(c)
         useAspect = true, rangedAspect = "Aspect of the Hawk",
         useManaAspect = false, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 50,
-        petTaunt = false,
+        petTaunt = false, useLacerate = false,
         useKillCommand = false, useBaitedShot = false,
         popCDs = false, autoCDElite = false,
     }
@@ -277,25 +278,28 @@ function M:RangedSpeed()
 end
 
 -- Steady Shot weave gate. Steady Shot has a cast time and, with Nampower,
--- casting it pauses the Auto Shot swing; firing it on every press chains Steady
--- Shots back to back and starves Auto Shot entirely.
+-- casting it pauses the Auto Shot swing; firing it every press chains Steady
+-- Shots and starves Auto Shot. So we weave exactly one Steady per swing, in the
+-- window right after a shot, so it finishes before the next shot fires.
 --
--- Precise path (SuperWoW): the UNIT_CASTEVENT hook records the exact moment each
--- Auto Shot launches (self.lastAutoShot) and Steady Shot's real, haste-adjusted
--- cast time (self.steadyCastDur). We then weave Steady only when it will finish,
--- with margin for the shot windup, before the next Auto Shot launches. This is
--- frame-accurate: weave right after a shot, then hold for the next one.
---
--- Fallback path (no event seen yet, e.g. SuperWoW absent): a self-throttle that
--- lets one Steady Shot through per ranged-swing cycle. steadyT is reset on
--- leaving combat.
+-- Precise path (SuperWoW): use the real last-shot time, but ONLY while it is
+-- fresh. If it goes stale (Auto Shot paused, or a shot event was missed) we must
+-- NOT keep computing a negative window - that locked the gate to "wait" forever,
+-- which is why Steady stopped weaving. Stale -> fall back to the interval gate.
+-- The post-shot room is clamped so even a fast ranged weapon still gets a weave.
 function M:SteadyReady()
-    if self.lastAutoShot and self.lastAutoShot > 0 then
+    local now   = GetTime()
+    local speed = self:RangedSpeed()
+    if self.lastAutoShot and self.lastAutoShot > 0 and (now - self.lastAutoShot) < (speed + 1.0) then
+        -- One Steady per shot cycle: if we already wove since the last Auto Shot
+        -- (steadyT is newer than lastAutoShot), hold until the next shot fires.
+        if (self.steadyT or 0) >= self.lastAutoShot then return false end
         local cast = (self.steadyCastDur and self.steadyCastDur > 0) and self.steadyCastDur or STEADY_CAST_DEFAULT
-        local nextAuto = self.lastAutoShot + self:RangedSpeed()
-        return (nextAuto - GetTime()) >= (cast + STEADY_BUFFER)
+        local room = speed - cast - STEADY_BUFFER
+        if room < 0.3 then room = 0.3 end           -- always allow a brief post-shot weave
+        return (now - self.lastAutoShot) <= room     -- only early in the swing window
     end
-    return (GetTime() - (self.steadyT or 0)) >= self:RangedSpeed()
+    return (now - (self.steadyT or 0)) >= speed       -- stale/unknown: one per swing
 end
 
 -- Which weave path is live, for the trace line.
@@ -392,21 +396,18 @@ function M:UpdateAspectState(cfg)
 end
 
 -- Keep the right aspect up. Returns true if an aspect was cast this press.
+-- The mana aspect (Viper) swap takes priority in EITHER stance when low, so a
+-- mana-heavy melee hunter recovers the same way a ranged one does; otherwise the
+-- combat aspect for the current state is maintained (Wolf melee / Hawk ranged).
 function M:EnsureAspect(cfg, melee)
     if not cfg.useAspect then return false end
-    if melee then
-        if self:KnowsSpell("Aspect of the Wolf") and not self:HasBuff("Aspect of the Wolf") then
-            return self:Cast("Aspect of the Wolf")
-        end
-        return false
-    end
     if self.manaAspectActive then
         local ma = self:KnownManaAspect()
         if ma and not self:HasBuff(ma) then return self:Cast(ma) end
         return false
     end
-    local ra = cfg.rangedAspect or "Aspect of the Hawk"
-    if self:KnowsSpell(ra) and not self:HasBuff(ra) then return self:Cast(ra) end
+    local want = melee and "Aspect of the Wolf" or (cfg.rangedAspect or "Aspect of the Hawk")
+    if self:KnowsSpell(want) and not self:HasBuff(want) then return self:Cast(want) end
     return false
 end
 
@@ -419,6 +420,7 @@ function M:Rotate(cfg)
     local isElite  = (cls == "worldboss" or cls == "elite" or cls == "rareelite")
     local aoe      = cfg.aoeMode and true or false
     local inCombat = UnitAffectingCombat("player")
+    local inMeleeNow = self:InMeleeRange()   -- actual range to target, independent of mode
     -- Effective range state. "auto" picks ranged vs melee by distance each press
     -- (so abilities only fire in the matching state); otherwise honor the choice.
     local melee
@@ -503,7 +505,14 @@ function M:Rotate(cfg)
         if self:MaintainDebuff("Hunter's Mark", 110) then return end
     end
 
-    -- 2d. Immolation Trap on cooldown (Survival, usable in combat on 1.18.1).
+    -- 2d. Sting upkeep. A sting is a ranged shot, so it is gated on ACTUAL range,
+    --     not mode: it lands on the pull (target still out of melee) - giving even
+    --     a melee hunter the Serpent Sting opener - and stops once you close in.
+    if cfg.sting ~= "" and not inMeleeNow then
+        if self:MaintainDebuff(cfg.sting, STING_DUR[cfg.sting] or 12) then return end
+    end
+
+    -- 2e. Immolation Trap on cooldown (Survival, usable in combat on 1.18.1).
     if cfg.useImmolationTrap and self:KnowsSpell("Immolation Trap") and self:IsReady("Immolation Trap") then
         if self:Cast("Immolation Trap") then return end
     end
@@ -517,6 +526,10 @@ function M:Rotate(cfg)
             and now < (self.dodgeUntil or 0) and self:IsReady("Mongoose Bite") then
             self.dodgeUntil = 0
             if self:Cast("Mongoose Bite") then return end
+        end
+        -- Lacerate bleed upkeep (Turtle Survival): apply/refresh when it falls off.
+        if cfg.useLacerate and self:KnowsSpell("Lacerate") then
+            if self:MaintainDebuff("Lacerate", 15) then return end
         end
         -- Raptor Strike on cooldown (queues on the next melee swing).
         if cfg.useRaptorStrike and self:KnowsSpell("Raptor Strike") and self:IsReady("Raptor Strike") then
@@ -532,12 +545,6 @@ function M:Rotate(cfg)
     -- ----------------------------------------------------------------
     -- 3b. Ranged branch
     -- ----------------------------------------------------------------
-    -- Sting upkeep (the one configured slot). A sting is a ranged shot, so it is
-    -- maintained here, in the ranged branch only - never woven mid-melee.
-    if cfg.sting ~= "" then
-        if self:MaintainDebuff(cfg.sting, STING_DUR[cfg.sting] or 12) then return end
-    end
-
     -- AoE leads with Volley then Multi-Shot when toggled on.
     if aoe then
         if cfg.useVolley and self:KnowsSpell("Volley") and self:IsReady("Volley") then
@@ -548,12 +555,20 @@ function M:Rotate(cfg)
         end
     end
 
-    -- Multi-Shot on cooldown.
+    -- Steady Shot is the PRIMARY weave: tried first, but gated to the window right
+    -- after each Auto Shot. When the gate is closed (mid-swing) or Steady is
+    -- unlearned, the instant shots below fill the gap instead - so the cast-time
+    -- Steady never clips Auto Shot, yet still goes out once per swing.
+    if cfg.useSteadyShot and self:KnowsSpell("Steady Shot") and self:SteadyReady() then
+        if self:Queue("Steady Shot") then self.steadyT = GetTime(); return end
+    end
+
+    -- Multi-Shot on cooldown (instant filler).
     if cfg.useMultiShot and self:KnowsSpell("Multi-Shot") and self:IsReady("Multi-Shot") then
         if self:Queue("Multi-Shot") then return end
     end
 
-    -- Arcane Shot on cooldown (instant weave).
+    -- Arcane Shot on cooldown (instant filler).
     if cfg.useArcaneShot and self:KnowsSpell("Arcane Shot") and self:IsReady("Arcane Shot") then
         if self:Queue("Arcane Shot") then return end
     end
@@ -563,12 +578,6 @@ function M:Rotate(cfg)
     if cfg.useAimedShot and not cfg.aimedOnlyOnProc
         and self:KnowsSpell("Aimed Shot") and self:IsReady("Aimed Shot") then
         if self:Queue("Aimed Shot") then return end
-    end
-
-    -- Steady Shot, the 1:1 weave after each Auto Shot. Swing-gated so it never
-    -- chains back to back and clips/starves Auto Shot when the macro is mashed.
-    if cfg.useSteadyShot and self:KnowsSpell("Steady Shot") and self:SteadyReady() then
-        if self:Queue("Steady Shot") then self.steadyT = GetTime(); return end
     end
 end
 
