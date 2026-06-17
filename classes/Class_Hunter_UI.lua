@@ -54,46 +54,48 @@ function M:BuildBody(ui, f)
     self.wingCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -486)
     self.lacerateCB = ui:CreateCheck("useLacerate", f, "Lacerate bleed", "Lacerate", function(on) if ui.buf then ui.buf.useLacerate = on; ui:Refresh() end end)
     self.lacerateCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -486)
+    self.carveCB = ui:CreateCheck("useCarve", f, "Carve (melee AoE, with /ar aoe)", "Carve", function(on) if ui.buf then ui.buf.useCarve = on; ui:Refresh() end end)
+    self.carveCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -510)
 
     -- Aspect
-    ui:FS(f, "GameFontNormal", "Aspect"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -520)
+    ui:FS(f, "GameFontNormal", "Aspect"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -546)
     self.aspectCB = ui:CreateCheck("useAspect", f, "Keep combat aspect up (Hawk / Wolf)", nil, function(on) if ui.buf then ui.buf.useAspect = on; ui:Refresh() end end)
-    self.aspectCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -542)
+    self.aspectCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -568)
     self.manaAspCB = ui:CreateCheck("useManaAspect", f, "Swap to mana aspect when low", nil, function(on) if ui.buf then ui.buf.useManaAspect = on; ui:Refresh() end end)
-    self.manaAspCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -566)
+    self.manaAspCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -592)
     self.manaSlider = ui:CreateSlider("manaAspectPct", f, "swap below", function(v) if ui.buf then ui.buf.manaAspectPct = v; ui:Refresh() end end)
-    self.manaSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 210, -566)
+    self.manaSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 210, -592)
 
     -- Pet
-    ui:FS(f, "GameFontNormal", "Pet"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -600)
+    ui:FS(f, "GameFontNormal", "Pet"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -626)
     self.petCB = ui:CreateCheck("petAttack", f, "Send pet to attack", nil, function(on) if ui.buf then ui.buf.petAttack = on; ui:Refresh() end end)
-    self.petCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -622)
+    self.petCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -648)
     self.mendCB = ui:CreateCheck("useMendPet", f, "Mend Pet when hurt", "Mend Pet", function(on) if ui.buf then ui.buf.useMendPet = on; ui:Refresh() end end)
-    self.mendCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -622)
+    self.mendCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -648)
     self.mendSlider = ui:CreateSlider("mendPetHp", f, "Mend Pet below", function(v) if ui.buf then ui.buf.mendPetHp = v; ui:Refresh() end end)
-    self.mendSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -648)
+    self.mendSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -674)
     self.tauntCB = ui:CreateCheck("petTaunt", f, "Pet taunts when it loses aggro", "Growl", function(on) if ui.buf then ui.buf.petTaunt = on; ui:Refresh() end end)
-    self.tauntCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -648)
+    self.tauntCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -674)
     self.kcCB = ui:CreateCheck("useKillCommand", f, "Kill Command on cd", "Kill Command", function(on) if ui.buf then ui.buf.useKillCommand = on; ui:Refresh() end end)
-    self.kcCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -672)
+    self.kcCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -698)
     self.baitedCB = ui:CreateCheck("useBaitedShot", f, "Baited Shot on pet crit", "Baited Shot", function(on) if ui.buf then ui.buf.useBaitedShot = on; ui:Refresh() end end)
-    self.baitedCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -672)
+    self.baitedCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -698)
 
     -- Cooldowns
-    ui:FS(f, "GameFontNormal", "Cooldowns"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -706)
+    ui:FS(f, "GameFontNormal", "Cooldowns"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -732)
     self.cdCB = ui:CreateCheck("popCDs", f, "Always pop cooldowns", nil, function(on) if ui.buf then ui.buf.popCDs = on; ui:Refresh() end end)
-    self.cdCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -728)
+    self.cdCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -754)
     self.cdEliteCB = ui:CreateCheck("autoCDElite", f, "Auto on elite and boss", nil, function(on) if ui.buf then ui.buf.autoCDElite = on; ui:Refresh() end end)
-    self.cdEliteCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -728)
+    self.cdEliteCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -754)
 
     ui:Divider(f, -134)   -- above Playstyle
     ui:Divider(f, -192)   -- above Targeting
     ui:Divider(f, -272)   -- above Ranged Shots
     ui:Divider(f, -376)   -- above AoE & Survival
     ui:Divider(f, -432)   -- above Melee
-    ui:Divider(f, -512)   -- above Aspect
-    ui:Divider(f, -592)   -- above Pet
-    ui:Divider(f, -698)   -- above Cooldowns
+    ui:Divider(f, -538)   -- above Aspect
+    ui:Divider(f, -618)   -- above Pet
+    ui:Divider(f, -724)   -- above Cooldowns
 
     ui:Tip(self.modeDD, "Playstyle", "Auto picks ranged vs melee by your distance to the target each press, so shots fire at range and strikes fire in melee. Ranged runs the Auto Shot + Steady Shot weave (BM/MM). Melee runs Aspect of the Wolf, melee swings, Raptor Strike and Mongoose Bite (Survival / BM-melee).", "Switch live with /ar mode ranged|melee|auto.")
     ui:Tip(self.tauntCB.cb, "Smart Pet Taunt", "When the mob peels off your pet onto you, sends the pet's Growl to grab it back (throttled). Off by default; leave it off for melee-weave builds where you want aggro.")
@@ -157,6 +159,7 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.mongooseCB, buf.useMongooseBite)
     ui:BindCheck(self.wingCB, buf.useWingClip)
     ui:BindCheck(self.lacerateCB, buf.useLacerate)
+    ui:BindCheck(self.carveCB, buf.useCarve)
     ui:BindCheck(self.aspectCB, buf.useAspect)
     ui:BindCheck(self.manaAspCB, buf.useManaAspect)
     ui:BindCheck(self.petCB, buf.petAttack)

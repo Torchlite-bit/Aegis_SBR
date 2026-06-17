@@ -28,7 +28,7 @@
 
 local M = AutoRota:NewClassModule("HUNTER")
 M.uiTitle = "Hunter"
-M.uiHeight = 800
+M.uiHeight = 826
 M.meleeAutoAttack = false   -- managed here: Auto Shot (ranged) or Attack (melee)
 M.autoAcquireTarget = false -- a ranged class should not auto-pull random mobs; pick targets
 
@@ -84,6 +84,7 @@ M.spellAlias = {
     mongoose = "useMongooseBite", mb = "useMongooseBite",
     wingclip = "useWingClip", wc = "useWingClip",
     lacerate = "useLacerate", lac = "useLacerate",
+    carve = "useCarve",
     immolation = "useImmolationTrap", trap = "useImmolationTrap",
     aspect = "useAspect",
     killcommand = "useKillCommand", kc = "useKillCommand",
@@ -142,7 +143,7 @@ M.templates = {
         useSteadyShot = true, useArcaneShot = true, useMultiShot = true,
         useAimedShot = false, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = true,
-        useRaptorStrike = true, useMongooseBite = true, useWingClip = false, useLacerate = true,
+        useRaptorStrike = true, useMongooseBite = true, useWingClip = false, useLacerate = true, useCarve = true,
         useAspect = true, rangedAspect = "Aspect of the Hawk",
         useManaAspect = true, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 50,
@@ -155,7 +156,7 @@ M.templates = {
         useSteadyShot = false, useArcaneShot = false, useMultiShot = false,
         useAimedShot = false, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = false,
-        useRaptorStrike = true, useMongooseBite = true, useWingClip = false, useLacerate = true,
+        useRaptorStrike = true, useMongooseBite = true, useWingClip = false, useLacerate = true, useCarve = true,
         useAspect = true, rangedAspect = "Aspect of the Hawk",
         useManaAspect = false, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 60,
@@ -175,7 +176,7 @@ function M:NormalizeProfile(c)
         useAspect = true, rangedAspect = "Aspect of the Hawk",
         useManaAspect = false, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 50,
-        petTaunt = false, useLacerate = false,
+        petTaunt = false, useLacerate = false, useCarve = false,
         useKillCommand = false, useBaitedShot = false,
         popCDs = false, autoCDElite = false,
     }
@@ -521,6 +522,11 @@ function M:Rotate(cfg)
     -- 3a. Melee branch
     -- ----------------------------------------------------------------
     if melee then
+        -- Carve: the Survival melee cone AoE (up to 5 targets, shares its cooldown
+        -- with Multi-Shot). Leads the melee branch when AoE is toggled on.
+        if aoe and cfg.useCarve and self:KnowsSpell("Carve") and self:IsReady("Carve") then
+            if self:Cast("Carve") then return end
+        end
         -- Mongoose Bite reactively after we dodge an enemy attack.
         if cfg.useMongooseBite and self:KnowsSpell("Mongoose Bite")
             and now < (self.dodgeUntil or 0) and self:IsReady("Mongoose Bite") then
