@@ -42,6 +42,30 @@ local TALENT_NIGHTFALL = "Nightfall"
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
 local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
 
+-- Channel-clip protection (merged from the modified branch). Drain Life and
+-- Drain Soul are channels; once one is running the rotation must not queue a
+-- DoT refresh or the filler over it. This frame flags while any channel runs
+-- and clears the instant it stops (including an early stop when the target
+-- dies mid-channel).
+M.channeling = false
+M.chanStart = 0
+-- Nightfall single-use tracking (merged from the modified branch). The instant
+-- Shadow Bolt from a Shadow Trance proc is spent once per proc; the icon can
+-- linger after the proc is consumed, so we consume on the rising edge and rearm
+-- only once the icon clears.
+M.stConsumed = false
+M.stConsumedAt = 0
+local wlChannelFrame = CreateFrame("Frame")
+wlChannelFrame:RegisterEvent("SPELLCAST_CHANNEL_START")
+wlChannelFrame:RegisterEvent("SPELLCAST_CHANNEL_STOP")
+wlChannelFrame:SetScript("OnEvent", function()
+    if event == "SPELLCAST_CHANNEL_START" then
+        M.channeling = true; M.chanStart = GetTime()
+    elseif event == "SPELLCAST_CHANNEL_STOP" then
+        M.channeling = false
+    end
+end)
+
 -- Debuff textures on the TARGET (fragment match)
 M.dotTex = {
     ["Immolate"]     = "Immolation",                      -- Spell_Fire_Immolation
@@ -115,6 +139,7 @@ function M:NormalizeProfile(c)
     if c.useSiphonLife == nil then c.useSiphonLife = false end
     if c.filler == nil then c.filler = "Shoot" end
     if c.petAttack == nil then c.petAttack = true end
+    if c.petMeleeOnly == nil then c.petMeleeOnly = false end
     if c.lifeTap == nil then c.lifeTap = false end
     if c.lifeTapMana == nil then c.lifeTapMana = 20 end
     if c.lifeTapHpMin == nil then c.lifeTapHpMin = 40 end
@@ -285,7 +310,18 @@ end
 -- attack for this class). One queued cast per press, DoTs first.
 -- ============================================================
 function M:Rotate(cfg)
-    if cfg.petAttack and UnitExists("pet") then PetAttack() end
+    -- Send the pet in. With petMeleeOnly, only when the target is within melee
+    -- range (the same gate as the melee auto-attack), so an accidentally
+    -- targeted far enemy never pulls the pet away.
+    if cfg.petAttack and UnitExists("pet") then
+        if not cfg.petMeleeOnly or self:InMeleeRange() then PetAttack() end
+    end
+
+    -- Never act while a channel runs (Drain Life / Drain Soul), so a DoT refresh
+    -- or the filler cannot clip it. The stop event also fires when the target
+    -- dies mid-channel; a 16s ceiling guards against a missed stop so the
+    -- rotation can never get stuck.
+    if self.channeling and self.chanStart and (GetTime() - self.chanStart) < 16 then return end
 
     local hp     = self:PlayerHPPct()
     local thp    = self:TargetHPPct()
@@ -298,13 +334,25 @@ function M:Rotate(cfg)
         return
     end
 
-    -- P1 Nightfall reaction: spend the free instant Shadow Bolt as soon as
-    -- Shadow Trance is up. Auto-on when the Nightfall talent is detected, even
-    -- if the manual toggle is off. Skipped when Shadow Bolt is already the
-    -- filler (it would be cast anyway, instant during the proc).
-    if nightfall and cfg.filler ~= "Shadow Bolt" and self:KnowsSpell("Shadow Bolt") and self:ShadowTranceUp() then
-        self:Queue("Shadow Bolt")
-        return
+    -- P1 Nightfall reaction: spend the free instant Shadow Bolt once per Shadow
+    -- Trance proc. Only the FIRST cast is instant; the proc is then gone even
+    -- though the icon can linger, so a second cast would be a full-cast Shadow
+    -- Bolt that clips the rotation. Fire on the rising edge only and rearm when
+    -- the icon clears (a 15s ceiling, above the buff's duration, recovers from a
+    -- missed clear). Skipped when Shadow Bolt is already the filler.
+    if nightfall and cfg.filler ~= "Shadow Bolt" and self:KnowsSpell("Shadow Bolt") then
+        if self:ShadowTranceUp() then
+            if not self.stConsumed then
+                self.stConsumed = true
+                self.stConsumedAt = GetTime()
+                self:Queue("Shadow Bolt")
+                return
+            elseif self.stConsumedAt and (GetTime() - self.stConsumedAt) > 15 then
+                self.stConsumed = false
+            end
+        else
+            self.stConsumed = false
+        end
     end
 
     -- P2 Health Funnel: keep the pet alive when it drops, but only while you
