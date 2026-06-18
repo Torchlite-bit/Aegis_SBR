@@ -4,6 +4,22 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.8.9b — Branch merge (step 4): Paladin healing support
+
+Merged the modified branch's healing system into the Paladin. The branch's ret/prot base was an older lineage (it had even lost the verified `Vengeful/Righteous Strikes` talent names and the strikeMode downranking), so the current ret/prot was kept untouched and only the self-contained heal engine was grafted on.
+
+### ✨ Paladin heal mode
+- **Heal mode** (`/ar heal on|off`, or the panel): the Paladin heals the party/raid and DPSes between heals. Runs even with no attackable target (via the core's `RunsWithoutTarget` hook from step 1), so it works at range.
+- **Smart target + downranking:** picks the most-hurt *reachable* group member (raid- and party-aware), counts its own in-flight heal so it never double-stacks a heal on one target, and **downranks** Flash of Light / Holy Light to the deficit for mana efficiency. The `+healing` bonus is read automatically from gear (override with `/ar healpower <n>`), and Healing Light / Divine Favor talents are factored in.
+- **Holy Shock** is used as an instant for emergencies (below a configurable %) or for a hurt unit out of melee range; **Holy Light** covers large deficits, **Flash of Light** the rest.
+- The attack rotation **yields the GCD** while anyone needs healing, so a Seal of Wisdom judgement never steals a heal's cast; the opener seal is skipped in heal mode so a range healer keeps the GCD free.
+- New commands: `/ar heal`, `/ar healat <1-100>`, `/ar hsat <1-100>`, `/ar healpower <n>`. New "Healing" panel section, and the `heal` template now turns heal mode on.
+
+### Kept (ret/prot untouched)
+- The current Paladin's strikeMode dropdown + downranking, Consecration AoE lead, Exorcism, mana/HP management, seal twisting, and the confirmed `Vengeful Strikes` / `Righteous Strikes` talent names — all preserved. The heal engine uses the core's `MaxRank` rather than the branch's local copy.
+
+---
+
 ## v0.8.8b — Branch merge (step 3): Warlock channel/Nightfall/pet refinements
 
 Reviewed the modified branch's Rogue and Warlock against the current modules and merged only what was genuinely better.
