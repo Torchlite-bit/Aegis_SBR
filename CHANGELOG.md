@@ -4,6 +4,38 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.8.8b — Branch merge (step 3): Warlock channel/Nightfall/pet refinements
+
+Reviewed the modified branch's Rogue and Warlock against the current modules and merged only what was genuinely better.
+
+### 🔮 Warlock (merged from the branch)
+- **Channel-clip protection:** a `SPELLCAST_CHANNEL_START/STOP` watcher now blocks the rotation while a channel runs, so **Drain Life** and **Drain Soul** can no longer be clipped by a DoT refresh or the filler on the next press (16s ceiling guards a missed stop event).
+- **Nightfall single-use:** the free **Shadow Bolt** from a Shadow Trance proc now fires once per proc on the rising edge, instead of re-firing every press while the icon lingers (which cast a full-cast Shadow Bolt and clipped the rotation). Rearms when the icon clears.
+- **Pet only in melee range** (`petMeleeOnly`): optional gate so the pet is sent only when the target is within melee range, mirroring the melee auto-attack gate — keeps the pet from running off to an accidentally targeted far enemy. New checkbox in the Filler & pet section.
+
+### 🗡️ Rogue (reviewed, no change)
+- The branch's Rogue was an older revision: no **Rupture** upkeep, reverted the shared `Msg`, reverted the `OpenConfig` nil-guard, and re-introduced the leveling validity nag the current build deliberately removed. The current module is superior on every axis, so nothing was taken.
+
+### Kept (not regressed by the merge)
+- The current Warlock's strengths were all preserved: SuperWoW name-based DoT detection, the Drain Life / Health Funnel / Shadowburn / Drain Soul survival toolkit, `ResolveFiller` (level-1 wand→Shadow Bolt fallback), Nightfall talent auto-detect, and no-nag profile validity.
+
+---
+
+## v0.8.7b — Branch merge (steps 1-2): core acquire toggle + minimap options panel
+
+Reviewed the modified branch's core and minimap. The branch core was an older lineage missing every current optimization, so the current core was kept as the base and only its genuinely-new pieces were merged in.
+
+### ⚙️ Core (merged from the branch)
+- **Global self-targeting toggle** — `/ar acquire on|off` (also on the minimap right-click), persisted in `AutoRotaDB.acquire`. Targeting now respects **both** this global toggle and the existing per-module opt-out (`autoAcquireTarget`, e.g. the Hunter), and drops a dead corpse so an assist addon can reassign you.
+- **`RunsWithoutTarget` support hook** — lets a module run with no attackable target (scaffolding for the upcoming Paladin heal mode).
+- **`/ar minimap`** command to toggle the button; melee auto-attack is now gated on `InMeleeRange()` so a far accidental target never starts a swing.
+- Kept all current core optimizations the branch lacked: spell-index cache + `MaxRank`, per-press buff/target-debuff snapshots, validity cache, shared `Msg`, vararg `Trace`, and `/ar talents`.
+
+### 🗺️ Minimap (merged from the branch)
+- The current minimap already had the **dynamic class-crest icon** (the branch had regressed it to a fixed cog), so that was kept. Added the branch's **right-click options panel** (the self-targeting toggle + a config shortcut) and a `ToggleShown` hook so `/ar minimap` works. `/armap` kept as a convenience alias.
+
+---
+
 ## v0.8.6b — Hunter: rotation refactor (opener, mana efficiency, BM weave, AoE)
 
 A pass over the whole Hunter rotation for clean, mana-efficient play from level 1 to 60. Priority order was restructured and several leveling/BM behaviors added; all of it stays `KnowsSpell`-gated so it scales as abilities are trained.
