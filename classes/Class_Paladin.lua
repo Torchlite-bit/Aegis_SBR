@@ -16,7 +16,7 @@
 
 local M = AutoRota:NewClassModule("PALADIN")
 M.uiTitle = "Paladin"
-M.uiHeight = 706
+M.uiHeight = 820
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
 local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
@@ -68,6 +68,69 @@ M.debuffTex = {
 M.DEBUFF_SEALS = { "Seal of the Crusader", "Seal of Justice", "Seal of Wisdom", "Seal of Light" }
 M.DAMAGE_SEALS = { "Seal of Righteousness", "Seal of Command" }
 
+-- ============================================================
+-- Healing support (merged from the modified branch). Self-contained: the
+-- ret/prot rotation below is untouched and only yields to these in heal mode.
+-- Base heal values per rank (approximate; tunable for Turtle WoW). The rank
+-- picker downranks against these plus the gear +healing bonus.
+-- ============================================================
+M.FOL_HEAL = { 67, 102, 153, 206, 278, 348, 428 }
+M.FOL_MANA = { 35, 50, 70, 90, 115, 140, 180 }
+M.HL_HEAL  = { 50, 83, 173, 333, 522, 739, 999, 1317, 1680 }
+M.HL_MANA  = { 35, 60, 110, 190, 275, 365, 465, 580, 660 }
+M.HS_HEAL  = { 315, 360, 500, 655 }
+M.HS_MANA  = { 225, 335, 410, 485 }
+
+-- Auto-read the gear +healing bonus by scanning equipped-item tooltips. Cached,
+-- refreshed when equipment changes. A manual healPower above zero overrides it.
+local healScanTip = CreateFrame("GameTooltip", "AutoRotaHealScan", nil, "GameTooltipTemplate")
+healScanTip:SetOwner(healScanTip, "ANCHOR_NONE")
+
+M.cachedHealBonus = nil
+local healBonusFrame = CreateFrame("Frame")
+healBonusFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+healBonusFrame:RegisterEvent("UNIT_INVENTORY_CHANGED")
+healBonusFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+healBonusFrame:SetScript("OnEvent", function() M.cachedHealBonus = nil end)
+
+-- One tooltip line contributes its healing number (pure healing and spell
+-- damage-and-healing, English and German), mirroring ItemBonusLib's patterns.
+function M:ParseHealBonus(txt)
+    local _, _, n
+    _, _, n = string.find(txt, "[Hh]ealing done by spells and effects by up to (%d+)")
+    if n then return tonumber(n) end
+    _, _, n = string.find(txt, "damage and healing done by magical spells and effects by up to (%d+)")
+    if n then return tonumber(n) end
+    _, _, n = string.find(txt, "[Hh]ealing %+(%d+)")
+    if n then return tonumber(n) end
+    _, _, n = string.find(txt, "^%+(%d+) [Hh]ealing")
+    if n then return tonumber(n) end
+    _, _, n = string.find(txt, "[Hh]eilung von Zaubern und Effekten um bis zu (%d+)")
+    if n then return tonumber(n) end
+    _, _, n = string.find(txt, "[Ss]chaden und Heilung von Zaubern und Effekten um bis zu (%d+)")
+    if n then return tonumber(n) end
+    return 0
+end
+
+-- Sum +healing across all equipped slots.
+function M:GearHealBonus()
+    if self.cachedHealBonus then return self.cachedHealBonus end
+    local total = 0
+    for slot = 1, 19 do
+        if GetInventoryItemLink("player", slot) then
+            healScanTip:ClearLines()
+            healScanTip:SetInventoryItem("player", slot)
+            for i = 1, healScanTip:NumLines() do
+                local fs = getglobal("AutoRotaHealScanTextLeft" .. i)
+                local txt = fs and fs:GetText()
+                if txt then total = total + self:ParseHealBonus(txt) end
+            end
+        end
+    end
+    self.cachedHealBonus = total
+    return total
+end
+
 -- Templates: starting presets, copied into the char's saved profiles once.
 M.templates = {
     starter = {  -- valid for a brand new paladin (only Seal of Righteousness)
@@ -91,12 +154,13 @@ M.templates = {
         strikeMode = "auto",
         spells = { holyShield = true, hammerOfWrath = false, repentance = false },
     },
-    heal = {  -- holds Seal of Wisdom, judges it once per enemy for the group debuff
+    heal = {  -- group healer: heals the party/raid, judges Seal of Wisdom for mana
         seals = { debuff = "Seal of Wisdom", damage = "" },
         manaManage = false, manaLow = 30, manaHigh = 70,
         hpManage = false, hpLow = 30, hpHigh = 70,
         strikeMode = "off",
         spells = { holyShield = false, hammerOfWrath = false, repentance = false },
+        healMode = true, healThreshold = 90, useHolyShock = true, holyShockPct = 50, healPower = 0,
     },
 }
 
@@ -168,6 +232,12 @@ function M:NormalizeProfile(c)
     if c.strikeMode == nil then c.strikeMode = "auto" end   -- auto | cs | hs | hscs
     if c.prioZeal == nil then c.prioZeal = false end
     if c.strikeDownrank == nil then c.strikeDownrank = false end
+    -- Healing support (merged). Roleless: healMode alone drives heal behavior.
+    if c.healMode == nil then c.healMode = false end
+    if c.healThreshold == nil then c.healThreshold = 90 end
+    if c.useHolyShock == nil then c.useHolyShock = true end
+    if c.holyShockPct == nil then c.holyShockPct = 50 end
+    if c.healPower == nil then c.healPower = 0 end
     return c
 end
 
@@ -503,8 +573,203 @@ end
 -- delays a strike, Holy Shield, seal upkeep, or the execute; both Consecration
 -- and Exorcism are skipped during mana recovery so they do not undo it.
 -- ============================================================
+-- ============================================================
+-- Healing engine (merged). Active only in heal mode; uses the core's MaxRank.
+-- ============================================================
+
+-- Record an in-flight heal so the next press does not pile onto the same unit.
+function M:CommitHeal(unit, amount, castTime)
+    self.healTarget = UnitName(unit)
+    self.healAmount = amount or 0
+    self.healUntil = GetTime() + (castTime or 0) + 1.0
+end
+
+-- Predicted incoming heal for a unit from our own pending cast, else 0.
+function M:PendingFor(unit)
+    if self.healTarget and GetTime() < self.healUntil and UnitName(unit) == self.healTarget then
+        return self.healAmount
+    end
+    return 0
+end
+
+-- Units to consider for healing: raid1..N in a raid, else player + party1..N.
+function M:GroupUnits()
+    local units = {}
+    local nr = (GetNumRaidMembers and GetNumRaidMembers()) or 0
+    if nr > 0 then
+        for i = 1, nr do table.insert(units, "raid" .. i) end
+    else
+        table.insert(units, "player")
+        local np = (GetNumPartyMembers and GetNumPartyMembers()) or 0
+        for i = 1, np do table.insert(units, "party" .. i) end
+    end
+    return units
+end
+
+-- Self is always reachable; others must be within heal range.
+function M:Reachable(u)
+    if UnitIsUnit(u, "player") then return true end
+    return CheckInteractDistance(u, 4)
+end
+
+-- The healable group member with the lowest effective health below ratio,
+-- counting our own in-flight heal. Returns unit, missing health, ratio.
+function M:WorstHurt(ratio)
+    local units = self:GroupUnits()
+    local bestU, bestPct, bestDef = nil, ratio, 0
+    for i = 1, table.getn(units) do
+        local u = units[i]
+        if UnitExists(u) and UnitIsConnected(u) and not UnitIsDeadOrGhost(u)
+            and UnitIsFriend("player", u) and UnitHealthMax(u) > 0 and self:Reachable(u) then
+            local mx = UnitHealthMax(u)
+            local cur = UnitHealth(u) + self:PendingFor(u)
+            if cur > mx then cur = mx end
+            local pct = cur / mx
+            if pct < bestPct then
+                bestPct = pct; bestU = u; bestDef = mx - cur
+            end
+        end
+    end
+    return bestU, bestDef, bestPct
+end
+
+-- True while healing is needed, so the attack rotation yields. Uses real health
+-- (no in-flight prediction) so a heal already on the way still counts as demand
+-- and keeps a Seal of Wisdom judgement from stealing the global cooldown.
+function M:HealDemand(cfg)
+    if self.healUntil and GetTime() < self.healUntil then return true end
+    local ratio = (cfg.healThreshold or 90) / 100
+    local units = self:GroupUnits()
+    for i = 1, table.getn(units) do
+        local u = units[i]
+        if UnitExists(u) and UnitIsConnected(u) and not UnitIsDeadOrGhost(u)
+            and UnitIsFriend("player", u) and UnitHealthMax(u) > 0 and self:Reachable(u) then
+            if UnitHealth(u) / UnitHealthMax(u) < ratio then return true end
+        end
+    end
+    return false
+end
+
+-- Healing talent modifiers: Healing Light +4%/rank, Divine Favor ~5%/rank.
+function M:HealMods()
+    local _, _, _, _, hlRank = GetTalentInfo(1, 6)
+    local _, _, _, _, dfRank = GetTalentInfo(1, 13)
+    return 1 + 0.04 * (hlRank or 0), 1 + 0.05 * (dfRank or 0)
+end
+
+-- Effective heal per rank: base + healing-coefficient * bonus, then talents.
+function M:EffHeals(baseHeals, coeff, mods, healPower)
+    local t = {}
+    for r = 1, table.getn(baseHeals) do
+        t[r] = (baseHeals[r] + coeff * (healPower or 0)) * mods
+    end
+    return t
+end
+
+-- Pick the smallest affordable rank whose effective heal covers the deficit;
+-- fall back to the largest affordable rank. Returns a castable spell + heal.
+function M:PickRank(baseName, effHeals, manas, deficit, mana)
+    local maxr = self:MaxRank(baseName)
+    if maxr < 1 then return nil end
+    if maxr > table.getn(effHeals) then maxr = table.getn(effHeals) end
+    local chosen = nil
+    for r = 1, maxr do
+        if manas[r] and mana >= manas[r] then
+            chosen = r
+            if effHeals[r] and effHeals[r] >= deficit then break end
+        end
+    end
+    if not chosen then return nil end
+    return baseName .. "(Rank " .. chosen .. ")", (effHeals[chosen] or 0)
+end
+
+-- Cast a heal on a specific unit without changing the current target
+-- (SuperWoW's unit argument to CastSpellByName).
+function M:CastOn(spell, unit)
+    CastSpellByName(spell, unit)
+end
+
+-- True when the global cooldown is free, probed through a cooldown-less paladin
+-- spell so the only cooldown reported is the global one.
+function M:GcdReady()
+    local probes = { "Flash of Light", "Holy Light", "Seal of Righteousness", "Seal of Wisdom", "Seal of the Crusader" }
+    for i = 1, table.getn(probes) do
+        if self:KnowsSpell(probes[i]) then return self:IsReady(probes[i]) end
+    end
+    return true
+end
+
+-- Heal decision. Returns true when a heal was cast (or the GCD is held) this
+-- press. Holy Shock for an emergency or an out-of-range unit, otherwise a
+-- downranked Flash of Light, with Holy Light for large deficits.
+function M:DoHeal(cfg)
+    local ratio = (cfg.healThreshold or 90) / 100
+    local unit, deficit, pct = self:WorstHurt(ratio)
+    if not unit then return false end
+
+    -- A heal is needed but the GCD still blocks a cast: yield without casting or
+    -- predicting, so the attack rotation does not run and no false in-flight
+    -- heal masks the target. The heal fires the instant the GCD frees.
+    if not self:GcdReady() then return true end
+
+    local mana = UnitMana("player")
+    local hp = (cfg.healPower and cfg.healPower > 0) and cfg.healPower or self:GearHealBonus()
+    local hlMod, dfMod = self:HealMods()
+    local C15, C25 = 1.5 / 3.5, 2.5 / 3.5
+    local folEff = self:EffHeals(self.FOL_HEAL, C15, hlMod, hp)
+    local hlEff  = self:EffHeals(self.HL_HEAL,  C25, hlMod, hp)
+    local hsEff  = self:EffHeals(self.HS_HEAL,  C15, hlMod * dfMod, hp)
+
+    -- Holy Shock: instant, for an emergency or a hurt unit out of melee range.
+    if cfg.useHolyShock and self:KnowsSpell("Holy Shock") and self:OwnCDReady("Holy Shock")
+        and (pct <= (cfg.holyShockPct or 50) / 100 or not CheckInteractDistance(unit, 3)) then
+        local hs, amt = self:PickRank("Holy Shock", hsEff, self.HS_MANA, deficit, mana)
+        if hs then self:CommitHeal(unit, amt, 0); self:CastOn(hs, unit); return true end
+    end
+
+    -- For a deficit beyond the biggest Flash of Light, prefer Holy Light.
+    local folMaxRank = self:MaxRank("Flash of Light")
+    if folMaxRank > table.getn(folEff) then folMaxRank = table.getn(folEff) end
+    local folCeiling = (folMaxRank >= 1 and folEff[folMaxRank]) or 0
+    if deficit > folCeiling and self:MaxRank("Holy Light") > 0 then
+        local hl, amt = self:PickRank("Holy Light", hlEff, self.HL_MANA, deficit, mana)
+        if hl then self:CommitHeal(unit, amt, 2.5); self:CastOn(hl, unit); return true end
+    end
+
+    -- Flash of Light, fast, downranked to the deficit.
+    local fol, amtf = self:PickRank("Flash of Light", folEff, self.FOL_MANA, deficit, mana)
+    if fol then self:CommitHeal(unit, amtf, 1.5); self:CastOn(fol, unit); return true end
+
+    -- Holy Light fallback when Flash of Light is unknown or unaffordable.
+    local hl2, amth = self:PickRank("Holy Light", hlEff, self.HL_MANA, deficit, mana)
+    if hl2 then self:CommitHeal(unit, amth, 2.5); self:CastOn(hl2, unit); return true end
+
+    return false
+end
+
+-- Heal mode runs even without an attackable target, so the paladin can heal at
+-- range. The core's RunRotation honors this hook.
+function M:RunsWithoutTarget(cfg)
+    return cfg.healMode == true
+end
+
 function M:Rotate(cfg)
     self:UpdateManagement(cfg)
+
+    -- Heal mode: group healing preempts the attack rotation, so a judgement or
+    -- strike GCD never delays a needed heal. Between heals the rotation below
+    -- runs and adds damage.
+    if cfg.healMode and self:DoHeal(cfg) then return end
+
+    -- Heal mode works at range with no target; everything below needs an
+    -- attackable target, so stop here when there is none.
+    if not (UnitExists("target") and not UnitIsDead("target") and UnitCanAttack("player", "target")) then
+        return
+    end
+
+    -- In heal mode the attack rotation yields while anyone needs healing, so a
+    -- Seal of Wisdom judgement or a strike never steals the GCD from a heal.
+    if cfg.healMode and self:HealDemand(cfg) then return end
 
     if self.trace then
         local db = cfg.seals.debuff
@@ -535,8 +800,9 @@ function M:Rotate(cfg)
 
     -- 0. Pre-cast the seal while running in (out of melee range), so the first
     -- hit on contact already carries a seal. Skipped once in range, where the
-    -- normal strict priority below applies. We never judge out of range.
-    if not self:InMeleeRange() then
+    -- normal strict priority below applies. We never judge out of range. In heal
+    -- mode this is skipped so a range healer keeps the GCD free for the heal.
+    if not cfg.healMode and not self:InMeleeRange() then
         local s = self:DesiredOpenerSeal(cfg)
         if s and self:KnowsSpell(s) and not self:HasBuff(s) then
             if self:Cast(s) then return end
@@ -627,6 +893,39 @@ function M:HandleCommand(cmd, t)
     if cmd == "spell"  then self:CmdSpell(t[2], t[3], t[4]); return true end
     if cmd == "aoe"    then self:CmdAoe(); return true end
     if cmd == "strike" then self:CmdStrike(t[2]); return true end
+    if cmd == "heal" then
+        local cfg = AutoRota:GetActiveProfile()
+        if not cfg then return true end
+        local a = string.lower(t[2] or "")
+        if a == "on" then cfg.healMode = true; msgOut("heal mode on.")
+        elseif a == "off" then cfg.healMode = false; msgOut("heal mode off.")
+        else msgOut("heal mode is " .. (cfg.healMode and "on" or "off") .. ". Use /ar heal on or off.") end
+        return true
+    end
+    if cmd == "healat" then
+        local cfg = AutoRota:GetActiveProfile()
+        if not cfg then return true end
+        local v = tonumber(t[2])
+        if v and v >= 1 and v <= 100 then cfg.healThreshold = v; msgOut("healing members below " .. v .. "% health.")
+        else msgOut("usage: /ar healat <1-100>.", 1, 0.5, 0.3) end
+        return true
+    end
+    if cmd == "hsat" then
+        local cfg = AutoRota:GetActiveProfile()
+        if not cfg then return true end
+        local v = tonumber(t[2])
+        if v and v >= 1 and v <= 100 then cfg.holyShockPct = v; msgOut("Holy Shock emergency below " .. v .. "% health.")
+        else msgOut("usage: /ar hsat <1-100>.", 1, 0.5, 0.3) end
+        return true
+    end
+    if cmd == "healpower" then
+        local cfg = AutoRota:GetActiveProfile()
+        if not cfg then return true end
+        local v = tonumber(t[2])
+        if v and v >= 0 then cfg.healPower = v; msgOut("healing bonus set to " .. v .. " (0 = auto from gear).")
+        else msgOut("usage: /ar healpower <number>.", 1, 0.5, 0.3) end
+        return true
+    end
     return false
 end
 

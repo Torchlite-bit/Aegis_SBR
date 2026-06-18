@@ -78,11 +78,23 @@ function M:BuildBody(ui, f)
     self.hpLowSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -590)
     self.hpHighSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -590)
 
+    -- Healing (heal mode): group healer that DPSes between heals.
+    ui:FS(f, "GameFontNormal", "Healing"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -632)
+    self.healCB = ui:CreateCheck("healMode", f, "Heal mode (group healing)", nil, function(v) if ui.buf then ui.buf.healMode = v; ui:Refresh() end end)
+    self.healCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -656)
+    self.healAtSlider = ui:CreateSlider("healThreshold", f, "heal members below", function(v) if ui.buf then ui.buf.healThreshold = v; ui:Refresh() end end)
+    self.healAtSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -698)
+    self.holyShockCB = ui:CreateCheck("useHolyShock", f, "Holy Shock emergencies", "Holy Shock", function(v) if ui.buf then ui.buf.useHolyShock = v; ui:Refresh() end end)
+    self.holyShockCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -732)
+    self.holyShockSlider = ui:CreateSlider("holyShockPct", f, "Holy Shock below", function(v) if ui.buf then ui.buf.holyShockPct = v; ui:Refresh() end end)
+    self.holyShockSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -774)
+
     -- section separators for easier scanning
     ui:Divider(f, -134)   -- above Seals
     ui:Divider(f, -214)   -- above Spells
     ui:Divider(f, -364)   -- above Mana management
     ui:Divider(f, -538)   -- above HP management, below the Wisdom debuff toggle
+    ui:Divider(f, -624)   -- above Healing
 
 
     ui:Tip(self.debuffDD, "Debuff seal", "Judged once to apply its debuff to the target.", "Autoattacks keep the debuff up afterwards.")
@@ -103,6 +115,11 @@ function M:BuildBody(ui, f)
     ui:Tip(self.weaveMinSlider, "Skip weaving below", "Below this mana, no new weave is started.", "A weave already started always finishes, so leave room for one full cycle.")
     ui:Tip(self.twistCB.cb, "Seal twisting (experimental)", "Holds the damage seal judge until just before the next swing.", "Needs a damage seal. Tune in game, timing depends on latency.")
     ui:Tip(self.wisdomCB.cb, "Wisdom debuff in mana mode", "While recovering mana, apply Judgement of Wisdom instead of the configured debuff.", "It returns mana to attackers, so it speeds recovery.")
+
+    ui:Tip(self.healCB.cb, "Heal mode", "Heal the party/raid, picking the most-hurt reachable member and downranking for efficiency.", "Works at range with no target, and DPSes between heals when no one needs healing. Also /ar heal on|off.")
+    ui:Tip(self.healAtSlider, "Heal members below", "Members below this health get healed; the attack rotation yields while anyone is below it.", "Also /ar healat <1-100>.")
+    ui:Tip(self.holyShockCB.cb, "Holy Shock emergencies", "Use the instant Holy Shock for an emergency or a hurt unit out of melee range.")
+    ui:Tip(self.holyShockSlider, "Holy Shock below", "Health under which Holy Shock is used as an instant emergency heal.", "Also /ar hsat <1-100>. +healing auto-reads from gear; override with /ar healpower <n>.")
 end
 
 -- ============================================================
@@ -195,6 +212,19 @@ function M:RefreshBody(ui, buf)
     self.hpCB.cb:SetChecked(buf.hpManage and true or false)
     self.hpLowSlider:SetValue(buf.hpLow or 0);  self.hpLowSlider.valText:SetText((buf.hpLow or 0) .. "%")
     self.hpHighSlider:SetValue(buf.hpHigh or 0); self.hpHighSlider.valText:SetText((buf.hpHigh or 0) .. "%")
+
+    -- Healing section
+    ui:BindCheck(self.healCB, buf.healMode)
+    self.healAtSlider:SetValue(buf.healThreshold or 90); self.healAtSlider.valText:SetText((buf.healThreshold or 90) .. "%")
+    ui:BindCheck(self.holyShockCB, buf.useHolyShock, "Holy Shock")
+    self.holyShockSlider:SetValue(buf.holyShockPct or 50); self.holyShockSlider.valText:SetText((buf.holyShockPct or 50) .. "%")
+    -- Heal controls are meaningful only in heal mode; grey them otherwise.
+    local healOn = buf.healMode and true or false
+    self.healAtSlider:EnableMouse(healOn);    self.healAtSlider:SetAlpha(healOn and 1 or 0.35)
+    self.holyShockSlider:EnableMouse(healOn); self.holyShockSlider:SetAlpha(healOn and 1 or 0.35)
+    if not healOn then
+        self.holyShockCB.cb:Disable(); ui:Color(self.holyShockCB.label, ui.COL.grey)
+    end
 end
 
 -- Open the shared window for this class.
