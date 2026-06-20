@@ -3,78 +3,66 @@
 -- Builds and binds only the mage specific controls. The shared
 -- window shell and profile management live in AutoRota_UI.lua.
 -- ============================================================
--- All three specs' controls are shown at once; the KnowsSpell red-out marks
--- anything not trained for your current spec/level, so there is no mode-greying.
+-- This module opts into the scroll layout (M.useScrollLayout): the shell hosts
+-- the body in a compact scroll frame and hands BuildBody the scroll child, and
+-- the cursor-based layout API places everything (no hand-coded y offsets). All
+-- three specs' controls are shown; the KnowsSpell red-out marks anything not
+-- trained for your current spec/level. Detail that used to sit in the labels now
+-- lives in the tooltips, keeping labels short for the narrower window.
 -- ============================================================
 
 local M = AutoRota.classes.MAGE
+M.useScrollLayout = true
 
-function M:BuildBody(ui, f)
-    -- General
-    ui:FS(f, "GameFontNormal", "General"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -142)
-    ui:FS(f, "GameFontNormalSmall", "Spec"):SetPoint("TOPLEFT", f, "TOPLEFT", 22, -170)
-    self.modeDD = ui:CreateDropdown("mode", f, 150, function(v) if ui.buf then ui.buf.mode = v; ui:Refresh() end end)
-    self.modeDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -166)
-    self.aoeCB = ui:CreateCheck("aoeMode", f, "AoE mode", nil, function(on) if ui.buf then ui.buf.aoeMode = on; ui:Refresh() end end)
-    self.aoeCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 270, -166)
+function M:BuildBody(ui, parent)
+    local L = ui:NewLayout(parent)
+    local function set(key) return function(v) if ui.buf then ui.buf[key] = v; ui:Refresh() end end end
 
-    self.useWandCB = ui:CreateCheck("useWand", f, "Use wand", nil, function(on) if ui.buf then ui.buf.useWand = on; ui:Refresh() end end)
-    self.useWandCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -192)
-    self.manaShieldCB = ui:CreateCheck("useManaShield", f, "Mana Shield", "Mana Shield", function(on) if ui.buf then ui.buf.useManaShield = on; ui:Refresh() end end)
-    self.manaShieldCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -192)
-    self.frostNovaCB = ui:CreateCheck("useFrostNova", f, "Frost Nova (root in melee)", "Frost Nova", function(on) if ui.buf then ui.buf.useFrostNova = on; ui:Refresh() end end)
-    self.frostNovaCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -216)
-    self.evocationCB = ui:CreateCheck("useEvocation", f, "Evocation (low mana)", "Evocation", function(on) if ui.buf then ui.buf.useEvocation = on; ui:Refresh() end end)
-    self.evocationCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -216)
+    L:Header("General")
+    self.modeDD, self.aoeCB = L:DropdownCheck(
+        { key = "mode", label = "Spec", width = 110, onChange = set("mode") },
+        { "aoeMode", "AoE", nil, set("aoeMode") })
+    self.useWandCB, self.manaShieldCB = L:CheckPair(
+        { "useWand", "Use wand", nil, set("useWand") },
+        { "useManaShield", "Mana Shield", "Mana Shield", set("useManaShield") })
+    self.frostNovaCB, self.evocationCB = L:CheckPair(
+        { "useFrostNova", "Frost Nova", "Frost Nova", set("useFrostNova") },
+        { "useEvocation", "Evocation", "Evocation", set("useEvocation") })
+    self.wandHpSlider, self.manaFloorSlider = L:SliderPair(
+        { "wandHp", "Wand below target HP", set("wandHp") },
+        { "wandManaFloor", "Wand below mana", set("wandManaFloor") })
+    self.evocAtSlider = L:Slider("evocAt", "Evocate below mana", set("evocAt"))
 
-    self.wandHpSlider = ui:CreateSlider("wandHp", f, "wand-finish below target HP", function(v) if ui.buf then ui.buf.wandHp = v; ui:Refresh() end end)
-    self.wandHpSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -256)
-    self.manaFloorSlider = ui:CreateSlider("wandManaFloor", f, "wand below mana", function(v) if ui.buf then ui.buf.wandManaFloor = v; ui:Refresh() end end)
-    self.manaFloorSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -256)
-    self.evocAtSlider = ui:CreateSlider("evocAt", f, "Evocate below mana", function(v) if ui.buf then ui.buf.evocAt = v; ui:Refresh() end end)
-    self.evocAtSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -296)
+    L:Header("Frost")
+    self.iceBarrierCB, self.iciclesCB = L:CheckPair(
+        { "useIceBarrier", "Ice Barrier", "Ice Barrier", set("useIceBarrier") },
+        { "useIcicles", "Icicles", "Icicles", set("useIcicles") })
+    self.coneCB = L:Check("useConeOfCold", "Cone of Cold", "Cone of Cold", set("useConeOfCold"))
 
-    -- Frost
-    ui:FS(f, "GameFontNormal", "Frost"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -328)
-    self.iceBarrierCB = ui:CreateCheck("useIceBarrier", f, "Ice Barrier", "Ice Barrier", function(on) if ui.buf then ui.buf.useIceBarrier = on; ui:Refresh() end end)
-    self.iceBarrierCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -352)
-    self.iciclesCB = ui:CreateCheck("useIcicles", f, "Icicles", "Icicles", function(on) if ui.buf then ui.buf.useIcicles = on; ui:Refresh() end end)
-    self.iciclesCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -352)
-    self.coneCB = ui:CreateCheck("useConeOfCold", f, "Cone of Cold", "Cone of Cold", function(on) if ui.buf then ui.buf.useConeOfCold = on; ui:Refresh() end end)
-    self.coneCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -376)
+    L:Header("Fire")
+    self.pyroCB, self.scorchCB = L:CheckPair(
+        { "usePyroblast", "Pyroblast", "Pyroblast", set("usePyroblast") },
+        { "useScorch", "Scorch", "Scorch", set("useScorch") })
+    self.fireBlastCB, self.combustionCB = L:CheckPair(
+        { "useFireBlast", "Fire Blast", "Fire Blast", set("useFireBlast") },
+        { "useCombustion", "Combustion", "Combustion", set("useCombustion") })
 
-    -- Fire
-    ui:FS(f, "GameFontNormal", "Fire"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -408)
-    self.pyroCB = ui:CreateCheck("usePyroblast", f, "Pyroblast (opener)", "Pyroblast", function(on) if ui.buf then ui.buf.usePyroblast = on; ui:Refresh() end end)
-    self.pyroCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -432)
-    self.scorchCB = ui:CreateCheck("useScorch", f, "Scorch (Fire Vulnerability)", "Scorch", function(on) if ui.buf then ui.buf.useScorch = on; ui:Refresh() end end)
-    self.scorchCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -432)
-    self.fireBlastCB = ui:CreateCheck("useFireBlast", f, "Fire Blast", "Fire Blast", function(on) if ui.buf then ui.buf.useFireBlast = on; ui:Refresh() end end)
-    self.fireBlastCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -456)
-    self.combustionCB = ui:CreateCheck("useCombustion", f, "Combustion", "Combustion", function(on) if ui.buf then ui.buf.useCombustion = on; ui:Refresh() end end)
-    self.combustionCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -456)
+    L:Header("Arcane")
+    self.ruptureCB, self.surgeCB = L:CheckPair(
+        { "useArcaneRupture", "Arcane Rupture", "Arcane Rupture", set("useArcaneRupture") },
+        { "useArcaneSurge", "Arcane Surge", "Arcane Surge", set("useArcaneSurge") })
+    self.arcanePowerCB = L:Check("useArcanePower", "Arcane Power", "Arcane Power", set("useArcanePower"))
 
-    -- Arcane
-    ui:FS(f, "GameFontNormal", "Arcane"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -488)
-    self.ruptureCB = ui:CreateCheck("useArcaneRupture", f, "Arcane Rupture (upkeep)", "Arcane Rupture", function(on) if ui.buf then ui.buf.useArcaneRupture = on; ui:Refresh() end end)
-    self.ruptureCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -512)
-    self.surgeCB = ui:CreateCheck("useArcaneSurge", f, "Arcane Surge (no haste)", "Arcane Surge", function(on) if ui.buf then ui.buf.useArcaneSurge = on; ui:Refresh() end end)
-    self.surgeCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -512)
-    self.arcanePowerCB = ui:CreateCheck("useArcanePower", f, "Arcane Power", "Arcane Power", function(on) if ui.buf then ui.buf.useArcanePower = on; ui:Refresh() end end)
-    self.arcanePowerCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -536)
+    L:Finish()
 
-    ui:Divider(f, -322)   -- above Frost
-    ui:Divider(f, -402)   -- above Fire
-    ui:Divider(f, -482)   -- above Arcane
-
-    -- Tooltips
-    ui:Tip(self.modeDD, "Spec", "Frost: the kiting / Icicles spec and the best leveler. Fire: Scorch debuff + Fireball burst. Arcane: Rupture upkeep + Arcane Missiles.", "Switch live with /ar mode frost|fire|arcane.")
-    ui:Tip(self.aoeCB.cb, "AoE mode", "Kite-AoE: Frost Nova to freeze, Cone of Cold to snare, Icicles, then Arcane Explosion.", "Blizzard / Flamestrike are not auto-cast (they need a ground click). Also /ar aoe.")
-    ui:Tip(self.useWandCB.cb, "Use wand", "On: finish low mobs and regen mana with the wand (the leveling 'nuke then wand' rule).", "Off: never wand. With no wand equipped the rotation just keeps casting.")
+    -- Tooltips carry the detail that used to be in the labels.
+    ui:Tip(self.modeDD, "Spec", "Frost = kiting / Icicles (best leveler). Fire = Scorch debuff + Fireball burst. Arcane = Rupture upkeep + Arcane Missiles.", "Also /ar mode frost|fire|arcane.")
+    ui:Tip(self.aoeCB.cb, "AoE mode", "Frost Nova to freeze, Cone of Cold to snare, Icicles, then Arcane Explosion.", "Blizzard / Flamestrike are not auto-cast (they need a ground click). Also /ar aoe.")
+    ui:Tip(self.useWandCB.cb, "Use wand", "On: finish low mobs and regen mana with the wand (the 'nuke then wand' rule). Off: never wand. With no wand equipped it just keeps casting.")
     ui:Tip(self.manaShieldCB.cb, "Mana Shield", "Optional. Keeps Mana Shield up (drains mana for damage), never stacked under Ice Barrier.")
     ui:Tip(self.frostNovaCB.cb, "Frost Nova", "Root the mob when it reaches melee so you can step back and wand - the leveling kite.")
     ui:Tip(self.evocationCB.cb, "Evocation", "Channel Evocation to restore mana when low, in combat, and the target is not about to die.")
-    ui:Tip(self.wandHpSlider, "Wand-finish below target HP", "Target health percent under which you stop casting and wand the mob down. 0 = off (cast to death, for raiding).")
+    ui:Tip(self.wandHpSlider, "Wand below target HP", "Target health percent under which you stop casting and wand the mob down. 0 = off (cast to death, for raiding).")
     ui:Tip(self.manaFloorSlider, "Wand below mana", "Your mana percent under which the rotation drops to the wand to let mana regenerate.")
     ui:Tip(self.evocAtSlider, "Evocate below mana", "Your mana percent under which Evocation is used (when enabled and in combat).")
     ui:Tip(self.iceBarrierCB.cb, "Ice Barrier", "Keep Ice Barrier up: a shield that also boosts Frost damage. Cast before the pull and when it drops.")
@@ -90,13 +78,13 @@ function M:BuildBody(ui, f)
 end
 
 function M:RefreshBody(ui, buf)
-    -- spec dropdown
+    -- spec dropdown (short labels for the compact window; detail is in the tip)
     local modeOpts = {
         { label = "Frost",  value = "frost" },
         { label = "Fire",   value = "fire" },
         { label = "Arcane", value = "arcane" },
     }
-    local modeLabel = { frost = "Frost (kite / Icicles)", fire = "Fire (burst)", arcane = "Arcane (haste)" }
+    local modeLabel = { frost = "Frost", fire = "Fire", arcane = "Arcane" }
     local mcur = buf.mode or "frost"
     ui:SetDropdown(self.modeDD, modeOpts, mcur, modeLabel[mcur] or mcur, ui.COL.white)
 
