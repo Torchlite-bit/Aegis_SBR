@@ -263,22 +263,35 @@ function AutoRotaLayout:CheckPair(a, b)
     return ia, ib
 end
 
--- A full-width slider (label centred above the bar).
-function AutoRotaLayout:Slider(key, label, onChange)
-    local s = self.ui:CreateSlider(key, self.p, label, onChange)
+-- A full-width slider (label centred above the bar). opts is optional; a
+-- function passed in its place is treated as the onChange (CreateSlider shim).
+function AutoRotaLayout:Slider(key, label, opts, onChange)
+    local s = self.ui:CreateSlider(key, self.p, label, opts, onChange)
     s:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD + 6, self.y - LAY.SLIDER_TOP)
     self.y = self.y - LAY.SLIDER_H
     return s
 end
 
--- Two sliders side by side; a/b are {key,label,onChange}.
+-- Two sliders side by side; a/b are {key,label,onChange} or {key,label,opts,onChange}
+-- (a function in the opts slot is treated as onChange by CreateSlider).
 function AutoRotaLayout:SliderPair(a, b)
-    local sa = self.ui:CreateSlider(a[1], self.p, a[2], a[3])
+    local sa = self.ui:CreateSlider(a[1], self.p, a[2], a[3], a[4])
     sa:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD + 6, self.y - LAY.SLIDER_TOP)
-    local sb = self.ui:CreateSlider(b[1], self.p, b[2], b[3])
+    local sb = self.ui:CreateSlider(b[1], self.p, b[2], b[3], b[4])
     sb:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.COL2_X, self.y - LAY.SLIDER_TOP)
     self.y = self.y - LAY.SLIDER_H
     return sa, sb
+end
+
+-- A label with a dropdown to its right (the dropdown floats right after the
+-- label, so longer labels never collide with it).
+function AutoRotaLayout:Dropdown(key, label, width, onChange)
+    local lab = FS(self.p, "GameFontNormalSmall", label)
+    lab:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD, self.y - 8)
+    local d = self.ui:CreateDropdown(key, self.p, width or 150, onChange)
+    d:SetPoint("LEFT", lab, "RIGHT", 8, 0)
+    self.y = self.y - LAY.DD_H
+    return d, lab
 end
 
 -- A label + dropdown on the left, and a checkbox on the right of the same row.
