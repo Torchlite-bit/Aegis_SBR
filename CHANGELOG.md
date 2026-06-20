@@ -4,6 +4,22 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.11.0b — Config UI overhaul: scrolling, compact window, and an auto-layout engine (all nine classes)
+
+**Feature.** The configuration window is rebuilt on a new layout system. It is now a compact, fixed-size panel with a **scrollbar** instead of a tall window sized per class — the same controls, the same bindings, and the same saved profiles as before, just easier to read and to fit on screen.
+
+- **Compact, scrolling window.** Fixed at 480px tall (down from the old per-class 628–680px). The class body lives in a scroll frame you can pan with the **mouse wheel**, the **scrollbar thumb**, or its **arrow buttons**, and the scrollbar hides itself when a panel already fits.
+- **Auto-flow layout engine.** The per-class bodies no longer hand-place every checkbox at an absolute pixel offset, and no longer hard-code a `uiHeight`. A small cursor-based layout API — `Header`, `Check` / `CheckPair`, `Slider` / `SliderPair`, `Dropdown`, `DropdownCheck` — flows controls down the panel and computes the content height itself, so spacing is consistent and the scroll range is always right. Adding or reordering a control is now a one-line change.
+- **Cleaner presentation.** Section titles are gold headers with automatic dividers between them, and long control labels were shortened — the full explanation moved into the hover tooltip (every control has one).
+- **All nine classes migrated.** Prototyped on the Mage, then rolled out to Warrior, Paladin, Hunter, Rogue, Priest, Shaman, Druid, and Warlock. Each class behaves exactly as before — only the window's layout and size changed — and the densest panels (Hunter, Paladin, Priest) benefit the most.
+- **Dropdown fix.** Dropdown pop-out lists are now parented to the window rather than their button, so the scroll frame can never clip them.
+
+All within the 1.12 client (a real `ScrollFrame` + `UIPanelScrollBarTemplate`, mouse wheel via `OnMouseWheel`). The opt-in flag `useScrollLayout` is now set on all nine class UIs; the older absolute-offset path remains in the shell as an unused fallback. Minor version bump for a significant UI feature. All 21 Lua files pass the balance check.
+
+*Next (Phase 2): collapsible sections and active-mode dimming, to tame the densest panels further.*
+
+---
+
 ## v0.10.1b — Hunter: stop casting Serpent Sting on poison-immune mobs
 
 **Fix.** Serpent / Scorpid / Viper Sting are Poison-school effects, so they never land on poison-immune targets — but the rotation was re-applying the sting on a wasted "immune" cast every cycle (once the ~15s upkeep throttle expired) on Mechanicals, Elementals, and the specific immune Undead / bosses. Two layers now prevent that:
