@@ -161,6 +161,14 @@ Frost, Fire, and Arcane in one mode-adaptive module, working from level 1 to rai
   Handles text enhancement and native spell-queuing for smoother combat rotations.
   ↳ [Nampower Release](https://gitea.com/avitasia/nampower/releases/tag/v4.6.1) | [Nampower Addon](https://gitea.com/avitasia/nampowersettings)
 
+* 🔋 **`UnitXP_SP3 (v89 Stable)`**
+  UnitXP Service Pack 3 Allows custom addons to accurately detect if players or enemies are in your line of sight or out of range.
+  ↳ [UnitXP_SP3](https://codeberg.org/konaka/UnitXP_SP3/releases)
+
+* 🏗️ **`SuperCleveRoid Macros`**
+  Enhanced macro addon for World of Warcraft 1.12.1 (Vanilla/Turtle WoW) with dynamic tooltips, conditional execution, and extended syntax.
+  ↳ [SuperCleveRoidMacros](https://github.com/jrc13245/SuperCleveRoidMacros) | [SuperCleveRoid Macro Wiki](https://github.com/jrc13245/SuperCleveRoidMacros/wiki)
+
 Note: It is recommended to use the `SuperCleveRoidMacros` (SCRM) addon, but this is not required.
 
 ---
