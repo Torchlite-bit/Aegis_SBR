@@ -2,82 +2,58 @@
 -- Class_Druid_UI  -  feral druid window body for AutoRota
 -- Builds and binds only the druid specific controls. The shared
 -- window shell and profile management live in AutoRota_UI.lua.
+-- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
 local M = AutoRota.classes.DRUID
+M.useScrollLayout = true
 
 -- ============================================================
 -- build body (druid controls)
 -- ============================================================
-function M:BuildBody(ui, f)
-    -- Form
-    ui:FS(f, "GameFontNormal", "Form"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -142)
-    ui:FS(f, "GameFontNormalSmall", "Preferred"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -168)
-    self.formDD = ui:CreateDropdown("form", f, 170, function(v) if ui.buf then ui.buf.form = v; ui:Refresh() end end)
-    self.formDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -166)
+function M:BuildBody(ui, parent)
+    local L = ui:NewLayout(parent)
+    local function set(key) return function(v) if ui.buf then ui.buf[key] = v; ui:Refresh() end end end
 
-    -- Cat Form (DPS)
-    ui:FS(f, "GameFontNormal", "Cat Form (DPS)"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -202)
-    ui:FS(f, "GameFontNormalSmall", "Style"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -228)
-    self.styleDD = ui:CreateDropdown("catStyle", f, 170, function(v) if ui.buf then ui.buf.catStyle = v; ui:Refresh() end end)
-    self.styleDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -226)
-    ui:FS(f, "GameFontNormalSmall", "Opener"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -256)
-    self.openerDD = ui:CreateDropdown("opener", f, 170, function(v) if ui.buf then ui.buf.opener = v; ui:Refresh() end end)
-    self.openerDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -254)
+    L:Header("Form")
+    self.formDD = L:Dropdown("form", "Preferred", 170, set("form"))
 
-    self.tfCB = ui:CreateCheck("useTigersFury", f, "Tiger's Fury", "Tiger's Fury", function(on) if ui.buf then ui.buf.useTigersFury = on; ui:Refresh() end end)
-    self.tfCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -284)
-    self.ffCatCB = ui:CreateCheck("ffCat", f, "Faerie Fire", "Faerie Fire (Feral)", function(on) if ui.buf then ui.buf.ffCat = on; ui:Refresh() end end)
-    self.ffCatCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -284)
-    self.psCB = ui:CreateCheck("powershift", f, "Powershift", nil, function(on) if ui.buf then ui.buf.powershift = on; ui:Refresh() end end)
-    self.psCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -308)
+    L:Header("Cat Form (DPS)")
+    self.styleDD = L:Dropdown("catStyle", "Style", 170, set("catStyle"))
+    self.openerDD = L:Dropdown("opener", "Opener", 170, set("opener"))
+    self.tfCB, self.ffCatCB = L:CheckPair(
+        { "useTigersFury", "Tiger's Fury", "Tiger's Fury", set("useTigersFury") },
+        { "ffCat", "Faerie Fire", "Faerie Fire (Feral)", set("ffCat") })
+    self.psCB = L:Check("powershift", "Powershift", nil, set("powershift"))
+    self.cpSlider, self.psSlider = L:SliderPair(
+        { "cpFinish", "Finisher CP", { min = 1, max = 5, step = 1, suffix = "" }, set("cpFinish") },
+        { "psEnergy", "Shift below energy", { min = 0, max = 40, step = 5, suffix = "" }, set("psEnergy") })
 
-    self.cpSlider = ui:CreateSlider("cpFinish", f, "Finisher at combo points", {min=1,max=5,step=1,suffix=""}, function(v) if ui.buf then ui.buf.cpFinish = v; ui:Refresh() end end)
-    self.cpSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -352)
-    self.psSlider = ui:CreateSlider("psEnergy", f, "shift below energy", {min=0,max=40,step=5,suffix=""}, function(v) if ui.buf then ui.buf.psEnergy = v; ui:Refresh() end end)
-    self.psSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -352)
+    L:Header("Bear Form (Tank)")
+    self.ffBearCB, self.demoCB = L:CheckPair(
+        { "ffBear", "Faerie Fire", "Faerie Fire (Feral)", set("ffBear") },
+        { "useDemo", "Demoralizing Roar", "Demoralizing Roar", set("useDemo") })
+    self.maulCB, self.swipeCB = L:CheckPair(
+        { "useMaul", "Maul (rage dump)", "Maul", set("useMaul") },
+        { "aoeSwipe", "Swipe (AoE)", "Swipe", set("aoeSwipe") })
+    self.enrageCB, self.growlCB = L:CheckPair(
+        { "useEnrage", "Enrage", "Enrage", set("useEnrage") },
+        { "useGrowl", "Growl", "Growl", set("useGrowl") })
 
-    -- Bear Form (tank)
-    ui:FS(f, "GameFontNormal", "Bear Form (Tank)"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -396)
-    self.ffBearCB = ui:CreateCheck("ffBear", f, "Faerie Fire", "Faerie Fire (Feral)", function(on) if ui.buf then ui.buf.ffBear = on; ui:Refresh() end end)
-    self.ffBearCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -420)
-    self.demoCB = ui:CreateCheck("useDemo", f, "Demoralizing Roar", "Demoralizing Roar", function(on) if ui.buf then ui.buf.useDemo = on; ui:Refresh() end end)
-    self.demoCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -420)
-    self.maulCB = ui:CreateCheck("useMaul", f, "Maul (rage dump)", "Maul", function(on) if ui.buf then ui.buf.useMaul = on; ui:Refresh() end end)
-    self.maulCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -444)
-    self.swipeCB = ui:CreateCheck("aoeSwipe", f, "Swipe (AoE)", "Swipe", function(on) if ui.buf then ui.buf.aoeSwipe = on; ui:Refresh() end end)
-    self.swipeCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -444)
-    self.enrageCB = ui:CreateCheck("useEnrage", f, "Enrage when rage starved", "Enrage", function(on) if ui.buf then ui.buf.useEnrage = on; ui:Refresh() end end)
-    self.enrageCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -468)
-    self.growlCB = ui:CreateCheck("useGrowl", f, "Growl (taunt for threat)", "Growl", function(on) if ui.buf then ui.buf.useGrowl = on; ui:Refresh() end end)
-    self.growlCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -468)
+    L:Header("Balance / Caster")
+    self.nukeDD = L:Dropdown("nuke", "Nuke", 170, set("nuke"))
+    self.mfCB, self.isCB = L:CheckPair(
+        { "useMoonfire", "Moonfire", "Moonfire", set("useMoonfire") },
+        { "useInsectSwarm", "Insect Swarm", "Insect Swarm", set("useInsectSwarm") })
+    self.eclipseCB = L:Check("eclipse", "Eclipse reaction", nil, set("eclipse"))
 
-    -- Balance / Caster
-    ui:FS(f, "GameFontNormal", "Balance / Caster"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -504)
-    ui:FS(f, "GameFontNormalSmall", "Nuke"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -530)
-    self.nukeDD = ui:CreateDropdown("nuke", f, 170, function(v) if ui.buf then ui.buf.nuke = v; ui:Refresh() end end)
-    self.nukeDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -528)
-    self.mfCB = ui:CreateCheck("useMoonfire", f, "Moonfire", "Moonfire", function(on) if ui.buf then ui.buf.useMoonfire = on; ui:Refresh() end end)
-    self.mfCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -556)
-    self.isCB = ui:CreateCheck("useInsectSwarm", f, "Insect Swarm", "Insect Swarm", function(on) if ui.buf then ui.buf.useInsectSwarm = on; ui:Refresh() end end)
-    self.isCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -556)
-    self.eclipseCB = ui:CreateCheck("eclipse", f, "React to Eclipse procs", nil, function(on) if ui.buf then ui.buf.eclipse = on; ui:Refresh() end end)
-    self.eclipseCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -580)
+    L:Header("Defense (HP management)")
+    self.hpCB = L:Check("hpManage", "Bear Form when HP is low", nil, set("hpManage"))
+    self.hpLowSlider, self.hpHighSlider = L:SliderPair(
+        { "hpLow", "Switch below", set("hpLow") },
+        { "hpHigh", "Back above", set("hpHigh") })
 
-    -- Defense (HP management)
-    ui:FS(f, "GameFontNormal", "Defense (HP management)"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -616)
-    self.hpCB = ui:CreateCheck("hpManage", f, "Bear Form when HP is low", nil, function(on) if ui.buf then ui.buf.hpManage = on; ui:Refresh() end end)
-    self.hpCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -640)
-    self.hpLowSlider  = ui:CreateSlider("hpLow",  f, "switch below", function(v) if ui.buf then ui.buf.hpLow  = v; ui:Refresh() end end)
-    self.hpHighSlider = ui:CreateSlider("hpHigh", f, "back above",   function(v) if ui.buf then ui.buf.hpHigh = v; ui:Refresh() end end)
-    self.hpLowSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -684)
-    self.hpHighSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -684)
-
-    ui:Divider(f, -134)   -- above Form
-    ui:Divider(f, -194)   -- above Cat
-    ui:Divider(f, -388)   -- above Bear
-    ui:Divider(f, -496)   -- above Balance
-    ui:Divider(f, -608)   -- above Defense
+    L:Finish()
 
     ui:Tip(self.formDD, "Preferred form", "Entered when you press the macro in caster form. Caster/Moonkin runs the Balance rotation (and enters Moonkin when learned).", "Before any form is learned, the caster rotation runs automatically, so this works from level 1.")
     ui:Tip(self.styleDD, "Cat style", "Claw & Bleed keeps Rake and Rip rolling (pairs with bleed-energy talents). Shred & Powershift builds with Shred and finishes with Ferocious Bite.", "Use Shred for bleed-immune bosses (MC/BWL). Swap mid-fight with /ar style.")

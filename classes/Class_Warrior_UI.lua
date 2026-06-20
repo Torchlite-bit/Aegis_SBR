@@ -2,9 +2,11 @@
 -- Class_Warrior_UI  -  warrior window body for AutoRota
 -- Builds and binds only the warrior specific controls. The shared
 -- window shell and profile management live in AutoRota_UI.lua.
+-- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
 local M = AutoRota.classes.WARRIOR
+M.useScrollLayout = true
 
 -- Maps each boolean toggle to the spell it depends on, so the label can
 -- show "(not learned)" while leveling. nil = no spell (pure behaviour flag).
@@ -23,77 +25,53 @@ local SPELL_OF = {
 -- ============================================================
 -- build body (warrior controls)
 -- ============================================================
-function M:BuildBody(ui, f)
+function M:BuildBody(ui, parent)
+    local L = ui:NewLayout(parent)
     self.cb = {}
 
-    -- A bound boolean checkbox: writes ui.buf[key] and refreshes.
-    local function mkCheck(key, labelText)
-        local spell = SPELL_OF[key]
-        local item = ui:CreateCheck(key, f, labelText, spell, function(v)
-            if ui.buf then ui.buf[key] = v; ui:Refresh() end
-        end)
-        self.cb[key] = item
-        return item
+    -- helpers: place via the layout cursor and register into self.cb for RefreshBody.
+    local function set(key) return function(v) if ui.buf then ui.buf[key] = v; ui:Refresh() end end end
+    local function one(key, label)
+        local it = L:Check(key, label, SPELL_OF[key], set(key))
+        self.cb[key] = it
+        return it
+    end
+    local function pair(ka, la, kb, lb)
+        local a, b = L:CheckPair(
+            { ka, la, SPELL_OF[ka], set(ka) },
+            { kb, lb, SPELL_OF[kb], set(kb) })
+        self.cb[ka] = a; self.cb[kb] = b
     end
 
-    -- ---- Strikes ----
-    ui:FS(f, "GameFontNormal", "Strikes"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -142)
-    mkCheck("useMortalStrike", "Mortal Strike").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -164)
-    mkCheck("useBloodthirst",  "Bloodthirst").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -164)
-    mkCheck("useShieldSlam",   "Shield Slam").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -186)
-    mkCheck("useWhirlwind",    "Whirlwind").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -186)
-    mkCheck("useSlam",         "Slam").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -208)
+    L:Header("Strikes")
+    pair("useMortalStrike", "Mortal Strike", "useBloodthirst", "Bloodthirst")
+    pair("useShieldSlam", "Shield Slam", "useWhirlwind", "Whirlwind")
+    one("useSlam", "Slam")
 
-    -- ---- Reactive & Execute ----
-    ui:FS(f, "GameFontNormal", "Reactive & Execute"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -236)
-    mkCheck("useOverpower", "Overpower").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -258)
-    mkCheck("useExecute",   "Execute").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -258)
-    mkCheck("useRevenge",   "Revenge").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -280)
-    mkCheck("stanceDance",  "Stance dancing").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -302)
+    L:Header("Reactive & Execute")
+    pair("useOverpower", "Overpower", "useExecute", "Execute")
+    pair("useRevenge", "Revenge", "stanceDance", "Stance dancing")
+    self.stanceDD = L:Dropdown("homeStance", "Home stance", 150, set("homeStance"))
 
-    ui:FS(f, "GameFontNormalSmall", "Home stance"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -328)
-    self.stanceDD = ui:CreateDropdown("homeStance", f, 150, function(v)
-        if ui.buf then ui.buf.homeStance = v; ui:Refresh() end
-    end)
-    self.stanceDD:SetPoint("TOPLEFT", f, "TOPLEFT", 120, -326)
+    L:Header("Threat / AoE")
+    pair("aoeMode", "AoE mode", "useSweeping", "Sweeping Strikes")
+    pair("useSunder", "Sunder Armor", "useThunderClap", "Thunder Clap")
+    one("useCleave", "Cleave (AoE)")
+    self.sunderSlider = L:Slider("sunderStacks", "Sunder stacks", { min = 1, max = 5, step = 1, suffix = "" }, set("sunderStacks"))
 
-    -- ---- Threat / AoE ----
-    ui:FS(f, "GameFontNormal", "Threat / AoE"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -362)
-    mkCheck("aoeMode",       "AoE mode").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -384)
-    mkCheck("useSweeping",   "Sweeping Strikes").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -384)
-    mkCheck("useSunder",     "Sunder Armor").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -406)
-    mkCheck("useThunderClap","Thunder Clap").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -406)
-    mkCheck("useCleave",     "Cleave in AoE").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -430)
-    self.sunderSlider = ui:CreateSlider("sunderStacks", f, "Sunder stacks", {min=1,max=5,step=1,suffix=""},
-        function(v) if ui.buf then ui.buf.sunderStacks = v; ui:Refresh() end end)
-    self.sunderSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -444)
+    L:Header("Rage dump")
+    one("useHeroicStrike", "Heroic Strike")
+    self.dumpSlider, self.wwSlider = L:SliderPair(
+        { "dumpRage", "Dump above rage", { min = 0, max = 100, step = 5, suffix = "" }, set("dumpRage") },
+        { "wwExcess", "WW above rage", { min = 0, max = 100, step = 5, suffix = "" }, set("wwExcess") })
 
-    -- ---- Rage dump ----
-    ui:FS(f, "GameFontNormal", "Rage dump"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -470)
-    mkCheck("useHeroicStrike", "Heroic Strike / Cleave dump").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -492)
-    self.dumpSlider = ui:CreateSlider("dumpRage", f, "dump above rage", {min=0,max=100,step=5,suffix=""},
-        function(v) if ui.buf then ui.buf.dumpRage = v; ui:Refresh() end end)
-    self.dumpSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -528)
-    self.wwSlider = ui:CreateSlider("wwExcess", f, "Whirlwind above rage", {min=0,max=100,step=5,suffix=""},
-        function(v) if ui.buf then ui.buf.wwExcess = v; ui:Refresh() end end)
-    self.wwSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -528)
+    L:Header("Cooldowns")
+    pair("popCDs", "Pop cooldowns", "autoCDElite", "Auto on elite")
+    pair("useDeathWish", "Death Wish", "useRecklessness", "Recklessness")
+    pair("useBerserkerRage", "Berserker Rage", "useBloodrage", "Bloodrage")
+    one("useShieldBlock", "Shield Block")
 
-    -- ---- Cooldowns ----
-    ui:FS(f, "GameFontNormal", "Cooldowns"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -568)
-    mkCheck("popCDs",          "Always pop cooldowns").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -590)
-    mkCheck("autoCDElite",     "Auto on elite and boss").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -590)
-    mkCheck("useDeathWish",    "Death Wish").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -612)
-    mkCheck("useRecklessness", "Recklessness").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -612)
-    mkCheck("useBerserkerRage","Berserker Rage").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -634)
-    mkCheck("useBloodrage",    "Bloodrage").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -634)
-    mkCheck("useShieldBlock",  "Shield Block").cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -656)
-
-    -- ---- section separators ----
-    ui:Divider(f, -134)   -- above Strikes
-    ui:Divider(f, -228)   -- above Reactive & Execute
-    ui:Divider(f, -354)   -- above Threat / AoE
-    ui:Divider(f, -462)   -- above Rage dump
-    ui:Divider(f, -560)   -- above Cooldowns
+    L:Finish()
 
     -- ---- tooltips ----
     ui:Tip(self.cb.useMortalStrike.cb, "Mortal Strike", "Arms primary strike, used on cooldown.")

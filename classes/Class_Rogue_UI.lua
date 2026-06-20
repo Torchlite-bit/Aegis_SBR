@@ -2,48 +2,42 @@
 -- Class_Rogue_UI  -  rogue window body for AutoRota
 -- Builds and binds only the rogue specific controls. The shared
 -- window shell and profile management live in AutoRota_UI.lua.
+-- Uses the shell's scroll layout (M.useScrollLayout): BuildBody is
+-- handed the scroll child and the cursor-based layout API places
+-- everything; detail lives in tooltips so labels stay short.
 -- ============================================================
 
 local M = AutoRota.classes.ROGUE
+M.useScrollLayout = true
 
 -- ============================================================
 -- build body (rogue controls)
 -- ============================================================
-function M:BuildBody(ui, f)
-    -- Rotation
-    ui:FS(f, "GameFontNormal", "Rotation"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -142)
-    ui:FS(f, "GameFontNormalSmall", "Builder"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -168)
-    self.builderDD = ui:CreateDropdown("builder", f, 210, function(v) if ui.buf then ui.buf.builder = v; ui:Refresh() end end)
-    self.builderDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -166)
+function M:BuildBody(ui, parent)
+    local L = ui:NewLayout(parent)
+    local function set(key) return function(v) if ui.buf then ui.buf[key] = v; ui:Refresh() end end end
 
-    -- Finishers
-    ui:FS(f, "GameFontNormal", "Finishers"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -200)
-    self.sndCB = ui:CreateCheck("useSnd", f, "Keep Slice and Dice up", "Slice and Dice", function(on) if ui.buf then ui.buf.useSnd = on; ui:Refresh() end end)
-    self.sndCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -222)
-    self.envCB = ui:CreateCheck("useEnvenom", f, "Keep Envenom up", "Envenom", function(on) if ui.buf then ui.buf.useEnvenom = on; ui:Refresh() end end)
-    self.envCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -246)
-    self.rupCB = ui:CreateCheck("useRupture", f, "Keep Rupture up", "Rupture", function(on) if ui.buf then ui.buf.useRupture = on; ui:Refresh() end end)
-    self.rupCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -246)
-    self.ripCB = ui:CreateCheck("useRiposte", f, "Riposte in parry window", "Riposte", function(on) if ui.buf then ui.buf.useRiposte = on; ui:Refresh() end end)
-    self.ripCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -270)
+    L:Header("Rotation")
+    self.builderDD = L:Dropdown("builder", "Builder", 170, set("builder"))
 
-    self.cpSlider = ui:CreateSlider("cpFinish", f, "Eviscerate at combo points", {min=1,max=5,step=1,suffix=""}, function(v) if ui.buf then ui.buf.cpFinish = v; ui:Refresh() end end)
-    self.cpSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -312)
+    L:Header("Finishers")
+    self.sndCB, self.envCB = L:CheckPair(
+        { "useSnd", "Slice and Dice", "Slice and Dice", set("useSnd") },
+        { "useEnvenom", "Envenom", "Envenom", set("useEnvenom") })
+    self.rupCB, self.ripCB = L:CheckPair(
+        { "useRupture", "Rupture", "Rupture", set("useRupture") },
+        { "useRiposte", "Riposte", "Riposte", set("useRiposte") })
+    self.cpSlider = L:Slider("cpFinish", "Eviscerate at combo points", { min = 1, max = 5, step = 1, suffix = "" }, set("cpFinish"))
 
-    -- Cooldowns
-    ui:FS(f, "GameFontNormal", "Cooldowns"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -344)
-    self.cdCB = ui:CreateCheck("popCDs", f, "Always pop cooldowns", nil, function(on) if ui.buf then ui.buf.popCDs = on; ui:Refresh() end end)
-    self.cdCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -366)
-    self.cdEliteCB = ui:CreateCheck("autoCDElite", f, "Auto on elite and boss", nil, function(on) if ui.buf then ui.buf.autoCDElite = on; ui:Refresh() end end)
-    self.cdEliteCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -366)
+    L:Header("Cooldowns")
+    self.cdCB, self.cdEliteCB = L:CheckPair(
+        { "popCDs", "Pop cooldowns", nil, set("popCDs") },
+        { "autoCDElite", "Auto on elite", nil, set("autoCDElite") })
 
-    ui:Divider(f, -134)   -- above Rotation
-    ui:Divider(f, -192)   -- above Finishers
-    ui:Divider(f, -300)   -- above Cooldowns area (below the slider)
-    ui:Divider(f, -336)   -- above Cooldowns header
+    L:Finish()
 
     ui:Tip(self.builderDD, "Builder", "The combo point builder. Auto picks Noxious Assault if known, else Sinister Strike.")
-    ui:Tip(self.sndCB.cb, "Slice and Dice", "Refreshed cheaply at 1 combo point, dumped with Eviscerate above that.")
+    ui:Tip(self.sndCB.cb, "Slice and Dice", "Kept up: refreshed cheaply at 1 combo point, dumped with Eviscerate above that.")
     ui:Tip(self.envCB.cb, "Envenom", "Kept up the same way as Slice and Dice (Turtle ability).")
     ui:Tip(self.rupCB.cb, "Rupture", "Applied as a finisher at your combo-point threshold when it falls off the target.", "With the Assassination talent Taste for Blood, keeping it up is also a stacking damage buff.")
     ui:Tip(self.ripCB.cb, "Riposte", "Cast right after a parry, inside the short Riposte window.")
@@ -77,7 +71,6 @@ function M:RefreshBody(ui, buf)
     local cpv = buf.cpFinish or 4
     self.cpSlider:SetValue(cpv)
     if self.cpSlider.valText then self.cpSlider.valText:SetText(tostring(cpv)) end
-
 end
 
 -- Open the shared window for this class.
