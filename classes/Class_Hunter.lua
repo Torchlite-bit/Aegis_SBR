@@ -336,6 +336,50 @@ function M:MaintainDebuff(name, interval)
     return self:Cast(name)
 end
 
+-- ============================================================
+-- Sting immunity. Serpent / Scorpid / Viper Sting are Poison-school effects, so
+-- they do not land on poison-immune targets and otherwise re-fire on a wasted
+-- "immune" cast every cycle. Two layers:
+--   * by creature type (deterministic): Mechanical and Elemental are immune to
+--     Poison on 1.12, so the sting is skipped outright - zero wasted casts.
+--     Undead is NOT blanket-immune (only specific undead are), so it is not
+--     type-blocked; those are caught by the learn layer instead.
+--   * learned (per target, this combat): if the sting was cast but never showed
+--     up on the target, mark that mob immune and stop re-casting. This catches
+--     the immune undead and immune bosses (e.g. Baron Aquanis) automatically
+--     after a single cast.
+-- Both are cleared when leaving combat (see the event frame at the bottom).
+-- ============================================================
+M.STING_IMMUNE_TYPES = { Mechanical = true, Elemental = true }
+M.stingImmune = {}   -- [targetGUID] = true, learned for the current combat
+M.stingTry = nil     -- { guid, t, name }: a sting application waiting to confirm
+
+-- Read-only: is a sting blocked on the current target right now? No side effects
+-- (used by the rotation gate and the trace line).
+function M:StingImmuneNow()
+    local ct = UnitCreatureType and UnitCreatureType("target")
+    if ct and self.STING_IMMUNE_TYPES[ct] then return true end
+    local _, guid = UnitExists("target")
+    return (guid and self.stingImmune[guid]) and true or false
+end
+
+-- Full check used by the rotation: the read-only test above, plus learning from
+-- a pending application that never landed (the immune undead / boss case).
+function M:StingBlocked(sting)
+    if self:StingImmuneNow() then return true end
+    local _, guid = UnitExists("target")
+    if guid and self.stingTry and self.stingTry.guid == guid and self.stingTry.name == sting then
+        if self:TargetDebuffUp(sting, nil) then
+            self.stingTry = nil                  -- it landed; stop watching
+        elseif (GetTime() - self.stingTry.t) > 2.5 then
+            self.stingImmune[guid] = true         -- never landed -> immune
+            self.stingTry = nil
+            return true
+        end
+    end
+    return false
+end
+
 function M:PetHPPct()
     if not UnitExists("pet") then return 100 end
     local mx = UnitHealthMax("pet")
@@ -468,7 +512,7 @@ function M:Rotate(cfg)
     if self.trace then
         self:Trace("mode=" .. (cfg.mode or "ranged") .. (cfg.mode == "auto" and ("/" .. (melee and "melee" or "ranged")) or "")
             .. " hp=" .. floor(targetHP)
-            .. " sting=" .. (cfg.sting ~= "" and cfg.sting or "-")
+            .. " sting=" .. (cfg.sting ~= "" and (cfg.sting .. (self:StingImmuneNow() and "(immune)" or "")) or "-")
             .. " mark=" .. (cfg.useHuntersMark and (self:TargetDebuffUp("Hunter's Mark", nil) and "Y" or "n") or "-")
             .. " L&L=" .. (self:HasBuff("Lock and Load") and "Y" or "n")
             .. " auto=" .. (self:AutoShotting() and "Y" or (self.autoShotOn and "assumed" or "N"))
@@ -558,8 +602,15 @@ function M:Rotate(cfg)
     --     is a ranged shot, so even a melee hunter lands it on the pull and stops
     --     once closed), and only on a target healthy enough to tick the full DoT.
     --     Low-HP mobs are finished with Arcane Shot in the ranged branch instead.
-    if cfg.sting ~= "" and not inMeleeNow and markOK and targetHP > STING_HP_FLOOR then
-        if self:MaintainDebuff(cfg.sting, STING_DUR[cfg.sting] or 12) then return end
+    if cfg.sting ~= "" and not inMeleeNow and markOK and targetHP > STING_HP_FLOOR
+        and not self:StingBlocked(cfg.sting) then
+        if self:MaintainDebuff(cfg.sting, STING_DUR[cfg.sting] or 12) then
+            -- remember this application so a sting that never lands (an immune
+            -- undead / boss) is learned and not re-cast every cycle.
+            local _, guid = UnitExists("target")
+            self.stingTry = { guid = guid, t = GetTime(), name = cfg.sting }
+            return
+        end
     end
 
     -- 5d. Immolation Trap on cooldown (Survival, usable in combat on 1.18.1).
@@ -731,6 +782,8 @@ hunterFrame:SetScript("OnEvent", function()
         M.autoShotTarget = nil
         M.steadyT = 0
         M.lastAutoShot = 0   -- forget the ranged-swing phase between pulls
+        M.stingImmune = {}   -- relearn sting immunity each combat
+        M.stingTry = nil
     elseif event == "CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES" then
         if arg1 and string.find(string.lower(arg1), "dodge") then
             M.dodgeUntil = GetTime() + REACT_WINDOW
