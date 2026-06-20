@@ -2,77 +2,59 @@
 -- Class_Warlock_UI  -  warlock window body for AutoRota
 -- Builds and binds only the warlock specific controls. The shared
 -- window shell and profile management live in AutoRota_UI.lua.
+-- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
 local M = AutoRota.classes.WARLOCK
+M.useScrollLayout = true
 
 -- ============================================================
 -- build body (warlock controls)
 -- ============================================================
-function M:BuildBody(ui, f)
-    -- Damage over time
-    ui:FS(f, "GameFontNormal", "Damage over time"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -142)
-    self.immoCB = ui:CreateCheck("useImmolate", f, "Immolate", "Immolate", function(on) if ui.buf then ui.buf.useImmolate = on; ui:Refresh() end end)
-    self.immoCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -166)
-    self.corrCB = ui:CreateCheck("useCorruption", f, "Corruption", "Corruption", function(on) if ui.buf then ui.buf.useCorruption = on; ui:Refresh() end end)
-    self.corrCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -166)
-    self.siphCB = ui:CreateCheck("useSiphonLife", f, "Siphon Life", "Siphon Life", function(on) if ui.buf then ui.buf.useSiphonLife = on; ui:Refresh() end end)
-    self.siphCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -190)
+function M:BuildBody(ui, parent)
+    local L = ui:NewLayout(parent)
+    -- set(field) writes ui.buf[field]; slider frame names differ from their
+    -- buf fields, so the layout key (frame name) and the field are passed apart.
+    local function set(field) return function(v) if ui.buf then ui.buf[field] = v; ui:Refresh() end end end
 
-    ui:FS(f, "GameFontNormalSmall", "Curse"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -216)
-    self.curseDD = ui:CreateDropdown("curse", f, 210, function(v) if ui.buf then ui.buf.curse = v; ui:Refresh() end end)
-    self.curseDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -214)
+    L:Header("Damage over time")
+    self.immoCB, self.corrCB = L:CheckPair(
+        { "useImmolate", "Immolate", "Immolate", set("useImmolate") },
+        { "useCorruption", "Corruption", "Corruption", set("useCorruption") })
+    self.siphCB = L:Check("useSiphonLife", "Siphon Life", "Siphon Life", set("useSiphonLife"))
+    self.curseDD = L:Dropdown("curse", "Curse", 200, set("curse"))
 
-    -- Filler and pet
-    ui:FS(f, "GameFontNormal", "Filler and pet"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -248)
-    ui:FS(f, "GameFontNormalSmall", "Filler"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -274)
-    self.fillerDD = ui:CreateDropdown("filler", f, 210, function(v) if ui.buf then ui.buf.filler = v; ui:Refresh() end end)
-    self.fillerDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -272)
-    self.petCB = ui:CreateCheck("petAttack", f, "Send pet to attack", nil, function(on) if ui.buf then ui.buf.petAttack = on; ui:Refresh() end end)
-    self.petCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -300)
-    self.petMeleeCB = ui:CreateCheck("petMeleeOnly", f, "Pet only in melee range", nil, function(on) if ui.buf then ui.buf.petMeleeOnly = on; ui:Refresh() end end)
-    self.petMeleeCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -300)
-    self.nightfallCB = ui:CreateCheck("nightfall", f, "Shadow Bolt on Shadow Trance", "Shadow Bolt", function(on) if ui.buf then ui.buf.nightfall = on; ui:Refresh() end end)
-    self.nightfallCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -324)
+    L:Header("Filler and pet")
+    self.fillerDD = L:Dropdown("filler", "Filler", 200, set("filler"))
+    self.petCB, self.petMeleeCB = L:CheckPair(
+        { "petAttack", "Send pet to attack", nil, set("petAttack") },
+        { "petMeleeOnly", "Pet melee only", nil, set("petMeleeOnly") })
+    self.nightfallCB = L:Check("nightfall", "Shadow Bolt on Shadow Trance", "Shadow Bolt", set("nightfall"))
 
-    -- Mana (Life Tap)
-    ui:FS(f, "GameFontNormal", "Mana (Life Tap)"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -356)
-    self.tapCB = ui:CreateCheck("lifeTap", f, "Use Life Tap", "Life Tap", function(on) if ui.buf then ui.buf.lifeTap = on; ui:Refresh() end end)
-    self.tapCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -380)
-    self.tapManaSlider = ui:CreateSlider("ltMana", f, "tap below mana", function(v) if ui.buf then ui.buf.lifeTapMana = v; ui:Refresh() end end)
-    self.tapManaSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -422)
-    self.tapHpSlider = ui:CreateSlider("ltHp", f, "keep HP above", function(v) if ui.buf then ui.buf.lifeTapHpMin = v; ui:Refresh() end end)
-    self.tapHpSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -422)
+    L:Header("Mana (Life Tap)")
+    self.tapCB = L:Check("lifeTap", "Use Life Tap", "Life Tap", set("lifeTap"))
+    self.tapManaSlider, self.tapHpSlider = L:SliderPair(
+        { "ltMana", "Tap below mana", set("lifeTapMana") },
+        { "ltHp", "Keep HP above", set("lifeTapHpMin") })
 
-    -- Execute (target low HP)
-    ui:FS(f, "GameFontNormal", "Execute (target low HP)"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -454)
-    self.sburnCB = ui:CreateCheck("useShadowburn", f, "Shadowburn", "Shadowburn", function(on) if ui.buf then ui.buf.useShadowburn = on; ui:Refresh() end end)
-    self.sburnCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -478)
-    self.dsoulCB = ui:CreateCheck("useDrainSoul", f, "Drain Soul (shard)", "Drain Soul", function(on) if ui.buf then ui.buf.useDrainSoul = on; ui:Refresh() end end)
-    self.dsoulCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -478)
-    self.sburnSlider = ui:CreateSlider("sbHp", f, "burn below", function(v) if ui.buf then ui.buf.shadowburnHp = v; ui:Refresh() end end)
-    self.sburnSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -520)
-    self.dsoulSlider = ui:CreateSlider("dsHp", f, "drain below", function(v) if ui.buf then ui.buf.drainSoulHp = v; ui:Refresh() end end)
-    self.dsoulSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -520)
+    L:Header("Execute (target low HP)")
+    self.sburnCB, self.dsoulCB = L:CheckPair(
+        { "useShadowburn", "Shadowburn", "Shadowburn", set("useShadowburn") },
+        { "useDrainSoul", "Drain Soul", "Drain Soul", set("useDrainSoul") })
+    self.sburnSlider, self.dsoulSlider = L:SliderPair(
+        { "sbHp", "Burn below", set("shadowburnHp") },
+        { "dsHp", "Drain below", set("drainSoulHp") })
 
-    -- Survival
-    ui:FS(f, "GameFontNormal", "Survival"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -556)
-    self.drainCB = ui:CreateCheck("drainLifeSustain", f, "Drain Life when low", "Drain Life", function(on) if ui.buf then ui.buf.drainLifeSustain = on; ui:Refresh() end end)
-    self.drainCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -580)
-    self.funnelCB = ui:CreateCheck("healthFunnel", f, "Health Funnel pet", "Health Funnel", function(on) if ui.buf then ui.buf.healthFunnel = on; ui:Refresh() end end)
-    self.funnelCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -580)
-    self.drainSlider = ui:CreateSlider("dlHp", f, "heal below", function(v) if ui.buf then ui.buf.drainLifeHp = v; ui:Refresh() end end)
-    self.drainSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -622)
-    self.funnelPetSlider = ui:CreateSlider("hfPet", f, "pet below", function(v) if ui.buf then ui.buf.healthFunnelPetHp = v; ui:Refresh() end end)
-    self.funnelPetSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -622)
-    self.funnelSelfSlider = ui:CreateSlider("hfSelf", f, "keep your HP above", function(v) if ui.buf then ui.buf.healthFunnelHpMin = v; ui:Refresh() end end)
-    self.funnelSelfSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -664)
+    L:Header("Survival")
+    self.drainCB, self.funnelCB = L:CheckPair(
+        { "drainLifeSustain", "Drain Life when low", "Drain Life", set("drainLifeSustain") },
+        { "healthFunnel", "Health Funnel", "Health Funnel", set("healthFunnel") })
+    self.drainSlider, self.funnelPetSlider = L:SliderPair(
+        { "dlHp", "Heal below", set("drainLifeHp") },
+        { "hfPet", "Pet below", set("healthFunnelPetHp") })
+    self.funnelSelfSlider = L:Slider("hfSelf", "Keep your HP above", set("healthFunnelHpMin"))
 
-    ui:Divider(f, -134)   -- above DoT
-    ui:Divider(f, -236)   -- above Filler and pet
-    ui:Divider(f, -344)   -- above Mana
-    ui:Divider(f, -446)   -- above Execute
-    ui:Divider(f, -548)   -- above Survival
+    L:Finish()
 
     ui:Tip(self.immoCB.cb, "Immolate", "Direct fire damage plus a fire damage over time.", "Kept up first in the priority.")
     ui:Tip(self.corrCB.cb, "Corruption", "Shadow damage over time, applied after the curse.")
@@ -89,7 +71,7 @@ function M:BuildBody(ui, f)
     ui:Tip(self.dsoulCB.cb, "Drain Soul", "Channel in the target's last seconds to bank a Soul Shard and regen mana.", "If both this and Shadowburn are on, Shadowburn fires first when ready.")
     ui:Tip(self.sburnSlider, "Burn below", "Target health percent under which Shadowburn fires.")
     ui:Tip(self.dsoulSlider, "Drain below", "Target health percent under which Drain Soul channels.")
-    ui:Tip(self.drainCB.cb, "Drain Life when low", "Self-heal channel when your health dips below the value — the drain-tank safety net.")
+    ui:Tip(self.drainCB.cb, "Drain Life when low", "Self-heal channel when your health dips below the value - the drain-tank safety net.")
     ui:Tip(self.funnelCB.cb, "Health Funnel pet", "Top the pet up when it drops, as long as your own health is safe (it transfers yours to the pet).")
     ui:Tip(self.drainSlider, "Heal below", "Your health percent under which Drain Life is channeled.")
     ui:Tip(self.funnelPetSlider, "Pet below", "Pet health percent under which Health Funnel is cast.")

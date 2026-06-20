@@ -2,6 +2,7 @@
 -- Class_Paladin_UI  -  paladin window body for AutoRota
 -- Builds and binds only the paladin specific controls. The shared
 -- window shell and profile management live in AutoRota_UI.lua.
+-- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
 local M = AutoRota.classes.PALADIN
@@ -18,84 +19,58 @@ local function setBlockEnabled(cbItem, sLow, sHigh, on, reason)
     end
 end
 
+M.useScrollLayout = true
+
 -- ============================================================
 -- build body (paladin controls)
 -- ============================================================
-function M:BuildBody(ui, f)
-    ui:FS(f, "GameFontNormal", "Seals"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -142)
-    ui:FS(f, "GameFontNormalSmall", "Debuff"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -166)
-    self.debuffDD = ui:CreateDropdown("seal_debuff", f, 210, function(v) if ui.buf then ui.buf.seals.debuff = v; ui:Refresh() end end)
-    self.debuffDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -164)
-    ui:FS(f, "GameFontNormalSmall", "Damage"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -194)
-    self.damageDD = ui:CreateDropdown("seal_damage", f, 210, function(v) if ui.buf then ui.buf.seals.damage = v; ui:Refresh() end end)
-    self.damageDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -192)
+function M:BuildBody(ui, parent)
+    local L = ui:NewLayout(parent)
+    local function set(field)  return function(v) if ui.buf then ui.buf[field] = v; ui:Refresh() end end end
+    local function sset(key)   return function(v) if ui.buf then ui.buf.spells[key] = v; ui:Refresh() end end end
 
-    ui:FS(f, "GameFontNormal", "Spells"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -222)
+    L:Header("Seals")
+    self.debuffDD = L:Dropdown("seal_debuff", "Debuff", 200, function(v) if ui.buf then ui.buf.seals.debuff = v; ui:Refresh() end end)
+    self.damageDD = L:Dropdown("seal_damage", "Damage", 200, function(v) if ui.buf then ui.buf.seals.damage = v; ui:Refresh() end end)
+
+    L:Header("Spells")
     self.spellCB = {}
-    self.spellCB.holyShield     = ui:CreateCheck("holyShield",     f, "Holy Shield",     "Holy Shield",     function(v) if ui.buf then ui.buf.spells.holyShield = v; ui:Refresh() end end)
-    self.spellCB.hammerOfWrath  = ui:CreateCheck("hammerOfWrath",  f, "Hammer of Wrath", "Hammer of Wrath", function(v) if ui.buf then ui.buf.spells.hammerOfWrath = v; ui:Refresh() end end)
-    self.spellCB.repentance     = ui:CreateCheck("repentance",     f, "Repentance",      "Repentance",      function(v) if ui.buf then ui.buf.spells.repentance = v; ui:Refresh() end end)
-    self.spellCB.consecration   = ui:CreateCheck("consecration",   f, "Consecration (AoE)", "Consecration",  function(v) if ui.buf then ui.buf.spells.consecration = v; ui:Refresh() end end)
-    self.spellCB.exorcism       = ui:CreateCheck("exorcism",       f, "Exorcism",        "Exorcism",        function(v) if ui.buf then ui.buf.spells.exorcism = v; ui:Refresh() end end)
+    self.strikeModeDD = L:Dropdown("strikeMode", "Strike mode", 170, set("strikeMode"))
+    self.spellCB.holyShield, self.spellCB.hammerOfWrath = L:CheckPair(
+        { "holyShield", "Holy Shield", "Holy Shield", sset("holyShield") },
+        { "hammerOfWrath", "Hammer of Wrath", "Hammer of Wrath", sset("hammerOfWrath") })
+    self.spellCB.repentance, self.spellCB.consecration = L:CheckPair(
+        { "repentance", "Repentance", "Repentance", sset("repentance") },
+        { "consecration", "Consecration", "Consecration", sset("consecration") })
+    self.spellCB.exorcism, self.twistCB = L:CheckPair(
+        { "exorcism", "Exorcism", "Exorcism", sset("exorcism") },
+        { "sealTwist", "Seal twisting", nil, set("sealTwist") })
+    self.prioZealCB, self.downrankCB = L:CheckPair(
+        { "prioZeal", "Prioritize Zeal", nil, set("prioZeal") },
+        { "strikeDownrank", "Downrank low", nil, set("strikeDownrank") })
 
-    -- Strike mode leads the Spells section: it both enables the strikes and picks
-    -- the style, so Holy and Crusader Strike no longer need separate checkboxes.
-    ui:FS(f, "GameFontNormalSmall", "Strike mode"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -242)
-    self.strikeModeDD = ui:CreateDropdown("strikeMode", f, 170, function(v) if ui.buf then ui.buf.strikeMode = v; ui:Refresh() end end)
-    self.strikeModeDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -240)
+    L:Header("Mana management")
+    self.manaCB = L:Check("manaManage", "Mana management (Seal of Wisdom)", "Seal of Wisdom", set("manaManage"))
+    self.manaLowSlider, self.manaHighSlider = L:SliderPair(
+        { "manaLow", "Switch below", set("manaLow") },
+        { "manaHigh", "Back above", set("manaHigh") })
+    self.weaveCB = L:Check("manaWeave", "Judgement weaving", nil, set("manaWeave"))
+    self.weaveMinSlider = L:Slider("manaWeaveMin", "Skip weaving below", set("manaWeaveMin"))
+    self.wisdomCB = L:Check("manaWisdomDebuff", "Use Wisdom debuff in mana mode", nil, set("manaWisdomDebuff"))
 
-    self.spellCB.holyShield.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -268)
-    self.spellCB.hammerOfWrath.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -268)
-    self.spellCB.repentance.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -290)
-    self.spellCB.consecration.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -312)
-    self.spellCB.exorcism.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -312)
+    L:Header("HP management")
+    self.hpCB = L:Check("hpManage", "HP management (Seal of Light)", "Seal of Light", set("hpManage"))
+    self.hpLowSlider, self.hpHighSlider = L:SliderPair(
+        { "hpLow", "Switch below", set("hpLow") },
+        { "hpHigh", "Back above", set("hpHigh") })
 
-    self.twistCB = ui:CreateCheck("sealTwist", f, "Seal twisting", nil, function(v) if ui.buf then ui.buf.sealTwist = v; ui:Refresh() end end)
-    self.twistCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -290)
+    L:Header("Healing")
+    self.healCB = L:Check("healMode", "Heal mode (group healing)", nil, set("healMode"))
+    self.healAtSlider = L:Slider("healThreshold", "Heal members below", set("healThreshold"))
+    self.holyShockCB = L:Check("useHolyShock", "Holy Shock emergencies", "Holy Shock", set("useHolyShock"))
+    self.holyShockSlider = L:Slider("holyShockPct", "Holy Shock below", set("holyShockPct"))
 
-    self.prioZealCB = ui:CreateCheck("prioZeal", f, "Prioritize Zeal", nil, function(v) if ui.buf then ui.buf.prioZeal = v; ui:Refresh() end end)
-    self.prioZealCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -336)
-    self.downrankCB = ui:CreateCheck("strikeDownrank", f, "Downrank when low", nil, function(v) if ui.buf then ui.buf.strikeDownrank = v; ui:Refresh() end end)
-    self.downrankCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -336)
-
-    self.manaCB = ui:CreateCheck("manaManage", f, "Mana management (Seal of Wisdom)", "Seal of Wisdom", function(v) if ui.buf then ui.buf.manaManage = v; ui:Refresh() end end)
-    self.manaCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -372)
-    self.manaLowSlider  = ui:CreateSlider("manaLow",  f, "switch below", function(v) if ui.buf then ui.buf.manaLow  = v; ui:Refresh() end end)
-    self.manaHighSlider = ui:CreateSlider("manaHigh", f, "back above",   function(v) if ui.buf then ui.buf.manaHigh = v; ui:Refresh() end end)
-    self.manaLowSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -414)
-    self.manaHighSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -414)
-    self.weaveCB = ui:CreateCheck("manaWeave", f, "Judgement weaving", nil, function(v) if ui.buf then ui.buf.manaWeave = v; ui:Refresh() end end)
-    self.weaveCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 40, -446)
-    self.weaveMinSlider = ui:CreateSlider("manaWeaveMin", f, "skip weaving below", function(v) if ui.buf then ui.buf.manaWeaveMin = v; ui:Refresh() end end)
-    self.weaveMinSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 46, -484)
-    self.wisdomCB = ui:CreateCheck("manaWisdomDebuff", f, "Use Wisdom debuff in mana mode", nil, function(v) if ui.buf then ui.buf.manaWisdomDebuff = v; ui:Refresh() end end)
-    self.wisdomCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 40, -514)
-
-    self.hpCB = ui:CreateCheck("hpManage", f, "HP management (Seal of Light)", "Seal of Light", function(v) if ui.buf then ui.buf.hpManage = v; ui:Refresh() end end)
-    self.hpCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -548)
-    self.hpLowSlider  = ui:CreateSlider("hpLow",  f, "switch below", function(v) if ui.buf then ui.buf.hpLow  = v; ui:Refresh() end end)
-    self.hpHighSlider = ui:CreateSlider("hpHigh", f, "back above",   function(v) if ui.buf then ui.buf.hpHigh = v; ui:Refresh() end end)
-    self.hpLowSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -590)
-    self.hpHighSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -590)
-
-    -- Healing (heal mode): group healer that DPSes between heals.
-    ui:FS(f, "GameFontNormal", "Healing"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -632)
-    self.healCB = ui:CreateCheck("healMode", f, "Heal mode (group healing)", nil, function(v) if ui.buf then ui.buf.healMode = v; ui:Refresh() end end)
-    self.healCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -656)
-    self.healAtSlider = ui:CreateSlider("healThreshold", f, "heal members below", function(v) if ui.buf then ui.buf.healThreshold = v; ui:Refresh() end end)
-    self.healAtSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -698)
-    self.holyShockCB = ui:CreateCheck("useHolyShock", f, "Holy Shock emergencies", "Holy Shock", function(v) if ui.buf then ui.buf.useHolyShock = v; ui:Refresh() end end)
-    self.holyShockCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -732)
-    self.holyShockSlider = ui:CreateSlider("holyShockPct", f, "Holy Shock below", function(v) if ui.buf then ui.buf.holyShockPct = v; ui:Refresh() end end)
-    self.holyShockSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -774)
-
-    -- section separators for easier scanning
-    ui:Divider(f, -134)   -- above Seals
-    ui:Divider(f, -214)   -- above Spells
-    ui:Divider(f, -364)   -- above Mana management
-    ui:Divider(f, -538)   -- above HP management, below the Wisdom debuff toggle
-    ui:Divider(f, -624)   -- above Healing
-
+    L:Finish()
 
     ui:Tip(self.debuffDD, "Debuff seal", "Judged once to apply its debuff to the target.", "Autoattacks keep the debuff up afterwards.")
     ui:Tip(self.damageDD, "Damage seal", "Judged continuously for damage.", "Leaves no debuff, so it never overwrites the one above.")
@@ -103,7 +78,7 @@ function M:BuildBody(ui, f)
     ui:Tip(self.spellCB.holyShield.cb,     "Holy Shield",     "Cast right after the strike, before seals.", "Fires whenever its own cooldown is ready.")
     ui:Tip(self.spellCB.hammerOfWrath.cb,  "Hammer of Wrath", "Execute, used only at or below 20 percent target HP.")
     ui:Tip(self.spellCB.repentance.cb,     "Repentance",      "Cast on cooldown as a damage proc on Turtle.")
-    ui:Tip(self.spellCB.consecration.cb,   "Consecration",    "AoE filler, cast on cooldown. Manual toggle (also /ar aoe), since 1.12 cannot count nearby enemies.", "Held during mana recovery.")
+    ui:Tip(self.spellCB.consecration.cb,   "Consecration (AoE)", "AoE filler, cast on cooldown. Manual toggle (also /ar aoe), since 1.12 cannot count nearby enemies.", "Held during mana recovery.")
     ui:Tip(self.spellCB.exorcism.cb,       "Exorcism",        "Strong nuke, used on cooldown but only against Undead and Demon targets.", "Held during mana recovery.")
     ui:Tip(self.strikeModeDD, "Strike mode", "Enables and styles Holy/Crusader Strike. Auto: Vengeful Strike talent -> keep Holy Might up; shield or Righteous Strike -> Holy lean for threat; otherwise Crusader lean. Off disables strikes.", "CS / HS / Holy then Crusader force a fixed style.")
     ui:Tip(self.prioZealCB.cb, "Prioritize Zeal", "Build Zeal to 3 stacks first, then follow the mode above.")

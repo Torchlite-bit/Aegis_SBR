@@ -2,72 +2,58 @@
 -- Class_Priest_UI  -  priest window body for AutoRota
 -- Builds and binds only the priest specific controls. The shared
 -- window shell and profile management live in AutoRota_UI.lua.
+-- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
 local M = AutoRota.classes.PRIEST
+M.useScrollLayout = true
 
-function M:BuildBody(ui, f)
-    -- General
-    ui:FS(f, "GameFontNormal", "General"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -142)
-    self.healCB = ui:CreateCheck("healMode", f, "Heal mode (group healing)", nil, function(on) if ui.buf then ui.buf.healMode = on; ui:Refresh() end end)
-    self.healCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -166)
-    self.innerFireCB = ui:CreateCheck("useInnerFire", f, "Keep Inner Fire up", "Inner Fire", function(on) if ui.buf then ui.buf.useInnerFire = on; ui:Refresh() end end)
-    self.innerFireCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -166)
+function M:BuildBody(ui, parent)
+    local L = ui:NewLayout(parent)
+    local function set(field) return function(v) if ui.buf then ui.buf[field] = v; ui:Refresh() end end end
 
-    -- Shadow & leveling (damage)
-    ui:FS(f, "GameFontNormal", "Shadow & leveling"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -200)
-    self.shadowformCB = ui:CreateCheck("useShadowform", f, "Hold Shadowform", "Shadowform", function(on) if ui.buf then ui.buf.useShadowform = on; ui:Refresh() end end)
-    self.shadowformCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -224)
-    self.mindBlastCB = ui:CreateCheck("useMindBlast", f, "Mind Blast", "Mind Blast", function(on) if ui.buf then ui.buf.useMindBlast = on; ui:Refresh() end end)
-    self.mindBlastCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -224)
-    self.swpCB = ui:CreateCheck("useShadowWordPain", f, "Shadow Word: Pain", "Shadow Word: Pain", function(on) if ui.buf then ui.buf.useShadowWordPain = on; ui:Refresh() end end)
-    self.swpCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -248)
-    self.devouringCB = ui:CreateCheck("useDevouringPlague", f, "Devouring Plague", "Devouring Plague", function(on) if ui.buf then ui.buf.useDevouringPlague = on; ui:Refresh() end end)
-    self.devouringCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -248)
-    self.holyFireCB = ui:CreateCheck("useHolyFire", f, "Holy Fire", "Holy Fire", function(on) if ui.buf then ui.buf.useHolyFire = on; ui:Refresh() end end)
-    self.holyFireCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -272)
-    self.mindFlayCB = ui:CreateCheck("useMindFlay", f, "Mind Flay", "Mind Flay", function(on) if ui.buf then ui.buf.useMindFlay = on; ui:Refresh() end end)
-    self.mindFlayCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -272)
-    self.pwShieldMeleeCB = ui:CreateCheck("usePWShieldMelee", f, "Shield when in melee", "Power Word: Shield", function(on) if ui.buf then ui.buf.usePWShieldMelee = on; ui:Refresh() end end)
-    self.pwShieldMeleeCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -296)
-    self.spiritTapCB = ui:CreateCheck("useSpiritTapFinisher", f, "Finisher (secure kill)", "Mind Blast", function(on) if ui.buf then ui.buf.useSpiritTapFinisher = on; ui:Refresh() end end)
-    self.spiritTapCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -296)
+    L:Header("General")
+    self.healCB, self.innerFireCB = L:CheckPair(
+        { "healMode", "Heal mode", nil, set("healMode") },
+        { "useInnerFire", "Inner Fire", "Inner Fire", set("useInnerFire") })
 
-    ui:FS(f, "GameFontNormalSmall", "Filler"):SetPoint("TOPLEFT", f, "TOPLEFT", 24, -322)
-    self.fillerDD = ui:CreateDropdown("filler", f, 150, function(v) if ui.buf then ui.buf.filler = v; ui:Refresh() end end)
-    self.fillerDD:SetPoint("TOPLEFT", f, "TOPLEFT", 110, -320)
-    self.useWandCB = ui:CreateCheck("useWand", f, "Use wand", nil, function(on) if ui.buf then ui.buf.useWand = on; ui:Refresh() end end)
-    self.useWandCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 270, -320)
-    self.executeSlider = ui:CreateSlider("executeHp", f, "finisher below", function(v) if ui.buf then ui.buf.executeHp = v; ui:Refresh() end end)
-    self.executeSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -360)
-    self.manaFloorSlider = ui:CreateSlider("fillerManaFloor", f, "wand below mana", function(v) if ui.buf then ui.buf.fillerManaFloor = v; ui:Refresh() end end)
-    self.manaFloorSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -360)
+    L:Header("Shadow & leveling")
+    self.shadowformCB, self.mindBlastCB = L:CheckPair(
+        { "useShadowform", "Hold Shadowform", "Shadowform", set("useShadowform") },
+        { "useMindBlast", "Mind Blast", "Mind Blast", set("useMindBlast") })
+    self.swpCB, self.devouringCB = L:CheckPair(
+        { "useShadowWordPain", "Shadow Word: Pain", "Shadow Word: Pain", set("useShadowWordPain") },
+        { "useDevouringPlague", "Devouring Plague", "Devouring Plague", set("useDevouringPlague") })
+    self.holyFireCB, self.mindFlayCB = L:CheckPair(
+        { "useHolyFire", "Holy Fire", "Holy Fire", set("useHolyFire") },
+        { "useMindFlay", "Mind Flay", "Mind Flay", set("useMindFlay") })
+    self.pwShieldMeleeCB, self.spiritTapCB = L:CheckPair(
+        { "usePWShieldMelee", "Shield in melee", "Power Word: Shield", set("usePWShieldMelee") },
+        { "useSpiritTapFinisher", "Finisher", "Mind Blast", set("useSpiritTapFinisher") })
+    self.fillerDD, self.useWandCB = L:DropdownCheck(
+        { key = "filler", label = "Filler", width = 110, onChange = set("filler") },
+        { "useWand", "Use wand", nil, set("useWand") })
+    self.executeSlider, self.manaFloorSlider = L:SliderPair(
+        { "executeHp", "Finisher below", set("executeHp") },
+        { "fillerManaFloor", "Wand below mana", set("fillerManaFloor") })
 
-    -- Healing
-    ui:FS(f, "GameFontNormal", "Healing"):SetPoint("TOPLEFT", f, "TOPLEFT", 20, -406)
-    self.healAtSlider = ui:CreateSlider("healThreshold", f, "heal members below", function(v) if ui.buf then ui.buf.healThreshold = v; ui:Refresh() end end)
-    self.healAtSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -432)
-    self.flashHealCB = ui:CreateCheck("useFlashHeal", f, "Flash Heal (emergency)", "Flash Heal", function(on) if ui.buf then ui.buf.useFlashHeal = on; ui:Refresh() end end)
-    self.flashHealCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -468)
-    self.greaterHealCB = ui:CreateCheck("useGreaterHeal", f, "Greater Heal (big)", "Greater Heal", function(on) if ui.buf then ui.buf.useGreaterHeal = on; ui:Refresh() end end)
-    self.greaterHealCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -468)
-    self.flashAtSlider = ui:CreateSlider("flashHealPct", f, "Flash only below", function(v) if ui.buf then ui.buf.flashHealPct = v; ui:Refresh() end end)
-    self.flashAtSlider:SetPoint("TOPLEFT", f, "TOPLEFT", 28, -510)
-    self.pwShieldCB = ui:CreateCheck("usePWShield", f, "Power Word: Shield", "Power Word: Shield", function(on) if ui.buf then ui.buf.usePWShield = on; ui:Refresh() end end)
-    self.pwShieldCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -542)
-    self.renewCB = ui:CreateCheck("useRenew", f, "Renew", "Renew", function(on) if ui.buf then ui.buf.useRenew = on; ui:Refresh() end end)
-    self.renewCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -542)
-    self.prayerCB = ui:CreateCheck("usePrayer", f, "Prayer of Healing (AoE)", "Prayer of Healing", function(on) if ui.buf then ui.buf.usePrayer = on; ui:Refresh() end end)
-    self.prayerCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -566)
-    self.innerFocusCB = ui:CreateCheck("useInnerFocus", f, "Inner Focus on AoE", "Inner Focus", function(on) if ui.buf then ui.buf.useInnerFocus = on; ui:Refresh() end end)
-    self.innerFocusCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -566)
-    self.offensiveCB = ui:CreateCheck("offensiveWeave", f, "Weave Smite/Holy Fire", "Smite", function(on) if ui.buf then ui.buf.offensiveWeave = on; ui:Refresh() end end)
-    self.offensiveCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -590)
-    self.lightwellCB = ui:CreateCheck("useLightwell", f, "Place Lightwell", "Lightwell", function(on) if ui.buf then ui.buf.useLightwell = on; ui:Refresh() end end)
-    self.lightwellCB.cb:SetPoint("TOPLEFT", f, "TOPLEFT", 200, -590)
+    L:Header("Healing")
+    self.healAtSlider = L:Slider("healThreshold", "Heal members below", set("healThreshold"))
+    self.flashHealCB, self.greaterHealCB = L:CheckPair(
+        { "useFlashHeal", "Flash Heal", "Flash Heal", set("useFlashHeal") },
+        { "useGreaterHeal", "Greater Heal", "Greater Heal", set("useGreaterHeal") })
+    self.flashAtSlider = L:Slider("flashHealPct", "Flash only below", set("flashHealPct"))
+    self.pwShieldCB, self.renewCB = L:CheckPair(
+        { "usePWShield", "Power Word: Shield", "Power Word: Shield", set("usePWShield") },
+        { "useRenew", "Renew", "Renew", set("useRenew") })
+    self.prayerCB, self.innerFocusCB = L:CheckPair(
+        { "usePrayer", "Prayer of Healing", "Prayer of Healing", set("usePrayer") },
+        { "useInnerFocus", "Inner Focus", "Inner Focus", set("useInnerFocus") })
+    self.offensiveCB, self.lightwellCB = L:CheckPair(
+        { "offensiveWeave", "Weave Smite/Holy Fire", "Smite", set("offensiveWeave") },
+        { "useLightwell", "Place Lightwell", "Lightwell", set("useLightwell") })
 
-    ui:Divider(f, -190)   -- above Shadow & leveling
-    ui:Divider(f, -396)   -- above Healing
+    L:Finish()
 
     ui:Tip(self.healCB.cb, "Heal mode", "Heal the party/raid with responsive downranking, and weave damage between heals.", "Also /ar heal on|off. Off runs the shadow/leveling damage rotation.")
     ui:Tip(self.innerFireCB.cb, "Inner Fire", "Keep Inner Fire active at all times for the armor and spell bonus.")
