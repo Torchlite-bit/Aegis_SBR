@@ -4,6 +4,43 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.9.1b — Priest wand controls: "Use wand" toggle + wandless fallback
+
+Two refinements to the Priest's 5-second-rule filler.
+
+- **"Use wand for mana regen" checkbox** (next to the Filler dropdown): a master switch for wand-weaving. On (default) keeps the existing behaviour — the filler drops to the wand below the mana floor to let mana regenerate. Off makes the priest **never wand**: it keeps casting its filler (and can run dry, by choice). Cleaner than the old filler-dropdown + mana-floor-0 workaround.
+- **Wandless fallback (no more empty presses):** the wand is now used only when it is both enabled *and* a wand is actually equipped (the new `WandUsable` check). When it is not, the rotation casts a damage spell instead — **Mind Flay** if known (so it still fills in **Shadowform**, where Smite is blocked), otherwise **Smite** out of Shadowform. This closes the gap where a wandless priest in Shadowform with the filler left on *Wand* did nothing on the filler press.
+- **UI feedback:** the checkbox label greys to *"Use wand (none)"* when no wand is equipped, so it is obvious the wand path is inactive and the spell fallback is carrying the filler.
+- The `starter` and `shadow` templates seed `useWand = true`, and existing profiles default to on via `NormalizeProfile`. The now-redundant `DpsFiller` helper was folded into the filler tail. README updated; all 19 Lua files pass the balance check.
+
+---
+
+## v0.9.0b — New class: Priest (Shadow / leveling + Disc/Holy healing)
+
+The ninth class module. One toggle switches a priest between a **shadow/leveling damage** rotation and a **Discipline/Holy group-healing** engine. Built against in-game-verified spell names and talent trees (the `/ar talents` dump plus a full SuperWoW spell-DB extraction), so abilities switch themselves on through `KnowsSpell` as they are trained and one profile scales from 1 to 60.
+
+### 🌟 Shadow / leveling (DPS mode)
+- **The 5-second-rule loop:** *Mind Blast* on cooldown, *Shadow Word: Pain* + (Undead) *Devouring Plague* upkeep, *Holy Fire* out of Shadowform, then the **wand carries the filler while mana regenerates**. The filler (`/ar filler wand|flay|smite`) drops to the wand below a configurable mana floor so the priest never casts itself dry — AutoRota *acts* on the five-second rule rather than drawing a HUD timer.
+- **Spirit Tap finisher:** under a configurable target-health %, bursts *Mind Blast* → *Smite* to secure the killing blow (and the experience that feeds Spirit Tap).
+- **Shadowform** (optional, held): while active, every Holy cast (*Smite*, *Holy Fire*, heals) is auto-skipped.
+- **Raid debuff control:** *Shadow Word: Pain* is a toggle, so it can be dropped in raids to respect debuff-slot limits; *Mind Blast* and channelled *Mind Flay* then carry the damage.
+- **Mitigation:** *Power Word: Shield* on melee contact or below half health, **gated on *Weakened Soul*** so it never wastes a cast.
+
+### ⛑️ Discipline / Holy (heal mode)
+- **Responsive downranking triage** (self-contained, mirrors the paladin heal engine): the most-hurt *reachable* party/raid member is healed with the **smallest rank that covers the deficit**. The `+healing` bonus is read from gear (`/ar healpower <n>` to override) and *Spiritual Healing* is factored in.
+- **Emergency Flash Heal:** reserved for a target near death (`/ar flashat <%>`) so it does not drain the pool on routine damage; *Greater Heal* covers big deficits, *Heal* the efficient sustained healing.
+- **No over-bubbling:** *Renew* and *Power Word: Shield* maintain a mildly hurt unit, both throttle / *Weakened-Soul*-gated.
+- **AoE:** *Prayer of Healing* when several members are hurt, **fronted by *Inner Focus*** (when ready) to negate its mana cost.
+- **Offensive weave & Lightwell:** between heals, optional *Smite* / *Holy Fire* support (for *Enlighten*-style talents) and *Lightwell* placement out of combat. Heal mode runs with no attackable target, so it works at range (the core's `RunsWithoutTarget` hook).
+
+### Wiring & docs
+- Registered in the `.toc`; templates seeded as `starter` (leveling/shadow DPS), `shadow` (endgame), and `heal` (Disc/Holy). Channel-clip protection for *Mind Flay* and a combat-state flag (1.12 has no `UnitAffectingCombat`) are included. New commands: `/ar heal`, `/ar healat`, `/ar flashat`, `/ar filler`, `/ar healpower`. README gains a Priest section; all 19 Lua files pass the balance check.
+
+### ⚠️ Caveats
+- Heal-value tables are **tuned approximations** (top of `Class_Priest.lua`) — adjust if downranking over- or under-heals. *Shadow Weaving* / proc behaviour and the exact *Enlighten* mechanic are best-effort (confirm with `/ar talents` / `/ar debug`). Healing and the no-target-drop heal cast rely on SuperWoW's unit-arg casting. Multi-target Shadow spreads DoTs as you tab between mobs; the engine is single-target by design and does not tab for you.
+
+---
+
 ## v0.8.9b — Branch merge (step 4): Paladin healing support
 
 Merged the modified branch's healing system into the Paladin. The branch's ret/prot base was an older lineage (it had even lost the verified `Vengeful/Righteous Strikes` talent names and the strikeMode downranking), so the current ret/prot was kept untouched and only the self-contained heal engine was grafted on.
