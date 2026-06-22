@@ -1,4 +1,4 @@
-# AutoRota ⚔️ (v0.11.0b)
+# AutoRota ⚔️ (v0.11.1b)
 
 **Smart, Modular Combat Automation for Turtle WoW (1.18.1)**
 
@@ -23,6 +23,7 @@ AutoRota is currently in an **active beta state**. As such, the addon is subject
 - **High-Performance Per-Press:** By caching spellbook lookups and snapshots, the addon replaces heavy scanning with high-speed table reads, ensuring responsiveness even during button spam.
 - **Flexible Target Acquisition:** By default the engine auto-acquires the nearest enemy when you have no target, but a global `/ar acquire off` (or the minimap options panel) hands targeting back to you or an assist addon — and ranged modules like the Hunter opt out of auto-acquire entirely so they never pull a random mob.
 - **User-Centric Configuration:** Includes draggable minimap button control (`/armap` or `/ar minimap`) with a right-click options panel, an intuitive configuration panel, and robust profile management to seamlessly switch between *Leveling*, *PvP*, or *Raid* presets.
+- **Spec-Aware Focus:** For the mode-adaptive classes (Mage, Hunter, Shaman), the configuration panel fades and locks the controls for the spec or mode you are *not* currently in — Frost dims Fire and Arcane, Ranged dims Melee, Elemental dims the melee strikes — so you only see the rotation you are actually running.
 
 ---
 

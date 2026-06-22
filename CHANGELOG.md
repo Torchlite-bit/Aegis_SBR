@@ -4,6 +4,21 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.11.1b — Active-spec focus: the spec you're not playing dims out (Mage / Hunter / Shaman)
+
+**Feature.** The mode-adaptive classes now fade and lock the controls for the spec or stance you are *not* currently in, so the panel highlights your active rotation and greys the rest. This is the **active-mode dimming** that was planned next; the collapsible-sections idea was prototyped alongside it and set aside, so this is dimming only — nothing folds, moves, or re-flows.
+
+- **Mage.** Pick a spec and the other two blocks dim — Frost greys Fire and Arcane, and so on. The shared **General** block (wand, Evocation, Frost Nova, the sliders) always stays lit.
+- **Hunter.** Ranged and Melee fade by **Mode**: Ranged play greys the Melee block, Melee play greys the Ranged Shots block, and **Auto** (which picks ranged vs melee by distance) keeps both lit. Targeting, Aspect, Pet, and Cooldowns are shared and never dim.
+- **Shaman.** The melee strikes (Stormstrike, Lightning Strike) grey out in **Elemental**, where you are casting; **Enhancement** and **Tank** are both melee, so they stay lit. To do that cleanly, the old "Abilities" block was split into **Melee strikes** and **Casting & totems** (Lightning Bolt + Searing Totem, used in every mode).
+- A dimmed block is also **locked** — to edit a spec's settings, switch to it first. The `(not learned)` red-out for untrained abilities still shows through underneath.
+
+**Fix.** The configuration window could throw `attempt to call method 'SetVerticalScroll' (a nil value)` when opened. The scrollbar's `UIPanelScrollBarTemplate` default `OnValueChanged` was firing against the window (its parent) instead of the scroll frame during the initial `SetValue(0)`; our own handler is now attached *before* that call, with a nil-guard, so the template's handler never runs against the wrong frame.
+
+Dimming is purely additive: each section header tracks the controls placed under it, and a single `SetDimmed` fades the group and blocks its mouse — no collapsible/fold machinery, no re-flow, so the layout is byte-for-byte where it was. Patch bump. All 21 Lua files pass the balance check.
+
+---
+
 ## v0.11.0b — Config UI overhaul: scrolling, compact window, and an auto-layout engine (all nine classes)
 
 **Feature.** The configuration window is rebuilt on a new layout system. It is now a compact, fixed-size panel with a **scrollbar** instead of a tall window sized per class — the same controls, the same bindings, and the same saved profiles as before, just easier to read and to fit on screen.
