@@ -50,6 +50,12 @@ local AUTOSHOT_STALL = 2.0
 -- Below this target HP%, a fresh Serpent Sting cannot tick its full duration, so
 -- the rotation finishes with Arcane Shot instead of wasting the DoT.
 local STING_HP_FLOOR = 30
+-- After the sting is queued into Nampower's single-slot shot queue, hold the
+-- lower-priority shots (Steady / Multi / Arcane) for about one shot-cycle so they
+-- do not overwrite the still-pending sting before it fires. The sting debuff
+-- cannot be read back, so without this the rotation cannot tell the sting is
+-- already in flight and immediately competes for the one queue slot.
+local STING_QUEUE_HOLD = 1.5
 -- Arcane Shot is mana-inefficient, so the stationary filler only fires above this
 -- mana% (it always fires while moving, when Auto Shot cannot).
 local ARCANE_MANA_FLOOR = 50
@@ -336,6 +342,25 @@ function M:MaintainDebuff(name, interval)
     return self:Cast(name)
 end
 
+-- Sting upkeep. Identical bookkeeping to MaintainDebuff, but the stings are
+-- ranged-weapon shots, so they must go out through the Nampower shot queue
+-- (QueueSpellByName) exactly like Steady / Arcane / Multi-Shot. Dispatching a
+-- sting through the instant CastSpellByName path (as MaintainDebuff does for the
+-- melee/targeting debuffs) lets Nampower drop it whenever a global cooldown is
+-- up, which silently burns the reapply throttle and the sting never fires.
+function M:MaintainSting(name, interval)
+    if not self:KnowsSpell(name) then return false end
+    if self:TargetDebuffUp(name, nil) then return false end
+    local id = self:TargetId()
+    local rec = self.debuffThrottle[name]
+    local now = GetTime()
+    if rec and rec.id == id and rec.t and (now - rec.t) <= (interval or 3) then
+        return false
+    end
+    self.debuffThrottle[name] = { id = id, t = now }
+    return self:Queue(name)
+end
+
 -- ============================================================
 -- Sting immunity. Serpent / Scorpid / Viper Sting are Poison-school effects, so
 -- they do not land on poison-immune targets and otherwise re-fire on a wasted
@@ -372,9 +397,18 @@ function M:StingBlocked(sting)
         if self:TargetDebuffUp(sting, nil) then
             self.stingTry = nil                  -- it landed; stop watching
         elseif (GetTime() - self.stingTry.t) > 2.5 then
-            self.stingImmune[guid] = true         -- never landed -> immune
+            -- Cast but never seen on the target. Only treat that as immunity on a
+            -- type that can actually be poison-immune: Undead. (Mechanical and
+            -- Elemental are already hard-blocked above.) On a Beast, Humanoid, etc.
+            -- a missing debuff means the scan can't read this sting, NOT that the
+            -- mob is immune - so do not flag it; the blind reapply timer in
+            -- MaintainDebuff keeps the sting up on its own.
+            local ct = UnitCreatureType and UnitCreatureType("target")
             self.stingTry = nil
-            return true
+            if ct == "Undead" then
+                self.stingImmune[guid] = true     -- genuinely immune undead
+                return true
+            end
         end
     end
     return false
@@ -512,7 +546,11 @@ function M:Rotate(cfg)
     if self.trace then
         self:Trace("mode=" .. (cfg.mode or "ranged") .. (cfg.mode == "auto" and ("/" .. (melee and "melee" or "ranged")) or "")
             .. " hp=" .. floor(targetHP)
-            .. " sting=" .. (cfg.sting ~= "" and (cfg.sting .. (self:StingImmuneNow() and "(immune)" or "")) or "-")
+            .. " sting=" .. (cfg.sting ~= "" and (cfg.sting
+                .. (self:KnowsSpell(cfg.sting) and "" or "(unlearned)")
+                .. (self:StingImmuneNow() and "(immune)" or "")
+                .. (self:TargetDebuffUp(cfg.sting, nil) and "(up)" or "")) or "-")
+            .. " inMelee=" .. (inMeleeNow and "Y" or "n")
             .. " mark=" .. (cfg.useHuntersMark and (self:TargetDebuffUp("Hunter's Mark", nil) and "Y" or "n") or "-")
             .. " L&L=" .. (self:HasBuff("Lock and Load") and "Y" or "n")
             .. " auto=" .. (self:AutoShotting() and "Y" or (self.autoShotOn and "assumed" or "N"))
@@ -585,32 +623,40 @@ function M:Rotate(cfg)
     -- 5. GCD priority (strict, one cast per press via early return)
     -- ----------------------------------------------------------------
 
-    -- 5a. Mend Pet when the pet is hurting (throttled, HoT lasts ~15s).
+    -- 5a. Serpent Sting - highest GCD priority so the DoT is kept up. Only AFTER
+    --     Hunter's Mark is confirmed and only at range: it is a ranged shot, so
+    --     even a melee hunter lands it on the pull and stops once closed. No HP
+    --     gate - the reapply throttle already stops trash from getting a wasted
+    --     refresh, and the Arcane finisher below still burns down a low mob.
+    if cfg.sting ~= "" and not inMeleeNow and markOK
+        and not self:StingBlocked(cfg.sting) then
+        if self:MaintainSting(cfg.sting, STING_DUR[cfg.sting] or 12) then
+            -- remember this application so a sting that never lands (an immune
+            -- undead / boss) is learned and not re-cast every cycle.
+            local _, guid = UnitExists("target")
+            self.stingTry = { guid = guid, t = GetTime(), name = cfg.sting }
+            self.stingQueuedT = now   -- protect the queued shot from eviction
+            return
+        elseif self.stingQueuedT and (now - self.stingQueuedT) < STING_QUEUE_HOLD then
+            -- Sting was just queued but cannot be read on the target yet. Hold
+            -- here instead of queuing Steady / Multi / Arcane, which would
+            -- overwrite the still-pending sting in Nampower's single-slot queue
+            -- before it fires. Auto Shot (handled above) keeps going meanwhile.
+            return
+        end
+    end
+
+    -- 5b. Mend Pet when the pet is hurting (throttled, HoT lasts ~15s).
     if cfg.useMendPet and UnitExists("pet") and self:KnowsSpell("Mend Pet") then
         if self:PetHPPct() < (cfg.mendPetHp or 50) and (now - (self.mendPetT or 0)) > MEND_PET_CD then
             if self:Cast("Mend Pet") then self.mendPetT = now; return end
         end
     end
 
-    -- 5b. Lock and Load reaction (MM capstone): cast Aimed Shot NOW. The proc
+    -- 5c. Lock and Load reaction (MM capstone): cast Aimed Shot NOW. The proc
     --     drops its cast time and makes it cleave a line, so it never clips.
     if cfg.useAimedShot and self:KnowsSpell("Aimed Shot") and self:HasBuff("Lock and Load") then
         if self:Queue("Aimed Shot") then return end
-    end
-
-    -- 5c. Serpent Sting: only AFTER Hunter's Mark is confirmed, only at range (it
-    --     is a ranged shot, so even a melee hunter lands it on the pull and stops
-    --     once closed), and only on a target healthy enough to tick the full DoT.
-    --     Low-HP mobs are finished with Arcane Shot in the ranged branch instead.
-    if cfg.sting ~= "" and not inMeleeNow and markOK and targetHP > STING_HP_FLOOR
-        and not self:StingBlocked(cfg.sting) then
-        if self:MaintainDebuff(cfg.sting, STING_DUR[cfg.sting] or 12) then
-            -- remember this application so a sting that never lands (an immune
-            -- undead / boss) is learned and not re-cast every cycle.
-            local _, guid = UnitExists("target")
-            self.stingTry = { guid = guid, t = GetTime(), name = cfg.sting }
-            return
-        end
     end
 
     -- 5d. Immolation Trap on cooldown (Survival, usable in combat on 1.18.1).
@@ -675,8 +721,8 @@ function M:Rotate(cfg)
         if self:Queue("Multi-Shot") then return end
     end
 
-    -- Execute: a low-HP mob is not worth a fresh Sting DoT, so Arcane Shot finishes
-    -- it (instant). Runs regardless of the mana gate below - this is a kill.
+    -- Low-HP finisher: below the floor, instant Arcane Shot burns the mob down
+    -- ahead of the mana-gated filler. Runs regardless of the mana gate - it's a kill.
     if cfg.useArcaneShot and self:KnowsSpell("Arcane Shot")
         and targetHP <= STING_HP_FLOOR and self:IsReady("Arcane Shot") then
         if self:Queue("Arcane Shot") then return end
@@ -784,6 +830,7 @@ hunterFrame:SetScript("OnEvent", function()
         M.lastAutoShot = 0   -- forget the ranged-swing phase between pulls
         M.stingImmune = {}   -- relearn sting immunity each combat
         M.stingTry = nil
+        M.stingQueuedT = nil
     elseif event == "CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES" then
         if arg1 and string.find(string.lower(arg1), "dodge") then
             M.dodgeUntil = GetTime() + REACT_WINDOW
