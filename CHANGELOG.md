@@ -4,6 +4,21 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.11.2b — Hunter Serpent Sting now fires and stays up
+
+**Fix.** Serpent Sting was unreliable-to-nonexistent in the ranged rotation — the Hunter would apply Hunter's Mark, fire Arcane Shot and Auto Shot, and skip the sting, only landing it at random. Several stacked causes, now all addressed:
+
+- **Cast path.** The sting was the only ranged ability dispatched through the instant `CastSpellByName`; every other shot uses the Nampower shot queue. Nampower silently drops an instant ranged cast while a global cooldown is up, so the sting never went out. It now routes through the same `QueueSpellByName` path as Steady / Multi / Arcane / Aimed.
+- **Queue eviction.** Nampower's queue holds one pending shot, so the moment the rotation fell through to Steady/Arcane on the next press it overwrote the still-pending sting before it fired — which is exactly what made it "occasionally work." After the sting is queued, the lower-priority shots now hold for about one shot-cycle so they can't evict it; Auto Shot keeps firing through the hold.
+- **False immunity.** The "cast but never landed → immune" guard was branding ordinary mobs (a level-6 Beast) poison-immune, because the Serpent Sting debuff can't be read back on this client. That guess now only applies to **Undead**, the one type where some members are genuinely immune and aren't already hard-blocked (Mechanical / Elemental stay deterministically blocked).
+- **Priority + HP gate.** Serpent Sting is now the top of the GCD priority so the DoT is kept up, and the old 30%-HP gate is gone — it maintains at range for the whole fight instead of cutting out on a low target. The instant Arcane Shot finisher below 30% stays as its own step, and the sting is still range-only (skipped in melee).
+
+**Note.** Upkeep currently rides the sting's own duration as a blind reapply timer, because the Serpent Sting debuff doesn't resolve to a readable name on this client (Hunter's Mark does). It stays up correctly; a later pass can add icon-texture detection so the addon reads the live DoT and the trace shows it.
+
+Patch bump. All 21 Lua files pass the balance check.
+
+---
+
 ## v0.11.1b — Active-spec focus: the spec you're not playing dims out (Mage / Hunter / Shaman)
 
 **Feature.** The mode-adaptive classes now fade and lock the controls for the spec or stance you are *not* currently in, so the panel highlights your active rotation and greys the rest. This is the **active-mode dimming** that was planned next; the collapsible-sections idea was prototyped alongside it and set aside, so this is dimming only — nothing folds, moves, or re-flows.
