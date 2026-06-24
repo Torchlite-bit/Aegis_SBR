@@ -100,6 +100,7 @@ M.templates = {
         useNSCombo = true, nsHpPct = 40, useSwiftmend = true, swiftmendPct = 65,
         useRegrowth = true, regrowthPct = 55, useRejuv = true,
         useWildGrowth = false, wildGrowthCount = 4, useLifebloom = false, healPower = 0,
+        weaveDamage = false, weaveManaFloor = 40,
     },
 }
 
@@ -144,6 +145,8 @@ function M:NormalizeProfile(c)
     if c.wildGrowthCount == nil then c.wildGrowthCount = 4 end
     if c.useLifebloom == nil then c.useLifebloom = false end
     if c.healPower == nil then c.healPower = 0 end
+    if c.weaveDamage == nil then c.weaveDamage = false end
+    if c.weaveManaFloor == nil then c.weaveManaFloor = 40 end
     return c
 end
 
@@ -688,7 +691,19 @@ function M:RotateResto(cfg)
         self:CastOn("Innervate", "player"); return
     end
 
-    if not unit then return end   -- nobody hurt past the threshold
+    if not unit then
+        -- Nobody needs healing: optionally weave damage in the downtime. Only with
+        -- an enemy targeted and mana above the floor, so it never starves heals.
+        if cfg.weaveDamage and self:ManaPct() >= (cfg.weaveManaFloor or 40)
+            and UnitExists("target") and UnitCanAttack("player", "target")
+            and not UnitIsDeadOrGhost("target") then
+            if self:KnowsSpell("Moonfire") and not self:HoTActive("target", "Moonfire", 10) then
+                self:NoteHoT("target", "Moonfire"); CastSpellByName("Moonfire"); return
+            end
+            if self:KnowsSpell("Wrath") then CastSpellByName("Wrath"); return end
+        end
+        return   -- nobody hurt past the threshold; nothing to weave
+    end
 
     local mana = UnitMana("player")
     local hpb  = cfg.healPower or 0
@@ -805,6 +820,16 @@ function M:HandleCommand(cmd, t)
         if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return true end
         cfg.aoeSwipe = not cfg.aoeSwipe
         msgOut("Swipe " .. (cfg.aoeSwipe and "on (AoE)" or "off") .. ".")
+        return true
+    end
+    if cmd == "weave" then
+        local cfg = AutoRota:GetActiveProfile()
+        if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return true end
+        local a = string.lower(t[2] or "")
+        if a == "on" then cfg.weaveDamage = true
+        elseif a == "off" then cfg.weaveDamage = false
+        else cfg.weaveDamage = not cfg.weaveDamage end
+        msgOut("resto damage weave " .. (cfg.weaveDamage and "on" or "off") .. " (DPS only when nobody needs healing).")
         return true
     end
     if cmd == "style" then
