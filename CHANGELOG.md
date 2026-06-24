@@ -4,6 +4,18 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.13.2b — Weave toggle (and Restoration spec) in the config panels
+
+**Feature.** The Restoration Druid and Restoration Shaman are now selectable from the config window, and the **damage-weave toggle** has a checkbox there — no command required to set it up.
+
+- **Spec in the dropdown.** "Restoration (Heal)" joins the Druid's **Preferred form** dropdown and "Restoration" joins the Shaman's **Spec** dropdown, so you can switch into the healer from the panel instead of `/ar form resto` / `/ar mode resto`.
+- **Weave checkbox.** A new **Restoration (Heal)** section on each panel carries a "Weave damage between heals" checkbox bound to the same setting as `/ar weave` — flip it either way and the two stay in sync. It is dimmed and locked unless the profile's spec is Restoration, matching how the Druid's Powershift greys out outside Shred style.
+- **Cleaner focus.** Selecting Restoration on the Shaman now fades the Melee-strikes section too (a healer does not melee), as Elemental already did.
+
+The rest of the heal tuning (heal threshold, Nature's Swiftness %, Swiftmend/Regrowth thresholds, the weave mana-floor, totem pickers) is still command/default-only — the full heal-config panels are still ahead. UI-only patch. All 21 Lua files pass the balance check.
+
+---
+
 ## v0.13.1b — Optional damage-weaving for the Druid & Shaman healers
 
 **Feature.** The Restoration Druid and Restoration Shaman can now **weave damage between heals**, matching how the Priest and Paladin heal modes already behave. It is a per-profile toggle (`/ar weave on|off`, default **off**), so the player decides whether downtime goes to DPS or to conserving mana.
