@@ -94,10 +94,18 @@ M.templates = {
         ffBear = true, useDemo = true, useMaul = true, aoeSwipe = false, useEnrage = false,
         useMoonfire = true, useInsectSwarm = true, eclipse = true, nuke = "Wrath",
     },
+    tree = {  -- Restoration: heal in caster form (downranked HoTs + Healing Touch)
+        form = "tree",
+        healThreshold = 90, useInnervate = true, innervateAt = 30,
+        useNSCombo = true, nsHpPct = 40, useSwiftmend = true, swiftmendPct = 65,
+        useRegrowth = true, regrowthPct = 55, useRejuv = true,
+        useWildGrowth = false, wildGrowthCount = 4, useLifebloom = false, healPower = 0,
+    },
 }
 
 M.styleAlias = { bleed = "bleed", claw = "bleed", shred = "shred", powershift = "shred" }
-M.formAlias  = { cat = "cat", bear = "bear", caster = "caster", moonkin = "caster", balance = "caster" }
+M.formAlias  = { cat = "cat", bear = "bear", caster = "caster", moonkin = "caster", balance = "caster",
+                 tree = "tree", resto = "tree", restoration = "tree", heal = "tree" }
 
 function M:NormalizeProfile(c)
     if c.form == nil then c.form = "cat" end
@@ -121,6 +129,21 @@ function M:NormalizeProfile(c)
     if c.eclipse == nil then c.eclipse = true end
     if c.nuke == nil then c.nuke = "Wrath" end
     if c.useGrowl == nil then c.useGrowl = true end
+    -- Restoration (heal) profile fields
+    if c.healThreshold == nil then c.healThreshold = 90 end
+    if c.useInnervate == nil then c.useInnervate = true end
+    if c.innervateAt == nil then c.innervateAt = 30 end
+    if c.useNSCombo == nil then c.useNSCombo = true end
+    if c.nsHpPct == nil then c.nsHpPct = 40 end
+    if c.useSwiftmend == nil then c.useSwiftmend = true end
+    if c.swiftmendPct == nil then c.swiftmendPct = 65 end
+    if c.useRegrowth == nil then c.useRegrowth = true end
+    if c.regrowthPct == nil then c.regrowthPct = 55 end
+    if c.useRejuv == nil then c.useRejuv = true end
+    if c.useWildGrowth == nil then c.useWildGrowth = false end
+    if c.wildGrowthCount == nil then c.wildGrowthCount = 4 end
+    if c.useLifebloom == nil then c.useLifebloom = false end
+    if c.healPower == nil then c.healPower = 0 end
     return c
 end
 
@@ -461,7 +484,270 @@ end
 -- yet (level 1-9, or 10-19 for a cat profile), the caster rotation
 -- carries the character until the form appears.
 -- ============================================================
+-- ============================================================
+-- Restoration (heal engine)
+-- Modeled on the Priest engine: scan the group, find the worst-hurt
+-- reachable unit, and pick the cheapest rank that covers the deficit
+-- (downranking). Heals cast with a SuperWoW unit argument so the current
+-- target is never dropped. Per the build plan this heals in CASTER form and
+-- does NOT auto-shift into Tree of Life (left off until Tree's 1.18.1 cast
+-- rules are confirmed). HoT upkeep is tracked by a per-unit reapply timer,
+-- not by reading the buff back (raid buff readback is unreliable on 1.12).
+--
+-- Rank base-heal / mana numbers are VANILLA BASELINES, meant to be tuned to
+-- Turtle 1.18.1; the downrank decision only needs the ranks ordered roughly
+-- right, so approximate values still pick a sane rank.
+-- ============================================================
+function M:RunsWithoutTarget(cfg)
+    return cfg.form == "tree"   -- a healer runs with no enemy targeted
+end
+
+function M:ManaPct()
+    local mx = UnitManaMax("player")
+    if not mx or mx <= 0 then return 100 end
+    return UnitMana("player") / mx * 100
+end
+
+-- Name-based talent rank (position-proof).
+function M:TalentRank(name)
+    for t = 1, GetNumTalentTabs() do
+        for i = 1, GetNumTalents(t) do
+            local nm, _, _, _, rank = GetTalentInfo(t, i)
+            if nm == name then return rank or 0 end
+        end
+    end
+    return 0
+end
+
+-- Healing Touch: primary direct heal, downranked to "snipe".
+M.HT_HEAL = { 44, 99, 219, 404, 631, 850, 1111, 1414, 1739, 2123, 2472, 2832 }
+M.HT_MANA = { 25, 55, 110, 185, 270, 335, 404, 495, 560, 655, 740, 825 }
+-- Regrowth: fast direct + HoT burst (direct portion sized here).
+M.RG_HEAL = { 139, 187, 257, 328, 414, 511, 612, 713, 814, 915 }
+M.RG_MANA = { 120, 160, 215, 280, 350, 415, 480, 545, 600, 675 }
+-- Rejuvenation: HoT total over its duration (maintenance, max affordable rank).
+M.RJ_TOTAL = { 32, 56, 116, 180, 244, 304, 388, 488, 608, 752, 888, 932 }
+M.RJ_MANA  = { 25, 40, 75, 105, 135, 160, 195, 235, 280, 335, 390, 415 }
+
+-- Incoming-heal bookkeeping so a queued heal is subtracted from the deficit
+-- and the next press does not pile onto an already-covered target.
+M.healPending = {}
+function M:CommitHeal(unit, amount, castTime)
+    local n = UnitName(unit) or "?"
+    self.healPending[n] = { amt = amount or 0, t = GetTime() + (castTime or 1.5) }
+end
+function M:PendingFor(unit)
+    local n = UnitName(unit) or "?"
+    local rec = self.healPending[n]
+    if not rec then return 0 end
+    if GetTime() > rec.t then self.healPending[n] = nil; return 0 end
+    return rec.amt or 0
+end
+
+-- Per-unit HoT reapply timer (apply, then re-apply a little before it ends).
+M.hotT = {}
+function M:NoteHoT(unit, spell)
+    local n = UnitName(unit) or "?"
+    self.hotT[n] = self.hotT[n] or {}
+    self.hotT[n][spell] = GetTime()
+end
+function M:HoTActive(unit, spell, dur)
+    local n = UnitName(unit) or "?"
+    local rec = self.hotT[n]
+    if not rec or not rec[spell] then return false end
+    return (GetTime() - rec[spell]) < dur
+end
+
+function M:GroupUnits()
+    local t = {}
+    local nr = GetNumRaidMembers()
+    if nr > 0 then
+        for i = 1, nr do t[i] = "raid" .. i end
+    else
+        t[1] = "player"
+        local np = GetNumPartyMembers()
+        for i = 1, np do t[i + 1] = "party" .. i end
+    end
+    return t
+end
+
+-- Heal range proxy: ~28yd (the largest CheckInteractDistance band). Heals reach
+-- 40yd, so this is conservative, but it keeps the picker off units it can't hit.
+function M:Reachable(u)
+    if u == "player" then return true end
+    return CheckInteractDistance(u, 4) and true or false
+end
+
+-- Worst-hurt reachable friendly, counting pending heals toward its health.
+function M:WorstHurt(ratio)
+    local units = self:GroupUnits()
+    local wU, wDef, wPct = nil, 0, 1
+    for i = 1, table.getn(units) do
+        local u = units[i]
+        if UnitExists(u) and not UnitIsDeadOrGhost(u) and UnitIsFriend("player", u)
+            and UnitHealthMax(u) > 0 and self:Reachable(u) then
+            local mx = UnitHealthMax(u)
+            local cur = UnitHealth(u) + self:PendingFor(u)
+            local pct = cur / mx
+            if pct < ratio then
+                local def = mx - cur
+                if def > wDef then wU, wDef, wPct = u, def, pct end
+            end
+        end
+    end
+    return wU, wDef, wPct
+end
+
+function M:HurtCount(ratio)
+    local units = self:GroupUnits()
+    local n = 0
+    for i = 1, table.getn(units) do
+        local u = units[i]
+        if UnitExists(u) and not UnitIsDeadOrGhost(u) and UnitIsFriend("player", u)
+            and UnitHealthMax(u) > 0 and self:Reachable(u) then
+            if (UnitHealth(u) + self:PendingFor(u)) / UnitHealthMax(u) < ratio then n = n + 1 end
+        end
+    end
+    return n
+end
+
+-- Gift of Nature: +2% healing per rank (name-based).
+function M:HealMods()
+    return 1 + 0.02 * self:TalentRank("Gift of Nature")
+end
+
+function M:EffHeals(baseHeals, coeff, mods, healPower)
+    local t = {}
+    for r = 1, table.getn(baseHeals) do
+        t[r] = (baseHeals[r] + coeff * (healPower or 0)) * mods
+    end
+    return t
+end
+
+-- Smallest affordable rank whose effective heal covers the deficit; else the
+-- largest affordable rank.
+function M:PickRank(baseName, effHeals, manas, deficit, mana)
+    local maxr = self:MaxRank(baseName)
+    if maxr < 1 then return nil end
+    if maxr > table.getn(effHeals) then maxr = table.getn(effHeals) end
+    local chosen = nil
+    for r = 1, maxr do
+        if manas[r] and mana >= manas[r] then
+            chosen = r
+            if effHeals[r] and effHeals[r] >= deficit then break end
+        end
+    end
+    if not chosen then return nil end
+    return baseName .. "(Rank " .. chosen .. ")", (effHeals[chosen] or 0)
+end
+
+-- Largest affordable rank (for HoTs, where bigger ticks are just better).
+function M:MaxAffordableRank(baseName, manas, mana)
+    local maxr = self:MaxRank(baseName)
+    if maxr < 1 then return nil end
+    if maxr > table.getn(manas) then maxr = table.getn(manas) end
+    for r = maxr, 1, -1 do
+        if manas[r] and mana >= manas[r] then return baseName .. "(Rank " .. r .. ")" end
+    end
+    return nil
+end
+
+function M:CastOn(spell, unit)
+    CastSpellByName(spell, unit)
+end
+
+function M:GcdReady()
+    local probes = { "Rejuvenation", "Healing Touch", "Regrowth", "Wrath", "Moonfire" }
+    for i = 1, table.getn(probes) do
+        if self:KnowsSpell(probes[i]) then return self:IsReady(probes[i]) end
+    end
+    return true
+end
+
+-- Heal decision. Returns nothing; casts one heal per press via early return.
+-- Order: drop form to cast -> Innervate (mana) -> NS->instant HT (emergency) ->
+-- Swiftmend -> Wild Growth (AoE) -> Regrowth (burst) -> Rejuv/Lifebloom upkeep ->
+-- downranked Healing Touch (fill).
+function M:RotateResto(cfg)
+    -- Heals only cast in caster form; drop any shapeshift first (no Tree auto-shift).
+    local form = self:CurrentForm()
+    if form then
+        if self.trace then self:Trace("resto: dropping " .. form .. " to cast") end
+        self:CastSafe(form)
+        return
+    end
+    if not self:GcdReady() then return end
+
+    local ratio = (cfg.healThreshold or 90) / 100
+    local unit, deficit, pct = self:WorstHurt(ratio)
+
+    -- Innervate yourself when low so the fight can keep going.
+    if cfg.useInnervate ~= false and self:KnowsSpell("Innervate")
+        and self:OwnCDReady("Innervate") and not self:HasBuff("Innervate")
+        and self:ManaPct() <= (cfg.innervateAt or 30) then
+        self:CastOn("Innervate", "player"); return
+    end
+
+    if not unit then return end   -- nobody hurt past the threshold
+
+    local mana = UnitMana("player")
+    local hpb  = cfg.healPower or 0
+    local mods = self:HealMods()
+    local htEff = self:EffHeals(self.HT_HEAL, 0.8, mods, hpb)
+    local rgEff = self:EffHeals(self.RG_HEAL, 0.5, mods, hpb)
+
+    -- Emergency: Nature's Swiftness -> instant max Healing Touch. If NS is already
+    -- up, fire the big heal now; otherwise pop NS when a target is in real trouble.
+    if self:HasBuff("Nature's Swiftness") then
+        local maxr = self:MaxRank("Healing Touch")
+        if maxr >= 1 then
+            self:CommitHeal(unit, htEff[maxr] or deficit, 0)
+            self:CastOn("Healing Touch(Rank " .. maxr .. ")", unit); return
+        end
+    end
+    if cfg.useNSCombo ~= false and pct <= (cfg.nsHpPct or 40) / 100
+        and self:KnowsSpell("Nature's Swiftness") and self:OwnCDReady("Nature's Swiftness") then
+        self:Cast("Nature's Swiftness"); return
+    end
+
+    -- Swiftmend: instant top-up that consumes a Rejuv/Regrowth already on the unit.
+    if cfg.useSwiftmend ~= false and self:KnowsSpell("Swiftmend") and self:OwnCDReady("Swiftmend")
+        and pct <= (cfg.swiftmendPct or 65) / 100
+        and (self:HoTActive(unit, "Rejuvenation", 11) or self:HoTActive(unit, "Regrowth", 18)) then
+        self:CastOn("Swiftmend", unit); return
+    end
+
+    -- AoE: Wild Growth when several are hurt (Turtle addition, if learned).
+    if cfg.useWildGrowth and self:KnowsSpell("Wild Growth") and self:OwnCDReady("Wild Growth")
+        and self:HurtCount(ratio) >= (cfg.wildGrowthCount or 4) then
+        self:CastOn("Wild Growth", unit); return
+    end
+
+    -- Burst: Regrowth (direct + HoT) on a big deficit if it has no Regrowth yet.
+    if cfg.useRegrowth ~= false and self:KnowsSpell("Regrowth")
+        and pct <= (cfg.regrowthPct or 55) / 100 and not self:HoTActive(unit, "Regrowth", 18) then
+        local rg, amt = self:PickRank("Regrowth", rgEff, self.RG_MANA, deficit, mana)
+        if rg then self:CommitHeal(unit, amt, 2.0); self:NoteHoT(unit, "Regrowth"); self:CastOn(rg, unit); return end
+    end
+
+    -- Maintenance: keep Rejuvenation rolling (max affordable rank).
+    if cfg.useRejuv ~= false and self:KnowsSpell("Rejuvenation") and not self:HoTActive(unit, "Rejuvenation", 11) then
+        local rj = self:MaxAffordableRank("Rejuvenation", self.RJ_MANA, mana)
+        if rj then self:NoteHoT(unit, "Rejuvenation"); self:CastOn(rj, unit); return end
+    end
+
+    -- Lifebloom: rolling stack (Turtle addition, if learned).
+    if cfg.useLifebloom and self:KnowsSpell("Lifebloom") and not self:HoTActive(unit, "Lifebloom", 6) then
+        self:NoteHoT(unit, "Lifebloom"); self:CastOn("Lifebloom", unit); return
+    end
+
+    -- Fill: downranked Healing Touch sized to the deficit.
+    local ht, amt = self:PickRank("Healing Touch", htEff, self.HT_MANA, deficit, mana)
+    if ht then self:CommitHeal(unit, amt, 2.5); self:CastOn(ht, unit); return end
+end
+
 function M:Rotate(cfg)
+    if cfg.form == "tree" then self:RotateResto(cfg); return end
     self:UpdateDefense(cfg)
     local form = self:CurrentForm()
     local inBear = (form == "Bear Form" or form == "Dire Bear Form")
@@ -539,7 +825,7 @@ function M:HandleCommand(cmd, t)
             cfg.form = form
             msgOut("preferred form = " .. form .. ".")
         else
-            msgOut("usage: /ar form <cat|bear|caster>", 1, 0.5, 0.3)
+            msgOut("usage: /ar form <cat|bear|caster|resto>", 1, 0.5, 0.3)
         end
         return true
     end
