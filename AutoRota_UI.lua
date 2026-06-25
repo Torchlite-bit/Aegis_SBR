@@ -52,25 +52,39 @@ end
 local function trim(s) local r = string.gsub(s or "", "^%s*(.-)%s*$", "%1"); return r end
 
 -- Attach a hover tooltip to any mouse-enabled frame. body lines are optional.
+-- Chains any existing OnEnter/OnLeave (e.g. the row-hover highlight) instead of
+-- overwriting it, so a control can both highlight its row and show a tooltip.
 local function Tip(frame, title, line1, line2)
     if not frame then return end
+    local prevEnter = frame:GetScript("OnEnter")
+    local prevLeave = frame:GetScript("OnLeave")
     frame:SetScript("OnEnter", function()
+        if prevEnter then prevEnter() end
         GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
         GameTooltip:SetText(title, 1, 0.82, 0)
         if line1 then GameTooltip:AddLine(line1, 1, 1, 1) end
         if line2 then GameTooltip:AddLine(line2, 1, 1, 1) end
         GameTooltip:Show()
     end)
-    frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    frame:SetScript("OnLeave", function()
+        if prevLeave then prevLeave() end
+        GameTooltip:Hide()
+    end)
 end
 
--- Thin horizontal separator line at a given y offset from the frame top.
+-- Engraved horizontal separator at a given y offset from the frame top: a soft
+-- light hairline with a thin shadow beneath it for a bit of depth.
 local function divider(parent, y)
-    local t = parent:CreateTexture(nil, "ARTWORK")
-    t:SetTexture(0.5, 0.5, 0.5, 0.4)
-    t:SetHeight(1)
-    t:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
-    t:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, y)
+    local main = parent:CreateTexture(nil, "ARTWORK")
+    main:SetTexture(0.55, 0.55, 0.62, 0.55)
+    main:SetHeight(1)
+    main:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
+    main:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, y)
+    local shadow = parent:CreateTexture(nil, "ARTWORK")
+    shadow:SetTexture(0, 0, 0, 0.35)
+    shadow:SetHeight(1)
+    shadow:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y - 1)
+    shadow:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, y - 1)
 end
 
 -- Wrappers so class body files (separate files) can use the framework helpers.
@@ -273,6 +287,26 @@ function AutoRotaLayout:_rec(region, interactive)
     if self.cur then self.cur:_add(region, interactive) end
 end
 
+-- A full-width row highlight (hidden) sized to the row at the current cursor.
+-- The row's controls light it up on hover (see wireHover); it renders behind the
+-- controls and never takes mouse input itself, so it cannot block a click.
+function AutoRotaLayout:_hl(h)
+    local hl = self.p:CreateTexture(nil, "BACKGROUND")
+    hl:SetTexture(1, 1, 1, 0.07)
+    hl:SetPoint("TOPLEFT", self.p, "TOPLEFT", 3, self.y - 1)
+    hl:SetPoint("TOPRIGHT", self.p, "TOPRIGHT", -3, self.y - 1)
+    hl:SetHeight((h or LAY.ROW_H) - 2)
+    hl:Hide()
+    return hl
+end
+-- Point a control's hover at a row highlight. Controls that also get a tooltip
+-- still work: Tip chains onto this rather than replacing it.
+local function wireHover(ctrl, hl)
+    if not ctrl or not hl then return end
+    ctrl:SetScript("OnEnter", function() hl:Show() end)
+    ctrl:SetScript("OnLeave", function() hl:Hide() end)
+end
+
 -- A section header with a divider above it (except the first). Returns a section
 -- handle: every control placed until the next Header belongs to it, so a class
 -- body can dim the whole block later via section:SetDimmed(true).
@@ -291,8 +325,10 @@ end
 
 -- A single full-width checkbox row. args mirror CreateCheck.
 function AutoRotaLayout:Check(key, label, spell, onChange)
+    local hl = self:_hl(LAY.ROW_H)
     local item = self.ui:CreateCheck(key, self.p, label, spell, onChange)
     item.cb:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD, self.y)
+    wireHover(item.cb, hl)
     self:_rec(item.cb, true); self:_rec(item.label, false)
     self.y = self.y - LAY.ROW_H
     return item
@@ -300,10 +336,12 @@ end
 
 -- Two checkboxes side by side; a/b are {key,label,spell,onChange}.
 function AutoRotaLayout:CheckPair(a, b)
+    local hl = self:_hl(LAY.ROW_H)
     local ia = self.ui:CreateCheck(a[1], self.p, a[2], a[3], a[4])
     ia.cb:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD, self.y)
     local ib = self.ui:CreateCheck(b[1], self.p, b[2], b[3], b[4])
     ib.cb:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.COL2_X, self.y)
+    wireHover(ia.cb, hl); wireHover(ib.cb, hl)
     self:_rec(ia.cb, true); self:_rec(ia.label, false)
     self:_rec(ib.cb, true); self:_rec(ib.label, false)
     self.y = self.y - LAY.ROW_H
@@ -313,8 +351,10 @@ end
 -- A full-width slider (label centred above the bar). opts is optional; a
 -- function passed in its place is treated as the onChange (CreateSlider shim).
 function AutoRotaLayout:Slider(key, label, opts, onChange)
+    local hl = self:_hl(LAY.SLIDER_H)
     local s = self.ui:CreateSlider(key, self.p, label, opts, onChange)
     s:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD + 6, self.y - LAY.SLIDER_TOP)
+    wireHover(s, hl)
     self:_rec(s, true)
     self.y = self.y - LAY.SLIDER_H
     return s
@@ -323,10 +363,12 @@ end
 -- Two sliders side by side; a/b are {key,label,onChange} or {key,label,opts,onChange}
 -- (a function in the opts slot is treated as onChange by CreateSlider).
 function AutoRotaLayout:SliderPair(a, b)
+    local hl = self:_hl(LAY.SLIDER_H)
     local sa = self.ui:CreateSlider(a[1], self.p, a[2], a[3], a[4])
     sa:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD + 6, self.y - LAY.SLIDER_TOP)
     local sb = self.ui:CreateSlider(b[1], self.p, b[2], b[3], b[4])
     sb:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.COL2_X, self.y - LAY.SLIDER_TOP)
+    wireHover(sa, hl); wireHover(sb, hl)
     self:_rec(sa, true); self:_rec(sb, true)
     self.y = self.y - LAY.SLIDER_H
     return sa, sb
@@ -335,10 +377,12 @@ end
 -- A label with a dropdown to its right (the dropdown floats right after the
 -- label, so longer labels never collide with it).
 function AutoRotaLayout:Dropdown(key, label, width, onChange)
+    local hl = self:_hl(LAY.DD_H)
     local lab = FS(self.p, "GameFontNormalSmall", label)
     lab:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD, self.y - 8)
     local d = self.ui:CreateDropdown(key, self.p, width or 150, onChange)
     d:SetPoint("LEFT", lab, "RIGHT", 8, 0)
+    wireHover(d, hl)
     self:_rec(d, true); self:_rec(lab, false)
     self.y = self.y - LAY.DD_H
     return d, lab
@@ -347,12 +391,14 @@ end
 -- A label + dropdown on the left, and a checkbox on the right of the same row.
 -- dd = {key,label,width,onChange}; ck = {key,label,spell,onChange}.
 function AutoRotaLayout:DropdownCheck(dd, ck)
+    local hl = self:_hl(LAY.DD_H)
     local lab = FS(self.p, "GameFontNormalSmall", dd.label)
     lab:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD, self.y - 6)
     local d = self.ui:CreateDropdown(dd.key, self.p, dd.width or 110, dd.onChange)
     d:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.L_PAD + LAY.LABEL_W, self.y - 2)
     local item = self.ui:CreateCheck(ck[1], self.p, ck[2], ck[3], ck[4])
     item.cb:SetPoint("TOPLEFT", self.p, "TOPLEFT", LAY.COL2_X, self.y)
+    wireHover(d, hl); wireHover(item.cb, hl)
     self:_rec(d, true); self:_rec(lab, false)
     self:_rec(item.cb, true); self:_rec(item.label, false)
     self.y = self.y - LAY.DD_H
