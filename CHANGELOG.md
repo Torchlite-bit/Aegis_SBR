@@ -4,6 +4,18 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.13.3b — Custom help-button icon + an Icons folder for bundled art
+
+**Change.** The config window's "?" help button now uses a **bundled custom icon** instead of stock UI art — a gold "?" that reads cleanly beside the close button. Custom textures now live in the addon's new **`Icons\`** subfolder.
+
+- **`Icons\Help.tga`** — the help button pulls its texture from `Interface\AddOns\AutoRota\Icons\Help`. The file is **32×32** because the 1.12 client only loads power-of-two textures (the original art was resized to fit).
+- **Convention going forward.** Any future custom icon drops into `Icons\` and is referenced as `Interface\AddOns\AutoRota\Icons\<Name>` (no file extension). No `.toc` entry is needed — textures load by path at runtime, so only `.lua`/`.xml` files ever go in the `.toc`.
+- **Install note.** The `Icons\` folder ships inside the `AutoRota` addon folder and must travel with it; keep it intact when copying files by hand.
+
+UI/asset only. All 21 Lua files pass the balance check.
+
+---
+
 ## v0.13.2b — Weave toggle (and Restoration spec) in the config panels
 
 **Feature.** The Restoration Druid and Restoration Shaman are now selectable from the config window, and the **damage-weave toggle** has a checkbox there — no command required to set it up.

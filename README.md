@@ -1,4 +1,4 @@
-# AutoRota ⚔️ (v0.13.2b)
+# AutoRota ⚔️ (v0.13.3b)
 
 **Smart, Modular Combat Automation for Turtle WoW (1.18.1)**
 
@@ -154,6 +154,8 @@ Frost, Fire, and Arcane in one mode-adaptive module, working from level 1 to rai
 2. Place the folder directly into your World of Warcraft directory under: `Interface\AddOns\`
    *(Ensure the folder name matches the `.toc` file exactly: `Interface\AddOns\AutoRota\`)*
 3. Log into the game. Make sure "Load OutofDate AddOns" is checked if prompted.
+
+> **Note:** The `AutoRota` folder includes an `Icons\` subfolder holding the addon's bundled textures (e.g. the config window's help-button icon). Keep it intact — if you copy files by hand, make sure `Icons\` and its contents come along.
 
 ### ⚠️ Required
 * :crystal_ball: **`SuperWoW (v1.5.1)`**
