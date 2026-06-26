@@ -48,7 +48,30 @@ function M:BuildBody(ui, parent)
     self.eclipseCB = L:Check("eclipse", "Eclipse reaction", nil, set("eclipse"))
 
     self.restoSection = L:Header("Restoration (Heal)")
-    self.weaveCB = L:Check("weaveDamage", "Weave damage between heals", nil, set("weaveDamage"))
+    self.htSlider, self.hpowSlider = L:SliderPair(
+        { "healThreshold", "Heal below", { min = 50, max = 100, step = 5, suffix = "%" }, set("healThreshold") },
+        { "healPower", "Heal power", { min = 0, max = 2000, step = 50, suffix = "" }, set("healPower") })
+    self.innervateCB, self.nsCB = L:CheckPair(
+        { "useInnervate", "Innervate", "Innervate", set("useInnervate") },
+        { "useNSCombo", "Nature's Swiftness", "Nature's Swiftness", set("useNSCombo") })
+    self.innervateSlider, self.nsSlider = L:SliderPair(
+        { "innervateAt", "Innervate mana", { min = 0, max = 60, step = 5, suffix = "%" }, set("innervateAt") },
+        { "nsHpPct", "Nat.Swift HP", { min = 10, max = 70, step = 5, suffix = "%" }, set("nsHpPct") })
+    self.swiftmendCB, self.regrowthCB = L:CheckPair(
+        { "useSwiftmend", "Swiftmend", "Swiftmend", set("useSwiftmend") },
+        { "useRegrowth", "Regrowth", "Regrowth", set("useRegrowth") })
+    self.swiftmendSlider, self.regrowthSlider = L:SliderPair(
+        { "swiftmendPct", "Swiftmend HP", { min = 20, max = 90, step = 5, suffix = "%" }, set("swiftmendPct") },
+        { "regrowthPct", "Regrowth HP", { min = 20, max = 90, step = 5, suffix = "%" }, set("regrowthPct") })
+    self.wildGrowthCB, self.weaveCB = L:CheckPair(
+        { "useWildGrowth", "Wild Growth", "Wild Growth", set("useWildGrowth") },
+        { "weaveDamage", "Weave damage", nil, set("weaveDamage") })
+    self.wgSlider, self.weaveSlider = L:SliderPair(
+        { "wildGrowthCount", "Wild Growth #", { min = 2, max = 8, step = 1, suffix = "" }, set("wildGrowthCount") },
+        { "weaveManaFloor", "Weave floor", { min = 0, max = 90, step = 5, suffix = "%" }, set("weaveManaFloor") })
+    self.rejuvCB, self.lifebloomCB = L:CheckPair(
+        { "useRejuv", "Rejuvenation", "Rejuvenation", set("useRejuv") },
+        { "useLifebloom", "Lifebloom", "Lifebloom", set("useLifebloom") })
 
     L:Header("Defense (HP management)")
     self.hpCB = L:Check("hpManage", "Bear Form when HP is low", nil, set("hpManage"))
@@ -76,7 +99,22 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.mfCB.cb, "Moonfire", "Kept up first. At low levels this plus the nuke IS the rotation.")
     ui:Tip(self.isCB.cb, "Insect Swarm", "Kept up right after Moonfire.")
     ui:Tip(self.eclipseCB.cb, "Eclipse reaction", "On a proc, cast the empowered opposite nuke. Casts are queued, so the swap lands the moment the window opens.", "If procs are not detected, run /ar debug with the proc up and report the buff name.")
-    ui:Tip(self.weaveCB.cb, "Weave damage", "Restoration only. When nobody needs healing and you have an enemy targeted, cast Moonfire + Wrath in the downtime.", "Mana-gated so it never starves heals. Off by default - same as /ar weave on|off.")
+    ui:Tip(self.htSlider, "Heal threshold", "An ally below this health counts as hurt and pulls a heal. Everything in this section keys off it.")
+    ui:Tip(self.hpowSlider, "Heal power", "Your bonus healing (+heal) from gear. Used to size downranks so each heal just covers the deficit.", "Leave at 0 to let it heal by rank only.")
+    ui:Tip(self.innervateCB.cb, "Innervate", "Cast on yourself when your own mana drops, to keep the fight going.")
+    ui:Tip(self.nsCB.cb, "Nature's Swiftness", "Pop NS for an instant max Healing Touch when someone is in real trouble.")
+    ui:Tip(self.innervateSlider, "Innervate mana", "Use Innervate once your mana falls under this percent.")
+    ui:Tip(self.nsSlider, "Nat. Swiftness HP", "Trigger the instant NS heal when a target drops under this health.")
+    ui:Tip(self.swiftmendCB.cb, "Swiftmend", "Instant top-up that consumes a Rejuv or Regrowth already on the target.")
+    ui:Tip(self.regrowthCB.cb, "Regrowth", "Direct heal plus a HoT, used as a burst on a bigger deficit.")
+    ui:Tip(self.swiftmendSlider, "Swiftmend HP", "Swiftmend when a target with a HoT drops under this health.")
+    ui:Tip(self.regrowthSlider, "Regrowth HP", "Cast Regrowth when a target without one drops under this health.")
+    ui:Tip(self.wildGrowthCB.cb, "Wild Growth", "Turtle AoE HoT. Fires when several allies are hurt at once (if learned).")
+    ui:Tip(self.weaveCB.cb, "Weave damage", "When nobody needs healing and you have an enemy targeted, cast Moonfire + Wrath in the downtime.", "Mana-gated so it never starves heals. Off by default - same as /ar weave on|off.")
+    ui:Tip(self.wgSlider, "Wild Growth count", "How many hurt allies are needed before Wild Growth fires.")
+    ui:Tip(self.weaveSlider, "Weave mana floor", "Only weave damage while your mana is above this percent.")
+    ui:Tip(self.rejuvCB.cb, "Rejuvenation", "Kept rolling on the hurt target as the baseline maintenance HoT.")
+    ui:Tip(self.lifebloomCB.cb, "Lifebloom", "Turtle rolling HoT stack on the target (if learned). Off by default.")
     ui:Tip(self.hpCB.cb, "Defensive Bear", "Below the lower value, force Bear Form (using Frenzied Regeneration when known) until HP is back at the upper value.", "Works from any form, including mid-fight in Cat or Moonkin. Inert until Bear Form is learned.")
     ui:Tip(self.hpLowSlider, "Switch below", "Going under this HP percent shifts you into Bear.")
     ui:Tip(self.hpHighSlider, "Back above", "Reaching this HP percent releases you back to the preferred form.")
@@ -130,8 +168,38 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.mfCB, buf.useMoonfire)
     ui:BindCheck(self.isCB, buf.useInsectSwarm)
     ui:BindCheck(self.eclipseCB, buf.eclipse)
+    -- Restoration (Heal) block. Toggles mirror the rotation's defaults (most on
+    -- unless explicitly disabled); each threshold slider carries its value and is
+    -- live only on-spec, with its toggle on and the spell learned.
+    local isResto = (buf.form or "cat") == "tree"
+    ui:BindCheck(self.innervateCB, buf.useInnervate ~= false, "Innervate")
+    ui:BindCheck(self.nsCB, buf.useNSCombo ~= false, "Nature's Swiftness")
+    ui:BindCheck(self.swiftmendCB, buf.useSwiftmend ~= false, "Swiftmend")
+    ui:BindCheck(self.regrowthCB, buf.useRegrowth ~= false, "Regrowth")
+    ui:BindCheck(self.wildGrowthCB, buf.useWildGrowth, "Wild Growth")
     ui:BindCheck(self.weaveCB, buf.weaveDamage)
-    self.restoSection:SetDimmed((buf.form or "cat") ~= "tree")
+    ui:BindCheck(self.rejuvCB, buf.useRejuv ~= false, "Rejuvenation")
+    ui:BindCheck(self.lifebloomCB, buf.useLifebloom, "Lifebloom")
+    self.restoSection:SetDimmed(not isResto)
+    -- BindCheck re-enables every box; keep them inert off-spec.
+    local restoCBs = { self.innervateCB, self.nsCB, self.swiftmendCB, self.regrowthCB,
+                       self.wildGrowthCB, self.weaveCB, self.rejuvCB, self.lifebloomCB }
+    for i = 1, table.getn(restoCBs) do
+        if isResto then restoCBs[i].cb:Enable() else restoCBs[i].cb:Disable() end
+    end
+    local function rs(slider, on, val, suffix)
+        slider:SetValue(val)
+        if slider.valText then slider.valText:SetText(val .. (suffix or "")) end
+        ui:SliderEnable(slider, on and true or false)
+    end
+    rs(self.htSlider, isResto, buf.healThreshold or 90, "%")
+    rs(self.hpowSlider, isResto, buf.healPower or 0, "")
+    rs(self.innervateSlider, isResto and buf.useInnervate ~= false and self:KnowsSpell("Innervate"), buf.innervateAt or 30, "%")
+    rs(self.nsSlider, isResto and buf.useNSCombo ~= false and self:KnowsSpell("Nature's Swiftness"), buf.nsHpPct or 40, "%")
+    rs(self.swiftmendSlider, isResto and buf.useSwiftmend ~= false and self:KnowsSpell("Swiftmend"), buf.swiftmendPct or 65, "%")
+    rs(self.regrowthSlider, isResto and buf.useRegrowth ~= false and self:KnowsSpell("Regrowth"), buf.regrowthPct or 55, "%")
+    rs(self.wgSlider, isResto and buf.useWildGrowth and self:KnowsSpell("Wild Growth"), buf.wildGrowthCount or 4, "")
+    rs(self.weaveSlider, isResto and buf.weaveDamage, buf.weaveManaFloor or 40, "")
 
     -- defense block: needs a bear form; sliders follow the checkbox
     local bearKnown = self:KnowsSpell("Bear Form") or self:KnowsSpell("Dire Bear Form")
