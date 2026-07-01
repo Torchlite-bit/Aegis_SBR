@@ -4,7 +4,7 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
-## v0.14.0b — Full heal-config panels for the Druid & Shaman healers (plus UI polish)
+## v0.13.4b — Full heal-config panels for the Druid & Shaman healers (plus UI polish)
 
 **Feature.** The **Restoration Druid** and **Restoration Shaman** now have **complete config panels**, matching every other spec — every knob the heal rotation reads is a slider, toggle, or dropdown, so the healers are no longer command-line-plus-defaults. This closes the last big configurability gap.
 
@@ -17,6 +17,8 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 - **Engraved section dividers.** The flat grey separators are now a soft two-tone hairline with a thin shadow beneath, for a bit of depth.
 - **Row hover.** Moving over a config control lights a faint full-width highlight on its row. It is a background tint that never takes mouse input (so it can never block a click), and tooltips now chain onto it rather than replacing it.
+
+**Fix.** `/ar new <name>` without a template argument now correctly creates the profile from the starter template — the command dispatcher was passing an empty string instead of nothing, which failed the template lookup with "unknown template ''". (The UI's New button was unaffected.)
 
 The per-rank heal values and thresholds remain the vanilla-baseline approximations from the earlier resto work — the panels make them tunable; whether they *feel* right is still an in-game call (the rank tables live at the top of `Class_Druid.lua` / `Class_Shaman.lua`). All 21 Lua files pass the balance check.
 

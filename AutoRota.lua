@@ -15,7 +15,7 @@
 -- ============================================================
 
 AutoRota = {
-    ver = "0.14.0b",
+    ver = "0.13.4b",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -510,6 +510,7 @@ function AutoRota:CmdNew(name, template)
     if not self.active or not self.active.templates then msgOut("no class module loaded.", 1, 0.5, 0.3); return end
     if not name then msgOut("usage: /ar new <name> [template]", 1, 0.5, 0.3); return end
     if AutoRotaDB.profiles[name] then msgOut("'" .. name .. "' already exists.", 1, 0.5, 0.3); return end
+    if template == "" then template = nil end   -- the dispatcher lowercases t[3] or "", so a missing arg arrives as ""
     local tpl = self.active.templates[template or "starter"]
     if not tpl then msgOut("unknown template '" .. tostring(template) .. "'.", 1, 0.5, 0.3); return end
     AutoRotaDB.profiles[name] = self:CopyProfile(tpl)
