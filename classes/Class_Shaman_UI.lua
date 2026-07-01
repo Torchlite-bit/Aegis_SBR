@@ -196,7 +196,7 @@ function M:RefreshBody(ui, buf)
     rs(self.nsSlider, isResto and buf.useNSCombo ~= false and self:NSSpell(), buf.nsHpPct or 40, "%")
     rs(self.lhwSlider, isResto and buf.useLesserHW ~= false and self:KnowsSpell("Lesser Healing Wave"), buf.lhwPct or 50, "%")
     rs(self.chainSlider, isResto and buf.useChainHeal ~= false and self:KnowsSpell("Chain Heal"), buf.chainHealCount or 3, "")
-    rs(self.weaveSlider, isResto and buf.weaveDamage, buf.weaveManaFloor or 40, "")
+    rs(self.weaveSlider, isResto and buf.weaveDamage, buf.weaveManaFloor or 40, "%")
     -- totem pickers follow the master toggle, on-spec
     local totemsOn = isResto and buf.useTotems ~= false
     local totemDDs = { self.waterDD, self.earthDD, self.fireDD, self.airDD }

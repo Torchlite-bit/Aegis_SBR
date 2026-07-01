@@ -199,7 +199,7 @@ function M:RefreshBody(ui, buf)
     rs(self.swiftmendSlider, isResto and buf.useSwiftmend ~= false and self:KnowsSpell("Swiftmend"), buf.swiftmendPct or 65, "%")
     rs(self.regrowthSlider, isResto and buf.useRegrowth ~= false and self:KnowsSpell("Regrowth"), buf.regrowthPct or 55, "%")
     rs(self.wgSlider, isResto and buf.useWildGrowth and self:KnowsSpell("Wild Growth"), buf.wildGrowthCount or 4, "")
-    rs(self.weaveSlider, isResto and buf.weaveDamage, buf.weaveManaFloor or 40, "")
+    rs(self.weaveSlider, isResto and buf.weaveDamage, buf.weaveManaFloor or 40, "%")
 
     -- defense block: needs a bear form; sliders follow the checkbox
     local bearKnown = self:KnowsSpell("Bear Form") or self:KnowsSpell("Dire Bear Form")
