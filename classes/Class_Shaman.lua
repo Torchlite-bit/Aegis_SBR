@@ -44,9 +44,6 @@ local TALENT_CLEARCAST = "Elemental Focus"
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
 local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
 
--- Re-drop interval for the damage totem (no reliable "is my totem up" API on
--- 1.12, so it is refreshed on a blind timer while in combat).
-local SEARING_REDROP = 30
 -- Flame Shock blind-reapply interval when its debuff cannot be detected.
 local FLAMESHOCK_DUR = 12
 
@@ -87,26 +84,38 @@ M.templates = {
                  -- levels, the rest enables itself as it is learned
         mode = "enhancement", shield = "lightning", shock = "earth",
         lbFiller = true, useStormstrike = true, useLightningStrike = true,
-        useSearingTotem = false, useElementalMastery = false, useBloodlust = false,
+        useElementalMastery = false, useBloodlust = false,
         useTaunt = false,
+        useTotems = true, totemWater = "manaspring",
+        totemEarth = "none", totemFire = "none", totemAir = "none",
     },
     enhancement = {
         mode = "enhancement", shield = "lightning", shock = "earth",
         lbFiller = true, useStormstrike = true, useLightningStrike = true,
-        useSearingTotem = true, useElementalMastery = false, useBloodlust = false,
+        useElementalMastery = false, useBloodlust = false,
         useTaunt = false,
+        -- Windfury air + Searing fire + Strength earth + Mana Spring water.
+        useTotems = true, totemWater = "manaspring",
+        totemEarth = "strength", totemFire = "searing", totemAir = "windfury",
     },
     elemental = {
         mode = "elemental", shield = "water", shock = "flame",
         lbFiller = true, useStormstrike = false, useLightningStrike = false,
-        useSearingTotem = true, useElementalMastery = true, useBloodlust = false,
+        useElementalMastery = true, useBloodlust = false,
         useTaunt = false,
+        -- Searing fire (spellpower/DoT damage) + Mana Spring + Grace of Air.
+        useTotems = true, totemWater = "manaspring",
+        totemEarth = "none", totemFire = "searing", totemAir = "graceofair",
     },
     tank = {
         mode = "tank", shield = "lightning", shock = "earth",
         lbFiller = false, useStormstrike = true, useLightningStrike = true,
-        useSearingTotem = false, useElementalMastery = false, useBloodlust = false,
+        useElementalMastery = false, useBloodlust = false,
         useTaunt = true,
+        -- Stoneskin earth + Grounding air; no fire by default (threat comes from
+        -- shocks/strikes), Mana Spring for sustain.
+        useTotems = true, totemWater = "manaspring",
+        totemEarth = "stoneskin", totemFire = "none", totemAir = "grounding",
     },
     restoration = {  -- Restoration: group healer, downranked HW / LHW + Chain Heal
         mode = "restoration", shield = "water", shock = "none",
@@ -126,7 +135,6 @@ function M:NormalizeProfile(c)
     if c.lbFiller == nil then c.lbFiller = true end
     if c.useStormstrike == nil then c.useStormstrike = true end
     if c.useLightningStrike == nil then c.useLightningStrike = true end
-    if c.useSearingTotem == nil then c.useSearingTotem = false end
     if c.useElementalMastery == nil then c.useElementalMastery = false end
     if c.useBloodlust == nil then c.useBloodlust = false end
     if c.useTaunt == nil then c.useTaunt = false end
@@ -214,17 +222,6 @@ end
 -- already started it and fills the gap otherwise.
 function M:EnsureMeleeSwing()
     AutoRota:EnsureAutoAttack()
-end
-
--- Searing Totem upkeep on a blind timer (no totem-state API on 1.12).
-M.searingT = 0
-function M:MaintainSearingTotem(cfg)
-    if not cfg.useSearingTotem then return false end
-    if not self:KnowsSpell("Searing Totem") then return false end
-    local now = GetTime()
-    if (now - (self.searingT or 0)) < SEARING_REDROP then return false end
-    if self:Queue("Searing Totem") then self.searingT = now; return true end
-    return false
 end
 
 -- Flame Shock maintained as a DoT (used when shock == flame). Returns true if
@@ -408,11 +405,54 @@ end
 -- Totem upkeep on a blind timer (no totem-state API on 1.12), one clock per
 -- element. Re-drop intervals are conservative; tune if Turtle durations differ.
 M.totemT = {}
+
+-- Every totem name we might drop, mapped to its element slot. Dropping a totem
+-- of one element replaces the previous totem of that element, so a fresh cast
+-- of any of these updates that slot's clock. Built once from the pick tables.
+M.TOTEM_ELEMENT = nil
+function M:TotemElementMap()
+    if self.TOTEM_ELEMENT then return self.TOTEM_ELEMENT end
+    local m = {}
+    local function add(tbl, slot) for _, spell in pairs(tbl) do if spell ~= "" then m[spell] = slot end end end
+    add(self.WATER_TOTEMS, "water"); add(self.EARTH_TOTEMS, "earth")
+    add(self.FIRE_TOTEMS, "fire");   add(self.AIR_TOTEMS, "air")
+    -- Mana Tide / Healing Stream share the water slot; already covered by WATER.
+    self.TOTEM_ELEMENT = m
+    return m
+end
+
+-- SuperWoW's UNIT_CASTEVENT fires the instant a cast is registered, with the
+-- caster GUID and spell name. We use it to timestamp our own totem drops from
+-- the ACTUAL cast rather than guessing when Queue landed - so a totem the
+-- player drops manually (or that Mana Tide bumps) also resets the right clock,
+-- and the redrop timer reflects reality. Falls back cleanly to the Queue-time
+-- stamp if the event never arrives.
+function M:OnCastEvent(caster, target, spellName)
+    if not spellName then return end
+    local _, myGuid = UnitExists("player")
+    if myGuid and caster ~= myGuid then return end
+    local slot = self:TotemElementMap()[spellName]
+    if slot then self.totemT[slot] = GetTime() end
+end
+
 function M:MaintainTotem(key, spell, interval)
     if spell == "" or not self:KnowsSpell(spell) then return false end
     local now = GetTime()
     if (now - (self.totemT[key] or 0)) < interval then return false end
     if self:Queue(spell) then self.totemT[key] = now; return true end
+    return false
+end
+
+-- Unified totem upkeep for every spec: drops the configured totem in each of
+-- the four element slots during a lull, one per press. Damage specs default
+-- their fire slot to Searing (see templates), so this fully replaces the old
+-- standalone Searing upkeep with no loss - and adds water/earth/air on top.
+function M:MaintainAllTotems(cfg)
+    if cfg.useTotems == false then return false end
+    if self:MaintainTotem("water", self.WATER_TOTEMS[cfg.totemWater or "none"] or "", WATER_TOTEM_REDROP) then return true end
+    if self:MaintainTotem("earth", self.EARTH_TOTEMS[cfg.totemEarth or "none"] or "", OTHER_TOTEM_REDROP) then return true end
+    if self:MaintainTotem("fire",  self.FIRE_TOTEMS[cfg.totemFire or "none"] or "", OTHER_TOTEM_REDROP) then return true end
+    if self:MaintainTotem("air",   self.AIR_TOTEMS[cfg.totemAir or "none"] or "", OTHER_TOTEM_REDROP) then return true end
     return false
 end
 
@@ -559,8 +599,8 @@ function M:RotateEnhancement(cfg)
         end
     end
 
-    -- P6 Searing Totem upkeep (timer gated, low priority)
-    if self:MaintainSearingTotem(cfg) then return end
+    -- P6 Totem upkeep (all four elements, timer/cast-event gated, low priority)
+    if self:MaintainAllTotems(cfg) then return end
 
     -- P7 Lightning Bolt filler / weave. Also the level 1 damage source.
     if cfg.lbFiller and self:KnowsSpell("Lightning Bolt") then
@@ -602,8 +642,8 @@ function M:RotateElemental(cfg)
         end
     end
 
-    -- P4 Searing Totem upkeep
-    if self:MaintainSearingTotem(cfg) then return end
+    -- P4 Totem upkeep (all four elements)
+    if self:MaintainAllTotems(cfg) then return end
 
     -- P5 Lightning Bolt filler, the main nuke (builds Electrify). Always the
     -- level 1 fallback.
@@ -657,8 +697,8 @@ function M:RotateTank(cfg)
         if self:Queue("Lightning Strike") then return end
     end
 
-    -- P6 Searing Totem upkeep
-    if self:MaintainSearingTotem(cfg) then return end
+    -- P6 Totem upkeep (all four elements)
+    if self:MaintainAllTotems(cfg) then return end
 
     -- P7 optional Lightning Bolt filler (off by default for tanks)
     if cfg.lbFiller and self:KnowsSpell("Lightning Bolt") then

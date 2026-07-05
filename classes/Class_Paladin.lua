@@ -45,6 +45,7 @@ local DOWNRANK = {
 -- silently reads rank 0 and the rotation would never maintain a buff the player
 -- in fact has. We read their ranks so it never maintains one they cannot get.
 local TALENT_HOLY_MIGHT = "Vengeful Strikes"
+local TALENT_BLESSED = "Blessed Strikes"   -- Holy: Crusader Strike resets Holy Shock (100% at 5/5)
 local TALENT_THREAT     = "Righteous Strikes"
 
 -- Judgement debuff detection. The exact debuff name (resolved through
@@ -161,6 +162,7 @@ M.templates = {
         strikeMode = "off",
         spells = { holyShield = false, hammerOfWrath = false, repentance = false },
         healMode = true, healThreshold = 90, useHolyShock = true, holyShockPct = 50, healPower = 0,
+        healWeaveStrikes = true, healWeaveManaFloor = 40,
     },
 }
 
@@ -237,6 +239,8 @@ function M:NormalizeProfile(c)
     if c.healThreshold == nil then c.healThreshold = 90 end
     if c.useHolyShock == nil then c.useHolyShock = true end
     if c.holyShockPct == nil then c.holyShockPct = 50 end
+    if c.healWeaveStrikes == nil then c.healWeaveStrikes = true end     -- melee-holy weave
+    if c.healWeaveManaFloor == nil then c.healWeaveManaFloor = 40 end
     if c.healPower == nil then c.healPower = 0 end
     return c
 end
@@ -753,12 +757,59 @@ function M:RunsWithoutTarget(cfg)
     return cfg.healMode == true
 end
 
+-- ------------------------------------------------------------
+-- Melee-holy strike weaving (heal mode). Turtle's Holy paladin fights in
+-- melee: Holy Strike splash-heals the group, and with Blessed Strikes
+-- (100% at 5/5) Crusader Strike resets Holy Shock, keeping the emergency
+-- instant permanently loaded. Both entry points share this gate.
+-- ------------------------------------------------------------
+function M:HealStrikeGate(cfg)
+    if cfg.healWeaveStrikes == false then return false end
+    if not (UnitExists("target") and not UnitIsDead("target") and UnitCanAttack("player", "target")) then return false end
+    if not self:InMeleeRange() then return false end
+    if not self:GcdReady() then return false end
+    if not self:SharedStrikeReady(cfg) then return false end
+    local maxm = UnitManaMax("player")
+    if not maxm or maxm == 0 then return false end
+    if UnitMana("player") / maxm * 100 < (cfg.healWeaveManaFloor or 40) then return false end
+    return true
+end
+
+-- The Blessed Strikes engine: when Holy Shock is on cooldown, weave Crusader
+-- Strike to reset it - even between heals while people are hurt - but NEVER
+-- while anyone is below the Holy Shock emergency line; a critical member
+-- always gets the heal first. Auto-detects the talent, so an untalented
+-- paladin never burns a GCD fishing for a reset that cannot happen.
+function M:HealStrikeEngine(cfg)
+    if not cfg.useHolyShock then return false end
+    if self:TalentRank(TALENT_BLESSED) == 0 then return false end
+    if not self:KnowsSpell("Holy Shock") or not self:KnowsSpell("Crusader Strike") then return false end
+    if self:OwnCDReady("Holy Shock") then return false end          -- already loaded
+    local _, _, pct = self:WorstHurt((cfg.healThreshold or 90) / 100)
+    if pct and pct <= (cfg.holyShockPct or 50) / 100 then return false end
+    if not self:HealStrikeGate(cfg) then return false end
+    return self:CastStrike("Crusader Strike", cfg)
+end
+
+-- Downtime weave: nobody needs a direct heal, so strike with the heal-mode
+-- policy - Holy Strike when known (its splash heal tops the melee group,
+-- doubled by Blessed Strikes), Crusader Strike otherwise.
+function M:HealWeaveStrike(cfg)
+    if not self:HealStrikeGate(cfg) then return false end
+    local pick
+    if self:KnowsSpell("Holy Strike") then pick = "Holy Strike"
+    elseif self:KnowsSpell("Crusader Strike") then pick = "Crusader Strike" end
+    if not pick then return false end
+    return self:CastStrike(pick, cfg)
+end
+
 function M:Rotate(cfg)
     self:UpdateManagement(cfg)
 
-    -- Heal mode: group healing preempts the attack rotation, so a judgement or
-    -- strike GCD never delays a needed heal. Between heals the rotation below
-    -- runs and adds damage.
+    -- Heal mode, melee-holy: the Blessed Strikes engine reloads Holy Shock
+    -- between heals (never over an emergency), then group healing preempts the
+    -- attack rotation, so a judgement or strike GCD never delays a needed heal.
+    if cfg.healMode and self:HealStrikeEngine(cfg) then return end
     if cfg.healMode and self:DoHeal(cfg) then return end
 
     -- Heal mode works at range with no target; everything below needs an
@@ -768,8 +819,13 @@ function M:Rotate(cfg)
     end
 
     -- In heal mode the attack rotation yields while anyone needs healing, so a
-    -- Seal of Wisdom judgement or a strike never steals the GCD from a heal.
-    if cfg.healMode and self:HealDemand(cfg) then return end
+    -- Seal of Wisdom judgement never steals the GCD from a heal. With nobody
+    -- hurt, strike with the heal policy (Holy Strike splash) before the
+    -- generic damage rotation below.
+    if cfg.healMode then
+        if self:HealDemand(cfg) then return end
+        if self:HealWeaveStrike(cfg) then return end
+    end
 
     if self.trace then
         local db = cfg.seals.debuff

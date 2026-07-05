@@ -15,7 +15,7 @@
 -- ============================================================
 
 AutoRota = {
-    ver = "0.13.4b",
+    ver = "0.13.11b",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -325,7 +325,17 @@ function AutoRota:EnsureAutoAttack()
         end
         self.attackSlot = slot
     end
-    if slot and not IsCurrentAction(slot) then UseAction(slot) end
+    if slot then
+        -- Attack is on a bar: toggle it only when not already swinging, so this
+        -- is a no-op if SCRM (or the player) already started the swing.
+        if not IsCurrentAction(slot) then UseAction(slot) end
+    elseif AttackTarget then
+        -- No Attack on any bar (common on Warriors who never place it): the
+        -- vanilla AttackTarget() starts the melee swing directly, no slot
+        -- needed. It only begins a swing if one is not already going, so it is
+        -- likewise safe to call every tick.
+        AttackTarget()
+    end
 end
 
 -- A stable id for the current target. SuperWoW returns the GUID as the second
@@ -723,6 +733,12 @@ ev:RegisterEvent("SPELLS_CHANGED")
 ev:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
 ev:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
 ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+-- SuperWoW fires UNIT_CASTEVENT on every registered cast: arg1 caster GUID,
+-- arg2 target GUID, arg3 event type ("START"/"CAST"/"FAIL"/...), arg4 spell id,
+-- arg5 cast duration. Modules that care (e.g. Shaman totem tracking) get the
+-- resolved spell NAME via OnCastEvent. Guarded so clients without SuperWoW
+-- (no such event) simply never receive it.
+if SpellInfo then ev:RegisterEvent("UNIT_CASTEVENT") end
 ev:SetScript("OnEvent", function()
     if event == "ADDON_LOADED" and arg1 == "AutoRota" then
         AutoRota:OnAddonLoaded()
@@ -737,5 +753,12 @@ ev:SetScript("OnEvent", function()
         if AutoRota.active then AutoRota.active:OnSwingMessage(arg1) end
     elseif event == "PLAYER_REGEN_ENABLED" then
         if AutoRota.active then AutoRota.active.lastSwing = nil end
+    elseif event == "UNIT_CASTEVENT" then
+        -- Only successful casts ("CAST"), and only if the active module wants them.
+        if arg3 == "CAST" and AutoRota.active and AutoRota.active.OnCastEvent then
+            local sname
+            if arg4 and SpellInfo then sname = SpellInfo(arg4) end
+            if sname then AutoRota.active:OnCastEvent(arg1, arg2, sname) end
+        end
     end
 end)

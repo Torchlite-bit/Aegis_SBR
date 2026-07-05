@@ -64,6 +64,8 @@ local RAGE = {
     ["Revenge"]       = 5,
     ["Sunder Armor"]  = 12,   -- 15 base, often reduced
     ["Thunder Clap"]  = 20,
+    ["Charge"]        = 0,    -- generates rage; free to attempt
+    ["Rend"]          = 10,
 }
 
 -- Stances an ability may be used from (vanilla 1.12). nil = any stance.
@@ -74,6 +76,8 @@ local STANCE_REQ = {
     ["Overpower"]     = { "Battle Stance" },
     ["Revenge"]       = { "Defensive Stance" },
     ["Thunder Clap"]  = { "Battle Stance" },
+    ["Charge"]        = { "Battle Stance" },
+    ["Rend"]          = { "Battle Stance", "Defensive Stance" },
     ["Recklessness"]  = { "Berserker Stance" },
     ["Berserker Rage"]= { "Berserker Stance" },
     ["Shield Block"]  = { "Defensive Stance" },
@@ -115,6 +119,7 @@ M.templates = {
         popCDs = false, autoCDElite = false,
         useDeathWish = false, useRecklessness = false, useBerserkerRage = false,
         useBloodrage = true, bloodrageRage = 30, useShieldBlock = false,
+        useCharge = false, useRend = false,
     },
     fury = {
         useMortalStrike = false, useBloodthirst = true, useShieldSlam = false,
@@ -127,6 +132,7 @@ M.templates = {
         popCDs = false, autoCDElite = true,
         useDeathWish = true, useRecklessness = true, useBerserkerRage = true,
         useBloodrage = true, bloodrageRage = 30, useShieldBlock = false,
+        useCharge = false, useRend = false,
     },
     arms = {
         useMortalStrike = true, useBloodthirst = false, useShieldSlam = false,
@@ -139,6 +145,7 @@ M.templates = {
         popCDs = false, autoCDElite = true,
         useDeathWish = false, useRecklessness = true, useBerserkerRage = true,
         useBloodrage = true, bloodrageRage = 30, useShieldBlock = false,
+        useCharge = false, useRend = false,
     },
     prot = {
         useMortalStrike = false, useBloodthirst = false, useShieldSlam = true,
@@ -151,6 +158,7 @@ M.templates = {
         popCDs = false, autoCDElite = false,
         useDeathWish = false, useRecklessness = false, useBerserkerRage = false,
         useBloodrage = true, bloodrageRage = 30, useShieldBlock = true,
+        useCharge = false, useRend = false,
     },
 }
 
@@ -168,6 +176,7 @@ function M:NormalizeProfile(c)
         popCDs = false, autoCDElite = false,
         useDeathWish = false, useRecklessness = false, useBerserkerRage = false,
         useBloodrage = true, bloodrageRage = 30, useShieldBlock = false,
+        useCharge = false, useRend = false,
     }
     for k, v in pairs(b) do
         if c[k] == nil then c[k] = v end
@@ -351,6 +360,23 @@ function M:Rotate(cfg)
     -- 1. GCD priority (strict, exactly one cast per press via early return)
     -- ----------------------------------------------------------------
 
+    -- 1@. Charge opener (toggle). Battle Stance only, and only as a pull: you
+    --     must be OUT of melee range (so it is a gap-closer, never mid-fight)
+    --     with an attackable target. Stance-dances to Battle if enabled and
+    --     needed. Charge itself is blocked by the client once you are in
+    --     combat, so this naturally stops applying after the pull.
+    if cfg.useCharge and self:KnowsSpell("Charge") and not inCombat
+        and UnitExists("target") and UnitCanAttack("player", "target")
+        and not UnitIsDeadOrGhost("target") and not self:InMeleeRange() then
+        if self:InStance("Battle Stance") then
+            if self:IsReady("Charge") then
+                if self:Cast("Charge") then return end
+            end
+        elseif cfg.stanceDance or cfg.homeStance == "battle" then
+            if self:SwitchStance("Battle Stance") then return end
+        end
+    end
+
     -- 1a. Revenge (Defensive). Mainly a tank reactive; only pursued while
     --     in Defensive, or stance-danced to it when home stance is Defensive.
     if cfg.useRevenge and self:KnowsSpell("Revenge") and now < (self.revengeExpiry or 0)
@@ -384,6 +410,15 @@ function M:Rotate(cfg)
     if cfg.useShieldSlam   and self:Try("Shield Slam")   then return end
     if cfg.useBloodthirst  and self:Try("Bloodthirst")   then return end
     if cfg.useMortalStrike and self:Try("Mortal Strike") then return end
+
+    -- 1d2. Rend bleed upkeep (toggle; a leveling tool, off by default). Battle
+    --      or Defensive stance, applied only when the bleed is not already on
+    --      the target. Skipped in the execute phase so rage funnels to Execute.
+    if cfg.useRend and not inExecute and self:KnowsSpell("Rend")
+        and self:CanCast("Rend", RAGE["Rend"], STANCE_REQ["Rend"])
+        and not AutoRota:TargetDebuffUp("Rend", "ability_rend") then
+        if self:Cast("Rend") then return end
+    end
 
     -- 1e. Whirlwind: on cooldown in AoE, or as a single-target rage dump
     --     when rage is running high. Berserker stance only.

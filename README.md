@@ -1,4 +1,4 @@
-# AutoRota ⚔️ (v0.13.4b)
+# AutoRota ⚔️ (v0.13.11b)
 
 **Smart, Modular Combat Automation for Turtle WoW (1.18.1)**
 
@@ -22,8 +22,8 @@ AutoRota is currently in an **active beta state**. As such, the addon is subject
 - **Locale-Proof Debuff Resolution:** Target debuffs are resolved via precise SuperWoW spell IDs, ensuring upkeep is rank- and locale-proof. Clients without SuperWoW automatically fallback to icon-texture matching.
 - **High-Performance Per-Press:** By caching spellbook lookups and snapshots, the addon replaces heavy scanning with high-speed table reads, ensuring responsiveness even during button spam.
 - **Flexible Target Acquisition:** By default the engine auto-acquires the nearest enemy when you have no target, but a global `/ar acquire off` (or the minimap options panel) hands targeting back to you or an assist addon — and ranged modules like the Hunter opt out of auto-acquire entirely so they never pull a random mob.
-- **User-Centric Configuration:** Includes draggable minimap button control (`/armap` or `/ar minimap`) with a right-click options panel, an intuitive configuration panel, and robust profile management to seamlessly switch between *Leveling*, *PvP*, or *Raid* presets.
-- **Spec-Aware Focus:** For the mode-adaptive classes (Mage, Hunter, Shaman), the configuration panel fades and locks the controls for the spec or mode you are *not* currently in — Frost dims Fire and Arcane, Ranged dims Melee, Elemental dims the melee strikes — so you only see the rotation you are actually running.
+- **User-Centric Configuration:** Includes draggable minimap button control (`/armap` or `/ar minimap`) with a right-click options panel, a modern flat-dark configuration panel — bundled *PT Sans Narrow* fonts, class-coloured accents, and a clean single-row layout for every setting (toggle, label, right-aligned slider, and value column, with the sliders forming one uniform column) — and robust profile management to seamlessly switch between *Leveling*, *PvP*, or *Raid* presets.
+- **Spec-Aware Focus:** For classes whose rotation branches by spec (Druid, Shaman, Hunter, Mage, and the Paladin's Damage/Healer split), the configuration panel presents a **spec tab rail** and shows only the active spec's controls — switching tabs writes the same profile field the rotation reads, so the panel always matches the rotation you are actually running.
 
 ---
 
@@ -39,7 +39,7 @@ Engineered around an intelligent "Roleless Seal Model" optimized for low-level l
 - **Mana Downranking (opt-in):** *Downrank when low* casts lower ranks of your strikes as raw mana drops, to keep swinging while leveling. Thresholds use absolute mana (not percent), so a full pool stays at top rank and only a near-empty pool steps down, always clamped to your highest known rank.
 - **Consecration (opt-in):** An AoE filler cast on cooldown when enabled. Because the 1.12 client cannot reliably count nearby enemies, it is a manual toggle — the *Consecration (AoE)* checkbox, or `/ar aoe` for a quick keybind flip. It sits last in the priority so it never delays your strikes, *Holy Shield*, seal/Judgement upkeep, or *Hammer of Wrath*, and is held during mana recovery.
 - **Exorcism (opt-in):** Cast on cooldown, but only against *Undead* and *Demon* targets (checked via creature type), and likewise paused while recovering mana.
-- **Heal Mode (`/ar heal on`):** Turns the Paladin into a group healer that still DPSes between heals. It runs even with no attackable target, so it works at range. It picks the most-hurt *reachable* party/raid member (raid- and party-aware), counts its own in-flight heal so it never double-stacks on one target, and **downranks** *Flash of Light* / *Holy Light* to the size of the deficit for mana efficiency — the `+healing` bonus is read automatically from your gear (override with `/ar healpower <n>`) and *Healing Light* / *Divine Favor* talents are factored in. *Holy Shock* is used as an instant for emergencies (below a configurable %) or for a hurt unit out of melee range. The attack rotation yields the global cooldown while anyone needs healing, so a *Seal of Wisdom* judgement never steals a heal's cast. Configure it in the *Healing* panel section or via `/ar healat` and `/ar hsat`.
+- **Heal Mode (`/ar heal on`):** Turns the Paladin into a group healer that still DPSes between heals. It runs even with no attackable target, so it works at range. It picks the most-hurt *reachable* party/raid member (raid- and party-aware), counts its own in-flight heal so it never double-stacks on one target, and **downranks** *Flash of Light* / *Holy Light* to the size of the deficit for mana efficiency — the `+healing` bonus is read automatically from your gear (override with `/ar healpower <n>`) and *Healing Light* / *Divine Favor* talents are factored in. *Holy Shock* is used as an instant for emergencies (below a configurable %) or for a hurt unit out of melee range. **Melee-holy weaving:** with *Blessed Strikes* talented (auto-detected — 100% at 5/5), *Crusader Strike* is woven between heals to **reset Holy Shock**, keeping the emergency instant loaded — but never over an emergency; anyone under the Holy Shock line is healed first. In downtime *Holy Strike* is woven so its splash heal tops the melee group, and a **weave mana floor** ensures striking never starves a heal. The **Damage | Healer tabs** switch the mode (same as `/ar heal`). The attack rotation yields the global cooldown while anyone needs healing, so a *Seal of Wisdom* judgement never steals a heal's cast. Configure it in the *Healing* panel section or via `/ar healat` and `/ar hsat`.
 
 > **Heal-mode note:** The per-rank heal values and the talent modifiers are best-effort approximations tuned for Turtle, and live in one table at the top of `Class_Paladin.lua` — if downranking picks a rank that over- or under-heals, that is where to adjust. Targeted healing relies on SuperWoW's unit-argument `CastSpellByName`, so it heals the hurt member without dropping your attack target; worth a quick in-party sanity check on 1.18.1.
 
@@ -155,7 +155,9 @@ Frost, Fire, and Arcane in one mode-adaptive module, working from level 1 to rai
    *(Ensure the folder name matches the `.toc` file exactly: `Interface\AddOns\AutoRota\`)*
 3. Log into the game. Make sure "Load OutofDate AddOns" is checked if prompted.
 
-> **Note:** The `AutoRota` folder includes an `Icons\` subfolder holding the addon's bundled textures (e.g. the config window's help-button icon). Keep it intact — if you copy files by hand, make sure `Icons\` and its contents come along.
+> **Note:** The `AutoRota` folder includes an `Icons\` subfolder (the UI skin's bundled textures — switches, sliders, buttons, pills, and section cards) and a `Fonts\` subfolder (the UI skin's typeface, *PT Sans Narrow*, OFL-licensed — `Fonts\OFL.txt`). Keep both intact — if you copy files by hand, make sure `Icons\` and `Fonts\` come along. If `Fonts\` is missing the window falls back to the client's default font.
+>
+> **First install / after an update that adds textures:** the 1.12 client only scans for new texture files at login, so do a **full relog** (log out to character select and back in) rather than just `/reload` — otherwise custom art may not appear.
 
 ### ⚠️ Required
 * :crystal_ball: **`SuperWoW (v1.5.1)`**

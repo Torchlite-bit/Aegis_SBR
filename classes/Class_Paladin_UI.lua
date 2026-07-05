@@ -11,7 +11,7 @@ local function setBlockEnabled(cbItem, sLow, sHigh, on, reason)
     if on then
         cbItem.cb:Enable()
         sLow:EnableMouse(true); sHigh:EnableMouse(true); sLow:SetAlpha(1); sHigh:SetAlpha(1)
-        cbItem.label:SetTextColor(1, 1, 1); cbItem.label:SetText(cbItem.baseText)
+        cbItem.label:SetTextColor(0.91, 0.90, 0.88); cbItem.label:SetText(cbItem.baseText)
     else
         cbItem.cb:Disable()
         sLow:EnableMouse(false); sHigh:EnableMouse(false); sLow:SetAlpha(0.35); sHigh:SetAlpha(0.35)
@@ -20,6 +20,19 @@ local function setBlockEnabled(cbItem, sLow, sHigh, on, reason)
 end
 
 M.useScrollLayout = true
+-- Damage | Healer rail. The rotation's only real branch is healMode (attack vs.
+-- heal), so the two tabs bind to that boolean via encode/decode. Ret and Prot
+-- both live on Damage (they differ only by the seals/strikes below, not by the
+-- rotation), so the spec names live in the tooltips rather than the labels.
+M.specTabs = {
+    field = "healMode", default = "damage",
+    encode = function(key) return key == "heal" end,          -- key -> healMode boolean
+    decode = function(v) return v and "heal" or "damage" end,  -- boolean -> tab key
+    tabs = {
+        { key = "damage", label = "Damage", tip1 = "Retribution & Protection - melee rotation.", tip2 = "Pick your seals, strikes and cooldowns below." },
+        { key = "heal",   label = "Healer", tip1 = "Holy - one-button group healing.", tip2 = "Judges Seal of Wisdom for mana; weaves strikes melee-holy style (Blessed Strikes reloads Holy Shock)." },
+    },
+}
 
 -- ============================================================
 -- build body (paladin controls)
@@ -29,46 +42,46 @@ function M:BuildBody(ui, parent)
     local function set(field)  return function(v) if ui.buf then ui.buf[field] = v; ui:Refresh() end end end
     local function sset(key)   return function(v) if ui.buf then ui.buf.spells[key] = v; ui:Refresh() end end end
 
-    L:Header("Seals")
+    L:Header("Seals", "damage")
     self.debuffDD = L:Dropdown("seal_debuff", "Debuff", 200, function(v) if ui.buf then ui.buf.seals.debuff = v; ui:Refresh() end end)
     self.damageDD = L:Dropdown("seal_damage", "Damage", 200, function(v) if ui.buf then ui.buf.seals.damage = v; ui:Refresh() end end)
 
-    L:Header("Spells")
+    L:Header("Spells", "damage")
     self.spellCB = {}
     self.strikeModeDD = L:Dropdown("strikeMode", "Strike mode", 170, set("strikeMode"))
-    self.spellCB.holyShield, self.spellCB.hammerOfWrath = L:CheckPair(
-        { "holyShield", "Holy Shield", "Holy Shield", sset("holyShield") },
-        { "hammerOfWrath", "Hammer of Wrath", "Hammer of Wrath", sset("hammerOfWrath") })
-    self.spellCB.repentance, self.spellCB.consecration = L:CheckPair(
-        { "repentance", "Repentance", "Repentance", sset("repentance") },
-        { "consecration", "Consecration", "Consecration", sset("consecration") })
-    self.spellCB.exorcism, self.twistCB = L:CheckPair(
-        { "exorcism", "Exorcism", "Exorcism", sset("exorcism") },
-        { "sealTwist", "Seal twisting", nil, set("sealTwist") })
-    self.prioZealCB, self.downrankCB = L:CheckPair(
-        { "prioZeal", "Prioritize Zeal", nil, set("prioZeal") },
-        { "strikeDownrank", "Downrank low", nil, set("strikeDownrank") })
+    self.spellCB.holyShield = L:Row{ key = "holyShield", label = "Holy Shield", spell = "Holy Shield", onToggle = sset("holyShield") }
+    self.spellCB.hammerOfWrath = L:Row{ key = "hammerOfWrath", label = "Hammer of Wrath", spell = "Hammer of Wrath", onToggle = sset("hammerOfWrath") }
+    self.spellCB.repentance = L:Row{ key = "repentance", label = "Repentance", spell = "Repentance", onToggle = sset("repentance") }
+    self.spellCB.consecration = L:Row{ key = "consecration", label = "Consecration", spell = "Consecration", onToggle = sset("consecration") }
+    self.spellCB.exorcism = L:Row{ key = "exorcism", label = "Exorcism", spell = "Exorcism", onToggle = sset("exorcism") }
+    self.twistRow = L:Row{ key = "sealTwist", label = "Seal twisting", onToggle = set("sealTwist") }
+    self.prioZealRow = L:Row{ key = "prioZeal", label = "Prioritize Zeal", onToggle = set("prioZeal") }
+    self.downrankRow = L:Row{ key = "strikeDownrank", label = "Downrank low", onToggle = set("strikeDownrank") }
 
     L:Header("Mana management")
-    self.manaCB = L:Check("manaManage", "Mana management (Seal of Wisdom)", "Seal of Wisdom", set("manaManage"))
-    self.manaLowSlider, self.manaHighSlider = L:SliderPair(
-        { "manaLow", "Switch below", set("manaLow") },
-        { "manaHigh", "Back above", set("manaHigh") })
-    self.weaveCB = L:Check("manaWeave", "Judgement weaving", nil, set("manaWeave"))
-    self.weaveMinSlider = L:Slider("manaWeaveMin", "Skip weaving below", set("manaWeaveMin"))
-    self.wisdomCB = L:Check("manaWisdomDebuff", "Use Wisdom debuff in mana mode", nil, set("manaWisdomDebuff"))
+    self.manaRow = L:Row{ key = "manaManage", label = "Mana management", spell = "Seal of Wisdom", onToggle = set("manaManage") }
+    self.manaLowRow = L:Row{ label = "Switch below",
+        slider = { key = "manaLow", min = 0, max = 100, step = 5, suffix = "%", onChange = set("manaLow") } }
+    self.manaHighRow = L:Row{ label = "Back above",
+        slider = { key = "manaHigh", min = 0, max = 100, step = 5, suffix = "%", onChange = set("manaHigh") } }
+    self.weaveRow = L:Row{ key = "manaWeave", label = "Judgement weaving", onToggle = set("manaWeave"),
+        slider = { key = "manaWeaveMin", min = 0, max = 100, step = 5, suffix = "%", onChange = set("manaWeaveMin") } }
+    self.wisdomRow = L:Row{ key = "manaWisdomDebuff", label = "Wisdom debuff in mana mode", onToggle = set("manaWisdomDebuff") }
 
     L:Header("HP management")
-    self.hpCB = L:Check("hpManage", "HP management (Seal of Light)", "Seal of Light", set("hpManage"))
-    self.hpLowSlider, self.hpHighSlider = L:SliderPair(
-        { "hpLow", "Switch below", set("hpLow") },
-        { "hpHigh", "Back above", set("hpHigh") })
+    self.hpRow = L:Row{ key = "hpManage", label = "HP management", spell = "Seal of Light", onToggle = set("hpManage") }
+    self.hpLowRow = L:Row{ label = "Switch below",
+        slider = { key = "hpLow", min = 0, max = 100, step = 5, suffix = "%", onChange = set("hpLow") } }
+    self.hpHighRow = L:Row{ label = "Back above",
+        slider = { key = "hpHigh", min = 0, max = 100, step = 5, suffix = "%", onChange = set("hpHigh") } }
 
-    L:Header("Healing")
-    self.healCB = L:Check("healMode", "Heal mode (group healing)", nil, set("healMode"))
-    self.healAtSlider = L:Slider("healThreshold", "Heal members below", set("healThreshold"))
-    self.holyShockCB = L:Check("useHolyShock", "Holy Shock emergencies", "Holy Shock", set("useHolyShock"))
-    self.holyShockSlider = L:Slider("holyShockPct", "Holy Shock below", set("holyShockPct"))
+    L:Header("Healing", "heal")
+    self.healAtRow = L:Row{ label = "Heal members below",
+        slider = { key = "healThreshold", min = 0, max = 100, step = 5, suffix = "%", onChange = set("healThreshold") } }
+    self.holyShockRow = L:Row{ key = "useHolyShock", label = "Holy Shock emergencies", spell = "Holy Shock", onToggle = set("useHolyShock"),
+        slider = { key = "holyShockPct", min = 0, max = 100, step = 5, suffix = "%", onChange = set("holyShockPct") } }
+    self.healWeaveRow = L:Row{ key = "healWeaveStrikes", label = "Weave strikes (melee holy)", onToggle = set("healWeaveStrikes"),
+        slider = { key = "healWeaveManaFloor", min = 0, max = 90, step = 5, suffix = "%", onChange = set("healWeaveManaFloor") } }
 
     L:Finish()
 
@@ -81,20 +94,21 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.spellCB.consecration.cb,   "Consecration (AoE)", "AoE filler, cast on cooldown. Manual toggle (also /ar aoe), since 1.12 cannot count nearby enemies.", "Held during mana recovery.")
     ui:Tip(self.spellCB.exorcism.cb,       "Exorcism",        "Strong nuke, used on cooldown but only against Undead and Demon targets.", "Held during mana recovery.")
     ui:Tip(self.strikeModeDD, "Strike mode", "Enables and styles Holy/Crusader Strike. Auto: Vengeful Strike talent -> keep Holy Might up; shield or Righteous Strike -> Holy lean for threat; otherwise Crusader lean. Off disables strikes.", "CS / HS / Holy then Crusader force a fixed style.")
-    ui:Tip(self.prioZealCB.cb, "Prioritize Zeal", "Build Zeal to 3 stacks first, then follow the mode above.")
-    ui:Tip(self.downrankCB.cb, "Downrank when low", "Use lower ranks of Holy/Crusader Strike as raw mana drops, to keep swinging while leveling.", "Full rank until mana nears a rank's cost; a large pool rarely downranks.")
+    ui:Tip(self.prioZealRow.cb, "Prioritize Zeal", "Build Zeal to 3 stacks first, then follow the mode above.")
+    ui:Tip(self.downrankRow.cb, "Downrank when low", "Use lower ranks of Holy/Crusader Strike as raw mana drops, to keep swinging while leveling.", "Full rank until mana nears a rank's cost; a large pool rarely downranks.")
 
-    ui:Tip(self.manaCB.cb, "Mana management", "Below the lower value, hold Seal of Wisdom to recover mana.", "Above the upper value, return to normal damage seals.")
-    ui:Tip(self.hpCB.cb, "HP management", "Below the lower value, hold Seal of Light to recover health.", "Above the upper value, return to normal damage seals.")
-    ui:Tip(self.weaveCB.cb, "Judgement weaving", "During mana recovery, use the free Judgement on the damage seal.", "Costs a little mana for extra damage.")
-    ui:Tip(self.weaveMinSlider, "Skip weaving below", "Below this mana, no new weave is started.", "A weave already started always finishes, so leave room for one full cycle.")
-    ui:Tip(self.twistCB.cb, "Seal twisting (experimental)", "Holds the damage seal judge until just before the next swing.", "Needs a damage seal. Tune in game, timing depends on latency.")
-    ui:Tip(self.wisdomCB.cb, "Wisdom debuff in mana mode", "While recovering mana, apply Judgement of Wisdom instead of the configured debuff.", "It returns mana to attackers, so it speeds recovery.")
+    ui:Tip(self.manaRow.cb, "Mana management", "Below the lower value, hold Seal of Wisdom to recover mana.", "Above the upper value, return to normal damage seals.")
+    ui:Tip(self.hpRow.cb, "HP management", "Below the lower value, hold Seal of Light to recover health.", "Above the upper value, return to normal damage seals.")
+    ui:Tip(self.weaveRow.cb, "Judgement weaving", "During mana recovery, use the free Judgement on the damage seal.", "Costs a little mana for extra damage.")
+    ui:Tip(self.weaveRow.slider, "Skip weaving below", "Below this mana, no new weave is started.", "A weave already started always finishes, so leave room for one full cycle.")
+    ui:Tip(self.twistRow.cb, "Seal twisting (experimental)", "Holds the damage seal judge until just before the next swing.", "Needs a damage seal. Tune in game, timing depends on latency.")
+    ui:Tip(self.wisdomRow.cb, "Wisdom debuff in mana mode", "While recovering mana, apply Judgement of Wisdom instead of the configured debuff.", "It returns mana to attackers, so it speeds recovery.")
 
-    ui:Tip(self.healCB.cb, "Heal mode", "Heal the party/raid, picking the most-hurt reachable member and downranking for efficiency.", "Works at range with no target, and DPSes between heals when no one needs healing. Also /ar heal on|off.")
-    ui:Tip(self.healAtSlider, "Heal members below", "Members below this health get healed; the attack rotation yields while anyone is below it.", "Also /ar healat <1-100>.")
-    ui:Tip(self.holyShockCB.cb, "Holy Shock emergencies", "Use the instant Holy Shock for an emergency or a hurt unit out of melee range.")
-    ui:Tip(self.holyShockSlider, "Holy Shock below", "Health under which Holy Shock is used as an instant emergency heal.", "Also /ar hsat <1-100>. +healing auto-reads from gear; override with /ar healpower <n>.")
+    ui:Tip(self.healAtRow.slider, "Heal members below", "Members below this health get healed; the attack rotation yields while anyone is below it.", "Also /ar healat <1-100>.")
+    ui:Tip(self.holyShockRow.cb, "Holy Shock emergencies", "Use the instant Holy Shock for an emergency or a hurt unit out of melee range.")
+    ui:Tip(self.holyShockRow.slider, "Holy Shock below", "Health under which Holy Shock is used as an instant emergency heal.", "Also /ar hsat <1-100>. +healing auto-reads from gear; override with /ar healpower <n>.")
+    ui:Tip(self.healWeaveRow.cb, "Weave strikes (melee holy)", "Between heals: Crusader Strike reloads Holy Shock (Blessed Strikes, auto-detected), and Holy Strike splash-heals the melee group in downtime.", "Never fires over an emergency - anyone under the Holy Shock line is healed first.")
+    ui:Tip(self.healWeaveRow.slider, "Weave mana floor", "Strikes weave only while your mana is above this, so weaving never starves a heal.")
 end
 
 -- ============================================================
@@ -130,76 +144,78 @@ function M:RefreshBody(ui, buf)
     local modeLabel = { off = "Off", auto = "Auto (talent/weapon)", cs = "Crusader Strike", hs = "Holy Strike", hscs = "Holy then Crusader" }
     local mcur = buf.strikeMode or "auto"
     ui:SetDropdown(self.strikeModeDD, modeOpts, mcur, modeLabel[mcur] or mcur, ui.COL.white)
-    self.prioZealCB.cb:SetChecked(buf.prioZeal and true or false)
-    self.downrankCB.cb:SetChecked(buf.strikeDownrank and true or false)
+    self.prioZealRow.cb:SetChecked(buf.prioZeal and true or false)
+    self.downrankRow.cb:SetChecked(buf.strikeDownrank and true or false)
 
     -- seal twisting needs a damage seal to time the judge against
     local twistOK = buf.seals.damage ~= "" and self:KnowsSpell(buf.seals.damage)
-    self.twistCB.cb:SetChecked(buf.sealTwist and true or false)
+    self.twistRow.cb:SetChecked(buf.sealTwist and true or false)
     if twistOK then
-        self.twistCB.cb:Enable()
-        self.twistCB.label:SetText("Seal twisting"); ui:Color(self.twistCB.label, ui.COL.white)
+        self.twistRow.cb:Enable()
+        self.twistRow.label:SetText("Seal twisting"); ui:Color(self.twistRow.label, ui.COL.white)
     else
-        self.twistCB.cb:Disable()
-        self.twistCB.label:SetText("Seal twisting (needs damage seal)"); ui:Color(self.twistCB.label, ui.COL.grey)
+        self.twistRow.cb:Disable()
+        self.twistRow.label:SetText("Seal twisting - needs damage seal"); ui:Color(self.twistRow.label, ui.COL.grey)
     end
 
     local manaOK = self:KnowsSpell("Seal of Wisdom")
     local manaReason = "not learned"
-    setBlockEnabled(self.manaCB, self.manaLowSlider, self.manaHighSlider, manaOK, manaReason)
-    self.manaCB.cb:SetChecked(buf.manaManage and true or false)
-    self.manaLowSlider:SetValue(buf.manaLow or 0);  self.manaLowSlider.valText:SetText((buf.manaLow or 0) .. "%")
-    self.manaHighSlider:SetValue(buf.manaHigh or 0); self.manaHighSlider.valText:SetText((buf.manaHigh or 0) .. "%")
+    setBlockEnabled(self.manaRow, self.manaLowRow.slider, self.manaHighRow.slider, manaOK, manaReason)
+    self.manaRow.cb:SetChecked(buf.manaManage and true or false)
+    self.manaLowRow.slider:SetValue(buf.manaLow or 0);  self.manaLowRow.slider.valText:SetText((buf.manaLow or 0) .. "%")
+    self.manaHighRow.slider:SetValue(buf.manaHigh or 0); self.manaHighRow.slider.valText:SetText((buf.manaHigh or 0) .. "%")
 
     -- Judgement weaving: only meaningful when mana management is on and a damage seal exists
     local dmg = buf.seals.damage
     local weaveOK = manaOK and buf.manaManage and dmg ~= "" and self:KnowsSpell(dmg)
-    self.weaveCB.cb:SetChecked(buf.manaWeave and true or false)
-    self.weaveMinSlider:SetValue(buf.manaWeaveMin or 0)
-    self.weaveMinSlider.valText:SetText((buf.manaWeaveMin or 0) .. "%")
+    self.weaveRow.cb:SetChecked(buf.manaWeave and true or false)
+    self.weaveRow.slider:SetValue(buf.manaWeaveMin or 0)
+    self.weaveRow.slider.valText:SetText((buf.manaWeaveMin or 0) .. "%")
     if weaveOK then
-        self.weaveCB.cb:Enable()
-        self.weaveCB.label:SetText(dmg .. " Judgement weaving")
-        ui:Color(self.weaveCB.label, ui.COL.white)
-        self.weaveMinSlider:EnableMouse(true); self.weaveMinSlider:SetAlpha(1)
+        self.weaveRow.cb:Enable()
+        ui:Color(self.weaveRow.label, ui.COL.white)
+        self.weaveRow.slider:EnableMouse(true); self.weaveRow.slider:SetAlpha(1)
     else
-        self.weaveCB.cb:Disable()
-        local reason = (not buf.manaManage) and "enable mana management" or "needs a damage seal"
-        self.weaveCB.label:SetText("Judgement weaving - " .. reason)
-        ui:Color(self.weaveCB.label, ui.COL.grey)
-        self.weaveMinSlider:EnableMouse(false); self.weaveMinSlider:SetAlpha(0.35)
+        self.weaveRow.cb:Disable()
+        ui:Color(self.weaveRow.label, ui.COL.grey)
+        self.weaveRow.slider:EnableMouse(false); self.weaveRow.slider:SetAlpha(0.35)
     end
 
     -- Wisdom debuff in mana mode: meaningful when mana management is on and SoW is known
     local wisdomOK = manaOK and buf.manaManage
-    self.wisdomCB.cb:SetChecked(buf.manaWisdomDebuff and true or false)
+    self.wisdomRow.cb:SetChecked(buf.manaWisdomDebuff and true or false)
     if wisdomOK then
-        self.wisdomCB.cb:Enable()
-        self.wisdomCB.label:SetText("Use Wisdom debuff in mana mode"); ui:Color(self.wisdomCB.label, ui.COL.white)
+        self.wisdomRow.cb:Enable()
+        self.wisdomRow.label:SetText("Wisdom debuff in mana mode"); ui:Color(self.wisdomRow.label, ui.COL.white)
     else
-        self.wisdomCB.cb:Disable()
-        self.wisdomCB.label:SetText("Use Wisdom debuff in mana mode (enable mana management)"); ui:Color(self.wisdomCB.label, ui.COL.grey)
+        self.wisdomRow.cb:Disable()
+        self.wisdomRow.label:SetText("Wisdom debuff - enable mana management"); ui:Color(self.wisdomRow.label, ui.COL.grey)
     end
 
     local hpOK = self:KnowsSpell("Seal of Light")
     local hpReason = "not learned"
-    setBlockEnabled(self.hpCB, self.hpLowSlider, self.hpHighSlider, hpOK, hpReason)
-    self.hpCB.cb:SetChecked(buf.hpManage and true or false)
-    self.hpLowSlider:SetValue(buf.hpLow or 0);  self.hpLowSlider.valText:SetText((buf.hpLow or 0) .. "%")
-    self.hpHighSlider:SetValue(buf.hpHigh or 0); self.hpHighSlider.valText:SetText((buf.hpHigh or 0) .. "%")
+    setBlockEnabled(self.hpRow, self.hpLowRow.slider, self.hpHighRow.slider, hpOK, hpReason)
+    self.hpRow.cb:SetChecked(buf.hpManage and true or false)
+    self.hpLowRow.slider:SetValue(buf.hpLow or 0);  self.hpLowRow.slider.valText:SetText((buf.hpLow or 0) .. "%")
+    self.hpHighRow.slider:SetValue(buf.hpHigh or 0); self.hpHighRow.slider.valText:SetText((buf.hpHigh or 0) .. "%")
 
     -- Healing section
-    ui:BindCheck(self.healCB, buf.healMode)
-    self.healAtSlider:SetValue(buf.healThreshold or 90); self.healAtSlider.valText:SetText((buf.healThreshold or 90) .. "%")
-    ui:BindCheck(self.holyShockCB, buf.useHolyShock, "Holy Shock")
-    self.holyShockSlider:SetValue(buf.holyShockPct or 50); self.holyShockSlider.valText:SetText((buf.holyShockPct or 50) .. "%")
+    self.healAtRow.slider:SetValue(buf.healThreshold or 90); self.healAtRow.slider.valText:SetText((buf.healThreshold or 90) .. "%")
+    ui:BindCheck(self.holyShockRow, buf.useHolyShock, "Holy Shock")
+    self.holyShockRow.slider:SetValue(buf.holyShockPct or 50); self.holyShockRow.slider.valText:SetText((buf.holyShockPct or 50) .. "%")
     -- Heal controls are meaningful only in heal mode; grey them otherwise.
-    local healOn = buf.healMode and true or false
-    self.healAtSlider:EnableMouse(healOn);    self.healAtSlider:SetAlpha(healOn and 1 or 0.35)
-    self.holyShockSlider:EnableMouse(healOn); self.holyShockSlider:SetAlpha(healOn and 1 or 0.35)
-    if not healOn then
-        self.holyShockCB.cb:Disable(); ui:Color(self.holyShockCB.label, ui.COL.grey)
+    -- The heal controls live in the heal-only "Healing" card, which the tab rail
+    -- hides entirely on the Damage tab, so no mode gating is needed here - only
+    -- grey Holy Shock when it is not learned.
+    if not self:KnowsSpell("Holy Shock") then
+        self.holyShockRow.cb:Disable(); ui:Color(self.holyShockRow.label, ui.COL.grey)
     end
+
+    -- Melee-holy strike weaving: slider follows the toggle.
+    local weaveOn = buf.healWeaveStrikes ~= false
+    ui:BindCheck(self.healWeaveRow, weaveOn)
+    self.healWeaveRow.slider:SetValue(buf.healWeaveManaFloor or 40)
+    ui:SliderEnable(self.healWeaveRow.slider, weaveOn)
 end
 
 -- Open the shared window for this class.

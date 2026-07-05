@@ -21,29 +21,27 @@ function M:BuildBody(ui, parent)
     self.builderDD = L:Dropdown("builder", "Builder", 170, set("builder"))
 
     L:Header("Finishers")
-    self.sndCB, self.envCB = L:CheckPair(
-        { "useSnd", "Slice and Dice", "Slice and Dice", set("useSnd") },
-        { "useEnvenom", "Envenom", "Envenom", set("useEnvenom") })
-    self.rupCB, self.ripCB = L:CheckPair(
-        { "useRupture", "Rupture", "Rupture", set("useRupture") },
-        { "useRiposte", "Riposte", "Riposte", set("useRiposte") })
-    self.cpSlider = L:Slider("cpFinish", "Eviscerate at combo points", { min = 1, max = 5, step = 1, suffix = "" }, set("cpFinish"))
+    self.sndRow = L:Row{ key = "useSnd", label = "Slice and Dice", spell = "Slice and Dice", onToggle = set("useSnd") }
+    self.envRow = L:Row{ key = "useEnvenom", label = "Envenom", spell = "Envenom", onToggle = set("useEnvenom") }
+    self.rupRow = L:Row{ key = "useRupture", label = "Rupture", spell = "Rupture", onToggle = set("useRupture") }
+    self.ripRow = L:Row{ key = "useRiposte", label = "Riposte", spell = "Riposte", onToggle = set("useRiposte") }
+    self.cpRow = L:Row{ label = "Eviscerate at CP",
+        slider = { key = "cpFinish", min = 1, max = 5, step = 1, suffix = "", onChange = set("cpFinish") } }
 
     L:Header("Cooldowns")
-    self.cdCB, self.cdEliteCB = L:CheckPair(
-        { "popCDs", "Pop cooldowns", nil, set("popCDs") },
-        { "autoCDElite", "Auto on elite", nil, set("autoCDElite") })
+    self.cdRow = L:Row{ key = "popCDs", label = "Pop cooldowns", onToggle = set("popCDs") }
+    self.cdEliteRow = L:Row{ key = "autoCDElite", label = "Auto on elite", onToggle = set("autoCDElite") }
 
     L:Finish()
 
     ui:Tip(self.builderDD, "Builder", "The combo point builder. Auto picks Noxious Assault if known, else Sinister Strike.")
-    ui:Tip(self.sndCB.cb, "Slice and Dice", "Kept up: refreshed cheaply at 1 combo point, dumped with Eviscerate above that.")
-    ui:Tip(self.envCB.cb, "Envenom", "Kept up the same way as Slice and Dice (Turtle ability).")
-    ui:Tip(self.rupCB.cb, "Rupture", "Applied as a finisher at your combo-point threshold when it falls off the target.", "With the Assassination talent Taste for Blood, keeping it up is also a stacking damage buff.")
-    ui:Tip(self.ripCB.cb, "Riposte", "Cast right after a parry, inside the short Riposte window.")
-    ui:Tip(self.cpSlider, "Finisher combo points", "Eviscerate is used once combo points reach this number.")
-    ui:Tip(self.cdCB.cb, "Pop cooldowns", "Use Adrenaline Rush and Blade Flurry every press (off the global cooldown).")
-    ui:Tip(self.cdEliteCB.cb, "Auto on elite", "Pop the cooldowns only against elite and boss targets.")
+    ui:Tip(self.sndRow.cb, "Slice and Dice", "Kept up: refreshed cheaply at 1 combo point, dumped with Eviscerate above that.")
+    ui:Tip(self.envRow.cb, "Envenom", "Kept up the same way as Slice and Dice (Turtle ability).")
+    ui:Tip(self.rupRow.cb, "Rupture", "Applied as a finisher at your combo-point threshold when it falls off the target.", "With the Assassination talent Taste for Blood, keeping it up is also a stacking damage buff.")
+    ui:Tip(self.ripRow.cb, "Riposte", "Cast right after a parry, inside the short Riposte window.")
+    ui:Tip(self.cpRow.slider, "Finisher combo points", "Eviscerate is used once combo points reach this number.")
+    ui:Tip(self.cdRow.cb, "Pop cooldowns", "Use Adrenaline Rush and Blade Flurry every press (off the global cooldown).")
+    ui:Tip(self.cdEliteRow.cb, "Auto on elite", "Pop the cooldowns only against elite and boss targets.")
 end
 
 -- ============================================================
@@ -61,16 +59,16 @@ function M:RefreshBody(ui, buf)
     else shown, c = cur .. " (not learned)", ui.COL.red end
     ui:SetDropdown(self.builderDD, o, cur, shown, c)
 
-    ui:BindCheck(self.sndCB, buf.useSnd)
-    ui:BindCheck(self.envCB, buf.useEnvenom)
-    ui:BindCheck(self.rupCB, buf.useRupture)
-    ui:BindCheck(self.ripCB, buf.useRiposte)
-    ui:BindCheck(self.cdCB, buf.popCDs)
-    ui:BindCheck(self.cdEliteCB, buf.autoCDElite)
+    ui:BindCheck(self.sndRow, buf.useSnd)
+    ui:BindCheck(self.envRow, buf.useEnvenom)
+    ui:BindCheck(self.rupRow, buf.useRupture)
+    ui:BindCheck(self.ripRow, buf.useRiposte)
+    ui:BindCheck(self.cdRow, buf.popCDs)
+    ui:BindCheck(self.cdEliteRow, buf.autoCDElite)
 
     local cpv = buf.cpFinish or 4
-    self.cpSlider:SetValue(cpv)
-    if self.cpSlider.valText then self.cpSlider.valText:SetText(tostring(cpv)) end
+    self.cpRow.slider:SetValue(cpv)
+    if self.cpRow.slider.valText then self.cpRow.slider.valText:SetText(tostring(cpv)) end
 end
 
 -- Open the shared window for this class.

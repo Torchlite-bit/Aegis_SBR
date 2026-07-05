@@ -4,6 +4,114 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.13.11b — Single-row layout across every class, uniform sliders, aligned dropdowns
+
+**Layout.** The concept's single-row anatomy — piloted on Druid in 0.13.10b — is now the layout for **all nine class panels**. Every setting sits on one line: toggle, label, an optional muted sub-label, a right-aligned slider, and a fixed right-hand value column, with hairline separators between rows. Confirmed in-game on the 1.18.1 client.
+
+- **All classes converted.** Druid (all forms + Defense), Rogue, Warrior, Hunter, Mage, Paladin, Priest, Warlock, and Shaman now use the shared row primitive. Toggle-plus-threshold pairs that used to span two rows (Innervate + its mana %, Mend Pet + its HP %, Life Tap, Shadowburn, Mana Tide, and many more) are single rows. Spec/seal/totem pickers stay full-width.
+- **Uniform slider column.** Every slider is the same width and right-anchored, so they line up in one clean vertical rail with the value column fixed at the far right — matching the concept.
+- **Unlearned spells hide their slider.** When a spell isn't trained, its row hides the (unusable) slider and gives the full width to the "(not learned)" label, so long names like *Lesser Healing Wave* read in full instead of clipping. The slider returns automatically once the spell is learned.
+- **Aligned, centered dropdowns.** Dropdown boxes (Sting, Shield, Shock, Seals, Strike mode, the four Shaman totems, etc.) now share a fixed label column so every box lines up to the same left edge, with centered box text and a consistent ink label colour (previously some inherited a stray gold).
+- Sub-labels trimmed only where a slider genuinely left no room; the detail lives in the tooltip.
+
+**Note on Shaman totems.** The four totem selectors remain on the Restoration tab, because only the healing rotation currently maintains a full totem set (damage specs drop Searing Totem via its own toggle). Extending totem upkeep to Enhancement / Elemental / Tank is a rotation feature planned for a future update.
+
+All Lua files pass the balance check; the define-before-use ordering audit is clean.
+
+---
+
+## v0.13.10b — UI polish: concept-accurate header, rounded art, and the single-row layout (Druid pilot)
+
+**Feature.** A close pass to bring the window in line with the design concept — the header, control art, and a new single-row settings layout. Confirmed in-game on the 1.18.1 client.
+
+- **Rebuilt header.** An "AR" sigil square in the class colour (with a top-to-bottom accent fade), an uppercase **AUTOROTA** wordmark, and a version chip; a hairline closes the row. The profile sits on its own panel-tinted band as a **content-width pill** (it hugs the profile name instead of a fixed-width box) with a live dot, and New / Rename / Delete are right-aligned ghosts beside it.
+- **Rounded everything.** Buttons, dropdowns, the profile pill, and the ?/× became rounded via new bundled art (`Btn.tga`, `Pill.tga`, `RoundSq.tga`), and section cards got true rounded corners (`Card.tga`, nine-sliced).
+- **Single-row settings layout.** A new row primitive puts each setting on one line — toggle, label, inline muted sub-label, right-aligned slider, and a fixed right-hand value column, with hairline separators between rows. **Piloted on the Druid Restoration + Downtime cards**; the remaining classes keep the previous two-column layout for now and will convert in follow-up updates.
+- **Footer.** A round state dot with neutral text (`● Profile valid`), and Save/Activate sized to the concept's compact proportions.
+- **Crisper text.** The skin now zeroes the template drop-shadow on every FontString it styles, so small bold text renders cleanly.
+
+**Fixes.**
+- **Card corners** were reading square because the texture's baked corner radius was far smaller than the nine-slice sample window — the texture was regenerated with the radius filling the corner, and the slice size matched to it.
+- **Scrollbar thumb overhang** — the 1.12 slider uses a fixed-size thumb, so on short scroll ranges it hung past the ends of the rail. The thumb is now sized proportionally to the visible fraction each time the body reflows, clamped so it always sits within the track.
+
+New bundled art: `Icons\Btn.tga`, `Icons\Pill.tga`, `Icons\RoundSq.tga`, `Icons\Card.tga` (32-bit uncompressed, power-of-two). A **full relog** is needed on first install so the client picks up the new files. All Lua files pass the balance check.
+
+---
+
+## v0.13.9b — Paladin: Damage | Healer tabs + the melee-holy weave
+
+**Feature.** The Paladin joins the tab rail with a **Damage | Healer** pair, and heal mode is aligned to Turtle's melee-holy playstyle. Confirmed in-game on the 1.18.1 client.
+
+- **Damage | Healer tabs.** The rail binds to the rotation's one real branch (heal mode) — Retribution and Protection both live on Damage, differing by the seals/strikes below, so the spec names live in the tab **tooltips** rather than over-promising labels. Seals and Spells show only on Damage; the Healing card only on Healer; Mana and HP management stay shared. The old "Heal mode" checkbox is gone — the tab (or `/ar heal`) is the switch. Under the hood the tab framework gained optional **encode/decode** hooks so a rail can bind a boolean field; the four string rails are untouched.
+- **Blessed Strikes engine.** With the talent (auto-detected by exact name; 100% reset at 5/5), **Crusader Strike is woven between heals to reload Holy Shock**, keeping the emergency instant permanently available — even while people are hurt, but *never* while anyone is under the Holy Shock line: a critical member always gets the heal first.
+- **Holy Strike downtime weave.** When nobody needs a direct heal, the rotation strikes with the heal policy — Holy Strike first (its splash heal tops the melee group, doubled by Blessed Strikes), Crusader Strike as fallback.
+- **Safety gate.** Both weaves require an attackable target in melee range, a free GCD, the strike cooldown ready, and mana above a new **weave mana floor** (default 40%), so weaving can never starve a heal. New Healing-card controls: a *Weave strikes (melee holy)* toggle (default on) and the mana-floor slider.
+- Priorities now match the Turtle melee-holy list end to end: Seal of Wisdom upkeep + judgement (existing seal/mana config), Holy Strike weave, Crusader Strike → Holy Shock reset, downranked Flash of Light / Holy Light for spikes.
+
+All Lua files pass the balance check.
+
+---
+
+## v0.13.8b — UI skin, Phase 3: spec tabs + compact header
+
+**Feature.** The final structural piece of the redesign — the spec dropdown becomes a **tab rail**, and only the active spec's sections exist on screen. The window now matches the concept end to end. Confirmed in-game on the 1.18.1 client.
+
+- **Spec tabs.** Classes that branch on a spec field get a class-accented tab rail (active tab underlined in the class colour, muted labels otherwise, hover feedback, per-tab tooltips). Clicking a tab writes the same profile field the old dropdown did, so rotations and saved profiles are unchanged.
+  - **Druid:** Feral (Cat) / Feral (Bear) / Balance / Restoration.
+  - **Shaman:** Elemental / Enhance (DPS) / Enhance (Tank) / Restoration. (DPS and Tank share config but run different rotations, so they stay separate tabs.)
+  - **Hunter:** Auto / Ranged / Melee — Auto shows both the Ranged and Melee sections, since it chooses by distance at cast time.
+  - **Mage:** Frost / Fire / Arcane.
+  - **Paladin and Warrior keep no rail** — Paladin has no spec field (it is seal/toggle driven), and Warrior's dropdown selects a home *stance*, not a spec.
+- **Only the active spec is shown.** Each config section is now its own container; switching tabs hides the off-spec sections and reflows the rest, so the window is far shorter and most tabs need no scrolling. Sections that apply to every spec (Druid's Defense, Shaman's Shield/Casting/Cooldowns, Hunter's Targeting/Aspect/Pet, Mage's General) stay visible on all tabs.
+- **Compact header + footer.** The subtitle and "Profile being edited" label are gone; the profile sits as a pill with a **green dot when it is the active profile**, New/Rename/Delete right-aligned beside it. Validity moved to the footer-left, with **Save (ghost) + Activate (accent)** at the footer-right; the redundant Close button was removed (the top-right **×** closes). This buys back roughly two rows of body height.
+- **`?` button** restyled to match the flat **×** — a ghost square with an ink glyph — replacing the old gold icon. Frame strata raised to HIGH so world nameplates no longer bleed through the window.
+
+Classes without a rail flow through the same new container code with untagged sections, so they render as before. All Lua files pass the balance check.
+
+---
+
+## v0.13.7b — UI skin, Phase 2b: toggle switches, slider art, flat close buttons
+
+**Feature.** The final slice of the config-window redesign — with this, the window contains **no stock Blizzard art**. Confirmed in-game on the 1.18.1 client.
+
+- **Toggle switches** replace the gold checkboxes: off is a dark pill with the knob left, on is a **class-coloured** pill with a dark knob right. The ON art ships pure white in `Icons\ToggleOn.tga` and is tinted with the class colour at runtime, so one texture serves all nine classes; hover adds a faint additive glow, and the disabled states keep the pill art (a locked-on toggle shows a muted accent pill instead of the template's old grey checkmark).
+- **Sliders** lose the grooved template track: a slim dark rail, a **class-accent fill that tracks the thumb**, and a round ink-coloured thumb (`Icons\SliderThumb.tga`).
+- **Close buttons** (main window and help panel) are flat ghost squares with an ink "×" glyph and a faint red hover tint.
+- Label columns re-clamped for the wider toggles, and the window's frame strata raised to HIGH so world nameplates no longer bleed through it.
+- **Fix (caught by in-game screenshot).** The 1.12 client's CheckButton silently ignores file paths on `SetCheckedTexture` and the disabled variants — only `SetNormalTexture` takes a path — which left the template's checkmark stretched over checked toggles. The skin now grabs the template's texture **objects** and repoints their files directly.
+
+New bundled art: `Icons\ToggleOff.tga`, `Icons\ToggleOn.tga`, `Icons\SliderThumb.tga` (32-bit uncompressed, power-of-two). A **full relog** is needed on first install so the client picks up the new files. All Lua files pass the balance check.
+
+---
+
+## v0.13.6b — UI skin, Phase 2a: flat buttons, dropdowns, and scrollbar
+
+**Feature.** The first control-art slice of the redesign — and it needed **no texture files**: buttons, dropdowns, and the scrollbar are re-skinned entirely in code. Confirmed in-game on the 1.18.1 client.
+
+- **Buttons.** The red-gold template art is gone. **Activate** (and the dialog's confirm) is the one accent-filled primary, in the class colour with text that auto-picks dark or light by the accent's luminance; New / Rename / Delete / Save / Close / Cancel are quiet ghosts (hairline border, faint fill, ink text). All buttons get hover feedback, a 1px press-nudge, and skin-aware Enable/Disable (dimmed fill + grey text).
+- **Dropdowns.** The same ghost treatment for every picker; selection-text colouring stays with SetDropdown, so state colours like the red "(not learned)" on totem picks still work.
+- **Scrollbar.** The template's floating knob and arrow buttons are gone — mousewheel and thumb-drag cover scrolling — replaced by a slim dark groove and a flat 6px thumb.
+- **Hover chaining.** A dropdown in a config row stacks three hover behaviours (its own feedback, the row highlight, the tooltip); wireHover now chains like Tip so all three fire together.
+- **Fix.** A define-before-use crash caught in testing (`classColor` was defined below its new caller, so the window failed to open) — the class-colour table now sits above the button skinner, and an ordering audit over every file-local confirms no other case exists.
+
+Stock art remaining for **Phase 2b**: checkboxes (toggle switches), slider rails and thumbs, and the close button. All Lua files pass the balance check.
+
+---
+
+## v0.13.5b — UI skin, Phase 1: flat dark surfaces, bundled fonts, class accent
+
+**Feature.** The first phase of the config-window redesign, applied through the shared framework so **all nine class panels re-skin at once**. Confirmed in-game on the 1.18.1 client.
+
+- **Bundled typeface.** The window now renders in **PT Sans Narrow** (regular + bold), shipped in a new `Fonts\` folder with its OFL license. Every framework-created FontString picks the face up by role; if the folder is missing, everything falls back to the client's default font so text can never vanish. Requires a full relog (not `/reload`) on first install, like all new bundled files.
+- **Flat dark surfaces.** The parchment dialog art is gone: near-black window with a crisp 1px hairline border, and each config section now sits on its own **card** — a flat panel with hairline edges that replaces the old divider lines. Cards fade with their section when a block dims off-spec.
+- **Class accent.** A 2px class-colour strip runs along the window's top edge, matching the class name in the title — the window automatically wears Paladin pink, Druid orange, Shaman blue.
+- **Skinned everywhere.** Section headers became small uppercase eyebrows; dropdown popups, the confirm/input dialog, the help panel, and the minimap options panel all share the dark surface; the row hover was retuned for the cards.
+- **Fix.** Long checkbox labels (e.g. "Hammer of Wrath (not learned)") no longer run across a card's right edge — labels are clamped to their column and clip inside the card.
+
+Stock Blizzard art intentionally remains on checkboxes, sliders, buttons, and the scrollbar — that is **Phase 2**, the custom control-art pass. All Lua files pass the balance check.
+
+---
+
 ## v0.13.4b — Full heal-config panels for the Druid & Shaman healers (plus UI polish)
 
 **Feature.** The **Restoration Druid** and **Restoration Shaman** now have **complete config panels**, matching every other spec — every knob the heal rotation reads is a slider, toggle, or dropdown, so the healers are no longer command-line-plus-defaults. This closes the last big configurability gap.

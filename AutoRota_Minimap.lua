@@ -70,12 +70,14 @@ local function buildPanel()
     p:SetWidth(232); p:SetHeight(104)
     p:SetFrameStrata("DIALOG")
     p:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+        tile = true, tileSize = 16, edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
     })
-    p:SetBackdropColor(0, 0, 0, 0.92)
+    -- match the config window's flat dark skin
+    p:SetBackdropColor(0.088, 0.096, 0.116, 0.98)
+    p:SetBackdropBorderColor(0.15, 0.165, 0.196, 1)
     p:EnableMouse(true)
     p:Hide()
 
