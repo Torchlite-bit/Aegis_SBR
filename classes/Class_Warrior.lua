@@ -104,6 +104,8 @@ M.spellAlias = {
     berserkerrage = "useBerserkerRage", br = "useBerserkerRage",
     bloodrage = "useBloodrage", bld = "useBloodrage",
     shieldblock = "useShieldBlock", sb = "useShieldBlock",
+    charge = "useCharge",
+    rend = "useRend",
 }
 
 -- Templates: starting presets, copied into the char's saved profiles once.
