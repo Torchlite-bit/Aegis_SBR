@@ -336,3 +336,14 @@ This is a false positive. External macro checkers look for a static list of defa
 
 ### My character casts abilities but doesn't auto-attack
 On a melee class, AutoRota starts your white swing by toggling the standard **Attack** ability, which it locates by scanning your action bars. If **Attack** is not on any bar, there is nothing for it to toggle and you will fire abilities without swinging in between. Drag **Attack** from your spellbook (**P** → *General* tab) onto any action slot. (If you use **SuperCleveRoidMacros**, it manages attacks instead and AutoRota leaves this alone.)
+
+Discord `Coming soon`
+
+---
+
+## 💖 Support the Project:
+AutoRota is free and open-source, but if it helps you parse higher, consider dropping a tip. Any support is welcomed and highly appreciated:
+
+>Bitcoin: `bc1qz6av4k53h5un56vx30exgnq6ruw0r7lp2fgx9t`
+>
+>Ethereum: `0x311759e90257E330e5b5A98e1d803220DecEdcbF`
