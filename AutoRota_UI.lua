@@ -539,6 +539,7 @@ local SCROLL = {
     WIN_H = 485,       -- compact fixed window height for scroll-layout classes
     TOP = -81,         -- body region starts here, below the profile pill row
     TOP_TABS = -109,   -- body start when the class has a spec tab rail
+    TOP_TABS_SUB = -138, -- body start when the rail also carries per-tab subtitle lines
     BOTTOM_PAD = 44,   -- leaves room for the footer buttons
     LEFT = 16, WIDTH = 322, BAR_W = 16,
 }
@@ -875,7 +876,10 @@ end
 -- Build the scroll frame + child + scrollbar inside the window, and return the
 -- child for BuildBody to fill. Mouse wheel and the scrollbar both pan it.
 function AutoRotaUI:MakeScroll(f)
-    local top = (MOD() and MOD().specTabs) and SCROLL.TOP_TABS or SCROLL.TOP
+    local top = SCROLL.TOP
+    if MOD() and MOD().specTabs then
+        top = self:SpecHasSubtitles() and SCROLL.TOP_TABS_SUB or SCROLL.TOP_TABS
+    end
     local viewH = SCROLL.WIN_H + top - SCROLL.BOTTOM_PAD   -- top is negative
 
     local sf = CreateFrame("ScrollFrame", "ARUI_BodyScroll", f)
@@ -1057,16 +1061,58 @@ function AutoRotaUI:BuildSpecTabs(f)
         if tab.tip1 then Tip(b, tab.label, tab.tip1, tab.tip2) end
         self.specTabBtns[i] = { key = tab.key, fs = fs, ul = ul }
     end
+
+    -- Optional per-tab explanation line, shown just under the rail and swapped in
+    -- Refresh to match the active tab. Reserves a little extra body offset.
+    if self:SpecHasSubtitles() then
+        local sub = FS(f, "GameFontNormalSmall", "")
+        SetFontSafe(sub, false, 9)
+        sub:SetJustifyH("LEFT"); sub:SetJustifyV("TOP")
+        sub:SetWidth(348); sub:SetHeight(30)
+        sub:SetPoint("TOPLEFT", f, "TOPLEFT", 16, -108)
+        sub:SetTextColor(PAL.mute[1], PAL.mute[2], PAL.mute[3])
+        self.specSubFS = sub
+    end
+end
+
+-- True if the active class's spec tabs carry per-tab subtitle lines.
+function AutoRotaUI:SpecHasSubtitles()
+    local st = MOD() and MOD().specTabs
+    if not st or not st.tabs then return false end
+    for i = 1, table.getn(st.tabs) do
+        if st.tabs[i].sub then return true end
+    end
+    return false
 end
 
 function AutoRotaUI:SelectSpecTab(key)
     if not self.buf then return end
     local st = MOD() and MOD().specTabs
     if not st then return end
-    local val = st.encode and st.encode(key) or key   -- key -> stored field value
+    -- NOTE: do NOT use "st.encode and st.encode(key) or key" here. encode may
+    -- legitimately return false (e.g. the paladin Damage tab maps to healMode =
+    -- false), and the and/or idiom would then fall through to the string key,
+    -- storing "damage" instead of false. A non-empty string is truthy, so the
+    -- rotation would read it as heal mode and the tab could never switch back.
+    local val = key
+    if st.encode then val = st.encode(key) end
     if self.buf[st.field] == val then return end
     self.buf[st.field] = val
-    self:Refresh()
+    self:Refresh()   -- Refresh live-applies to the active profile (see AutoApplyActive)
+end
+
+-- Push the edit buffer onto the active profile whenever the profile being
+-- edited IS the active one, so the UI behaves like a live control (a tab or a
+-- click switches the running rotation immediately, no separate Activate step).
+-- This deliberately does NOT gate on validity: the running rotation already
+-- tolerates untrained spells (it skips what is not learned), and gating here was
+-- what trapped a heal profile whose seals were not trained yet - the tab looked
+-- switched but nothing applied, so only the slash command worked. Editing a
+-- non-active profile stays buffered and the footer prompts for Activate.
+function AutoRotaUI:AutoApplyActive()
+    if not self.buf or not self.editing then return end
+    if AutoRotaDB.active ~= self.editing then return end
+    AutoRotaDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
 end
 
 -- Current tab key for the loaded profile: decodes the stored field value back to
@@ -1341,6 +1387,16 @@ function AutoRotaUI:Refresh()
                 tb.ul:Hide(); tb.fs:SetTextColor(PAL.mute[1], PAL.mute[2], PAL.mute[3])
             end
         end
+        if self.specSubFS then
+            local st = MOD() and MOD().specTabs
+            local subText = ""
+            if st and st.tabs then
+                for i = 1, table.getn(st.tabs) do
+                    if st.tabs[i].key == cur then subText = st.tabs[i].sub or ""; break end
+                end
+            end
+            self.specSubFS:SetText(subText)
+        end
     end
 
     if not self.buf then
@@ -1354,17 +1410,32 @@ function AutoRotaUI:Refresh()
     if MOD() and MOD().RefreshBody then MOD():RefreshBody(self, self.buf) end
     if self.bodyLayout then self.bodyLayout:Reflow() end
 
+    -- Live-apply edits to the active profile, so the window doubles as an
+    -- in-combat control surface for the profile the rotation is running.
+    self:AutoApplyActive()
+
     local ok, missing = MOD():ProfileValidity(self.buf)
-    if ok then
-        self.status:SetText("Profile valid")
-        self.status:SetTextColor(PAL.ink[1], PAL.ink[2], PAL.ink[3])
-        if self.statusDot then self.statusDot:SetVertexColor(0.25, 0.75, 0.37) end
-        self.saveBtn:Enable(); self.activateBtn:Enable()
+    local isActive = self.editing and AutoRotaDB.active == self.editing
+    -- Missing spells no longer block anything: the rotation skips whatever is
+    -- not trained, so a profile is always usable and always applies. Validity is
+    -- now purely an amber note. This is what keeps the heal/damage tab from
+    -- getting stuck on a character that has not trained every seal yet.
+    if isActive then
+        if ok then self.status:SetText("Active profile - changes apply live")
+        else self.status:SetText("Active (live) - not trained yet: " .. table.concat(missing, ", ")) end
     else
-        self.status:SetText("Invalid, missing " .. table.concat(missing, ", ")); color(self.status, COL.red)
-        if self.statusDot then self.statusDot:SetVertexColor(1, 0.35, 0.35) end
-        self.saveBtn:Disable(); self.activateBtn:Disable()
+        if ok then self.status:SetText("Profile valid - Activate to use")
+        else self.status:SetText("Usable now, not trained yet: " .. table.concat(missing, ", ")) end
     end
+    self.status:SetTextColor(PAL.ink[1], PAL.ink[2], PAL.ink[3])
+    if self.statusDot then
+        if ok then self.statusDot:SetVertexColor(0.25, 0.75, 0.37)
+        else self.statusDot:SetVertexColor(0.95, 0.75, 0.25) end
+    end
+    -- The active profile is already live, so its Save/Activate are redundant and
+    -- stay disabled; a non-active profile keeps them so it can be saved/activated.
+    if isActive then self.saveBtn:Disable(); self.activateBtn:Disable()
+    else self.saveBtn:Enable(); self.activateBtn:Enable() end
 
     self.loading = false
 end
@@ -1435,7 +1506,6 @@ end
 -- ------------------------------------------------------------
 function AutoRotaUI:DoSave()
     if not self.buf or not self.editing then return end
-    if not MOD():ProfileValidity(self.buf) then return end
     AutoRotaDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
     DEFAULT_CHAT_FRAME:AddMessage("AutoRota: saved '" .. self.editing .. "'.", 1, 0.8, 0)
     self:Refresh()
@@ -1443,7 +1513,6 @@ end
 
 function AutoRotaUI:DoActivate()
     if not self.buf or not self.editing then return end
-    if not MOD():ProfileValidity(self.buf) then return end
     AutoRotaDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
     AutoRotaDB.active = self.editing
     DEFAULT_CHAT_FRAME:AddMessage("AutoRota: activated '" .. self.editing .. "'.", 1, 0.8, 0)

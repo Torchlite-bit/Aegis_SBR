@@ -4,6 +4,24 @@ All notable changes to **AutoRota** are documented here. Versions are listed new
 
 ---
 
+## v0.13.13b — Paladin: strike-toggle rework, heal-mode mana + split weaves, and a tab-switch fix
+
+**Feature + fix.** A pass over the Paladin's Damage/Tank strikes and Healer mode, plus a shared-shell fix that made the Damage tab unreachable once Healer was selected. Confirmed in-game on the 1.18.1 client.
+
+- **Fix — the Healer → Damage tab was stuck.** The boolean tab rail (paladin `healMode`) computed its stored value through `st.encode and st.encode(key) or key`. When `encode` returned `false` (the Damage tab) the and/or idiom fell through to the string `"damage"`, which is truthy, so the rotation kept healing and the tab could never switch back — only `/ar heal off` worked. `SelectSpecTab` now assigns the encoded value directly, and `healMode` is coerced to a strict boolean in NormalizeProfile, repairing any profile the old bug corrupted. String rails are unaffected.
+- **Live tab/edit apply.** Editing the **active** profile now applies immediately — a tab (or any control) is a live switch with no separate Activate step — so you can flip Healer ↔ Damage or re-tune mid-fight by clicking. Untrained spells no longer block anything: the rotation skips what isn't learned, so a profile is always usable and always applies (Save/Activate and the live apply are no longer gated on validity; missing spells show as an amber note only). The footer reads `Active profile — changes apply live` for the running profile.
+- **Strikes — two toggles + a both-on strategy (replaces the Strike-mode dropdown).** *Holy Strike* and *Crusader Strike* are back as two toggles: enable one alone to use **only** that strike; enable both to reveal a strategy dropdown. This also fixes a regression where the single-strike modes were ignored — the old shared-cooldown resolver ran its Zeal/Holy-Might weave regardless of mode, so "Holy Strike only" still fired Crusader Strike.
+  - **Auto DPS (talent-aware).** Without *Vengeful Strikes*, *Crusader Strike* builds *Zeal* to 3 stacks, then *Holy Strike* fills (which still returns mana/health to the group). With the talent, *Holy Strike* opens for *Holy Might* and is kept up while *Zeal* is ramped; if both buffs would fall in the same 6s window, *Zeal* wins — three stacks cost more than a one-GCD Holy Might refresh.
+  - **Tank block.** Keeps *Crusader Strike*'s *Zealous Defense* block buff loaded (it is consumed on the next block) and spends every other global on *Holy Strike* for threat (*Righteous Strikes*).
+  - The old weapon-lean and *Prioritize Zeal* toggle are retired (their behaviour now lives in Auto DPS). New command: `/ar strike off|hs|cs|auto|tank`.
+- **Heal mode — dedicated mana upkeep.** Heal mode no longer borrows the damage seal engine. A heal-only **Mana management** section adds **Seal of Wisdom (self mana)** — keep the seal up so your melee swings return mana to you — and **Judge Wisdom (group mana)** — judge *Seal of Wisdom* onto the mob (*Judgement of Wisdom*) so everyone attacking it gets mana back. The group judge is a global you cannot heal during, so it is opt-in and defaults off; both run only in melee downtime and never over a heal.
+- **Heal mode — the melee-holy weave split in two.** The single *Weave strikes* toggle is replaced by two, since each strike is a global. **Reload Holy Shock (CS)** weaves *Crusader Strike* to reset Holy Shock (*Blessed Strikes*), keeping the emergency instant loaded — greyed unless the talent plus both spells are present, and not limited by the filler mana floor. **Holy Strike filler** uses *Holy Strike* in downtime for its splash heal, gated by its own **mana floor**. The Blessed-Strikes weave is also decoupled from the Damage-tab strike toggles, so the default Healer profile weaves as intended.
+- **UI clarity.** Tabs renamed **Tank / Damage** and **Healer**, each with a subtitle line noting the tab **is** the active mode and the other tab's settings are ignored (the tab framework gained optional per-tab subtitles). *Mana management* and *HP management* are now Damage-only, so they no longer appear on the Healer tab. *Holy Shock emergencies* shows OFF and greyed until the spell is trained (its saved value is untouched), with a tooltip clarifying it is used only as a heal in heal mode. The *Judgement weaving* and *Wisdom debuff in mana mode* tooltips were rewritten so they are no longer confused with each other.
+
+All Lua files pass the balance check; the define-before-use ordering audit is clean.
+
+---
+
 ## v0.13.12b — Shaman totems in every spec, cast-event-driven re-drops, Warrior fixes
 
 **Feature.** Totem maintenance is no longer Restoration-only, and re-drop timing is upgraded from a blind clock to real cast confirmation. A Warrior auto-attack bug is also fixed, with two new leveling toggles.
