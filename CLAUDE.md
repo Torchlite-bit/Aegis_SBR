@@ -96,6 +96,9 @@ config panels; a Shaman totem system maintains totems across every spec via Supe
   - `docs/turtle-mechanics.md` — confirmed Turtle-specific class-change facts.
   - `docs/architecture.md` — module layout, conventions, key APIs, UI primitives.
   - `docs/roadmap.md` — phased plan; the rebrand steps; what's next.
+  - `docs/sources.md` — where the game/dependency knowledge comes from, which links are
+    fetchable vs. paste-only, and the two update commands. **For talents, read the in-repo
+    `TALENTS_1_18_1.md` — do NOT try to scrape the talent calculators (they block bots).**
 
 ## Workflow (HOW — the loop, follow it every time)
 1. **Run the verifier after EVERY edit**, before presenting anything:
@@ -117,6 +120,20 @@ config panels; a Shaman totem system maintains totems across every spec via Supe
 6. Prefer **minimal, surgical diffs**; match existing code style and naming exactly.
 7. Confirm the plan with the user before large changes; the user tests in-game and reports
    back with screenshots.
+
+## Keeping current (dependency / mechanics updates)
+Source knowledge is kept in the docs, not fetched live every session — Claude Code re-checks
+sources only when the user runs an update command. `docs/sources.md` lists which links are
+fetchable vs. paste-only and holds the two commands:
+- **Command 1 (dependency refresh)** — check the SuperWoW/Nampower/SuperCleveRoid changelogs
+  against their last-verified dates and update `docs/dependencies.md`. Run when a mod ships a
+  new version.
+- **Command 2 (mechanics refresh)** — re-check the Turtle Wiki against `docs/turtle-mechanics.md`
+  / `docs/rotations.md` and report a discrepancy list. Run after a Turtle patch. Rotation
+  priority changes still go through the audit-and-report gate (Critical Rule #1).
+When you update a doc from a source, bump that source's "last verified" date in
+`docs/sources.md`. For talents, consult the in-repo `TALENTS_1_18_1.md`; the online
+calculators block automated access.
 
 ## Definition of Done (per change)
 - Passes `python3 scripts/verify.py --all` (balance + ordering).
