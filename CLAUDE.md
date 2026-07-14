@@ -98,7 +98,7 @@ config panels; a Shaman totem system maintains totems across every spec via Supe
   - `docs/roadmap.md` — phased plan; the rebrand steps; what's next.
   - `docs/sources.md` — where the game/dependency knowledge comes from, which links are
     fetchable vs. paste-only, and the two update commands. **For talents, read the in-repo
-    `TALENTS_1_18_1.md` — do NOT try to scrape the talent calculators (they block bots).**
+    `docs/TALENTS_1_18_1.md` — do NOT try to scrape the talent calculators (they block bots).**
 
 ## Workflow (HOW — the loop, follow it every time)
 1. **Run the verifier after EVERY edit**, before presenting anything:
@@ -132,7 +132,7 @@ fetchable vs. paste-only and holds the two commands:
   / `docs/rotations.md` and report a discrepancy list. Run after a Turtle patch. Rotation
   priority changes still go through the audit-and-report gate (Critical Rule #1).
 When you update a doc from a source, bump that source's "last verified" date in
-`docs/sources.md`. For talents, consult the in-repo `TALENTS_1_18_1.md`; the online
+`docs/sources.md`. For talents, consult `docs/TALENTS_1_18_1.md`; the online
 calculators block automated access.
 
 ## Definition of Done (per change)
