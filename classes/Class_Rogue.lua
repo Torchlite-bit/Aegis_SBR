@@ -143,7 +143,18 @@ function M:Rotate(cfg)
             .. " env=" .. (useEnv and (self:SelfBuffUp("Envenom", "Sword_31") and "up" or "down") or "-")
             .. " rup=" .. (useRup and (self:TargetDebuffUp("Rupture", "Ability_Rogue_Rupture") and "up" or "down") or "-")
             .. " rip=" .. ((cfg.useRiposte and now < (self.riposteExpiry or 0)) and "Y" or "N")
-            .. " elite=" .. (isElite and "Y" or "N"))
+            .. " elite=" .. (isElite and "Y" or "N"),
+            -- Rogue never downranks (all ranks cost the same energy), so every
+            -- Cast() below is a bare CastSpellByName(name) - vanilla resolves
+            -- that to the highest known rank on its own. This line just
+            -- surfaces the max rank on record for what would actually go out,
+            -- so a bad rank pick would show up here instead of staying invisible.
+            "rank: " .. builder .. "=R" .. self:MaxRank(builder)
+            .. "  Eviscerate=R" .. self:MaxRank("Eviscerate")
+            .. (useSnd and ("  SnD=R" .. self:MaxRank("Slice and Dice")) or "")
+            .. (useEnv and ("  Envenom=R" .. self:MaxRank("Envenom")) or "")
+            .. (useRup and ("  Rupture=R" .. self:MaxRank("Rupture")) or "")
+            .. ((cfg.useRiposte and self:KnowsSpell("Riposte")) and ("  Riposte=R" .. self:MaxRank("Riposte")) or ""))
     end
 
     -- P1 Riposte, combo point independent, only inside the parry window

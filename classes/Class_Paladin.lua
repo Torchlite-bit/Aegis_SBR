@@ -725,9 +725,37 @@ function M:GcdReady()
     return true
 end
 
+-- Known texture fragments for effects that reduce healing received on a unit
+-- (Mortal-Strike-type debuffs), mirroring QuickHeal's icon-based detection.
+-- Value is the healing multiplier applied per stack found.
+local HEAL_DEBUFF = {
+    { frag = "Ability_CriticalStrike",     mult = 0.5 },  -- Mortal Wound
+    { frag = "Ability_Warrior_SavageBlow", mult = 0.5 },  -- Mortal Strike / Mortal Cleave (Warrior talent)
+    { frag = "Spell_Shadow_GatherShadows", mult = 0.5 },  -- Curse of the Deadwood / Gehenna's Curse
+    { frag = "Ability_Creature_Poison_03", mult = 0.9 },  -- Necrotic Poison
+}
+
+-- Combined healing-reduction multiplier on a unit from known debuffs (1 = no
+-- reduction). The heal engine divides the deficit by this before picking a
+-- rank, so a target under Mortal Strike gets a correspondingly bigger heal
+-- queued up instead of quietly landing short.
+function M:HealDebuffModifier(unit)
+    local mult = 1
+    for i = 1, 16 do
+        local tex = UnitDebuff(unit, i)
+        if not tex then break end
+        for j = 1, table.getn(HEAL_DEBUFF) do
+            if string.find(tex, HEAL_DEBUFF[j].frag) then mult = mult * HEAL_DEBUFF[j].mult end
+        end
+    end
+    return mult
+end
+
 -- Heal decision. Returns true when a heal was cast (or the GCD is held) this
 -- press. Holy Shock for an emergency or an out-of-range unit, otherwise a
--- downranked Flash of Light, with Holy Light for large deficits.
+-- downranked Flash of Light, with Holy Light for large deficits - unless the
+-- target is below the emergency line, where Flash of Light's faster cast
+-- stays the safer bet even if it cannot fully cover the deficit.
 function M:DoHeal(cfg)
     local ratio = (cfg.healThreshold or 90) / 100
     local unit, deficit, pct = self:WorstHurt(ratio)
@@ -746,30 +774,72 @@ function M:DoHeal(cfg)
     local hlEff  = self:EffHeals(self.HL_HEAL,  C25, hlMod, hp)
     local hsEff  = self:EffHeals(self.HS_HEAL,  C15, hlMod * dfMod, hp)
 
+    -- Healing-reduction debuffs (Mortal Strike and the like) inflate the
+    -- effective deficit for rank selection, so a stronger rank is picked;
+    -- the amount actually committed for in-flight tracking is scaled back
+    -- down since the extra healing never lands.
+    local hdb = self:HealDebuffModifier(unit)
+    local rankDeficit = (hdb < 1) and (deficit / hdb) or deficit
+
     -- Holy Shock: instant, for an emergency or a hurt unit out of melee range.
     if cfg.useHolyShock and self:KnowsSpell("Holy Shock") and self:OwnCDReady("Holy Shock")
         and (pct <= (cfg.holyShockPct or 50) / 100 or not CheckInteractDistance(unit, 3)) then
-        local hs, amt = self:PickRank("Holy Shock", hsEff, self.HS_MANA, deficit, mana)
-        if hs then self:CommitHeal(unit, amt, 0); self:CastOn(hs, unit); return true end
+        local hs, amt = self:PickRank("Holy Shock", hsEff, self.HS_MANA, rankDeficit, mana)
+        if hs then self:CommitHeal(unit, amt * hdb, 0); self:CastOn(hs, unit); return true end
     end
 
-    -- For a deficit beyond the biggest Flash of Light, prefer Holy Light.
-    local folMaxRank = self:MaxRank("Flash of Light")
-    if folMaxRank > table.getn(folEff) then folMaxRank = table.getn(folEff) end
-    local folCeiling = (folMaxRank >= 1 and folEff[folMaxRank]) or 0
-    if deficit > folCeiling and self:MaxRank("Holy Light") > 0 then
-        local hl, amt = self:PickRank("Holy Light", hlEff, self.HL_MANA, deficit, mana)
-        if hl then self:CommitHeal(unit, amt, 2.5); self:CastOn(hl, unit); return true end
+    -- Cast-time compensation: the target keeps losing health while the cast
+    -- is in flight, so in combat the deficit is padded before comparing it
+    -- against each spell's ranks - Flash of Light (1.5s) less than Holy
+    -- Light (2.5s), mirroring QuickHeal's k/K factors.
+    local inCombat = UnitAffectingCombat("player") or UnitAffectingCombat(unit)
+    local folDeficit = inCombat and (rankDeficit / 0.9) or rankDeficit
+    local hlDeficit  = inCombat and (rankDeficit / 0.8) or rankDeficit
+
+    -- Below the Holy Shock emergency line, stay on the faster Flash of Light
+    -- even for a deficit it cannot fully cover - a fast partial heal beats
+    -- risking the target dying mid-cast on a slow Holy Light.
+    local emergency = pct <= (cfg.holyShockPct or 50) / 100
+
+    if emergency then
+        local fol, folRaw = self:PickRank("Flash of Light", folEff, self.FOL_MANA, folDeficit, mana)
+        if fol then self:CommitHeal(unit, folRaw * hdb, 1.5); self:CastOn(fol, unit); return true end
+        -- Flash of Light itself cannot be cast (unlearned/unaffordable): Holy
+        -- Light as a last resort, better than holding the GCD entirely.
+        local hl, hlRaw = self:PickRank("Holy Light", hlEff, self.HL_MANA, hlDeficit, mana)
+        if hl then self:CommitHeal(unit, hlRaw * hdb, 2.5); self:CastOn(hl, unit); return true end
+        return false
     end
 
-    -- Flash of Light, fast, downranked to the deficit.
-    local fol, amtf = self:PickRank("Flash of Light", folEff, self.FOL_MANA, deficit, mana)
-    if fol then self:CommitHeal(unit, amtf, 1.5); self:CastOn(fol, unit); return true end
+    -- Not an emergency: get each spell's best candidate rank, then pick
+    -- whichever actually-landing heal (after the debuff modifier) wastes the
+    -- least - a rank that covers the deficit beats one that falls short, and
+    -- between two that cover it, the smaller one wins unless Holy Light is
+    -- clearly (>=10%) more efficient, which keeps trivial ties on the faster
+    -- Flash of Light instead of flip-flopping to a slower cast for pennies.
+    local fol, folRaw = self:PickRank("Flash of Light", folEff, self.FOL_MANA, folDeficit, mana)
+    local hl,  hlRaw  = self:PickRank("Holy Light", hlEff, self.HL_MANA, hlDeficit, mana)
+    local folLanded = fol and (folRaw * hdb) or nil
+    local hlLanded  = hl  and (hlRaw  * hdb) or nil
+    local folCovers = folLanded and folLanded >= deficit
+    local hlCovers  = hlLanded  and hlLanded  >= deficit
 
-    -- Holy Light fallback when Flash of Light is unknown or unaffordable.
-    local hl2, amth = self:PickRank("Holy Light", hlEff, self.HL_MANA, deficit, mana)
-    if hl2 then self:CommitHeal(unit, amth, 2.5); self:CastOn(hl2, unit); return true end
+    local pick, amt, castTime
+    if folCovers and hlCovers then
+        if hlLanded <= folLanded * 0.9 then pick, amt, castTime = hl, hlLanded, 2.5
+        else pick, amt, castTime = fol, folLanded, 1.5 end
+    elseif folCovers then pick, amt, castTime = fol, folLanded, 1.5
+    elseif hlCovers then pick, amt, castTime = hl, hlLanded, 2.5
+    elseif fol and hl then
+        -- Neither covers it: take the bigger partial heal so the group is
+        -- topped off in fewer presses.
+        if folLanded >= hlLanded then pick, amt, castTime = fol, folLanded, 1.5
+        else pick, amt, castTime = hl, hlLanded, 2.5 end
+    elseif fol then pick, amt, castTime = fol, folLanded, 1.5
+    elseif hl then pick, amt, castTime = hl, hlLanded, 2.5
+    end
 
+    if pick then self:CommitHeal(unit, amt, castTime); self:CastOn(pick, unit); return true end
     return false
 end
 
@@ -920,39 +990,43 @@ function M:Rotate(cfg)
         end
     end
 
-    -- 1. Strike
-    if self:StrikeEnabled(cfg) and self:SharedStrikeReady(cfg) then
+    -- 1. Strike (damage/tank mode only; heal mode has its own strike weaving,
+    -- HealStrikeEngine/HealWeaveStrike, above)
+    if not cfg.healMode and self:StrikeEnabled(cfg) and self:SharedStrikeReady(cfg) then
         local pick = self:ResolveSharedCD(cfg)
         if pick and self:CastStrike(pick, cfg) then return end
     end
     -- 2. Holy Shield. Check its OWN cooldown and hold through the global
     -- cooldown so it reliably lands right after the strike and before seals,
     -- instead of losing the GCD edge to the unconditional seal recast.
-    if cfg.spells.holyShield and self:OwnCDReady("Holy Shield") then
+    -- (damage/tank mode only, same reasoning as the strike above)
+    if not cfg.healMode and cfg.spells.holyShield and self:OwnCDReady("Holy Shield") then
         if self:Cast("Holy Shield") then return end
     end
     -- 2b. Consecration leads AoE: when toggled on (checkbox or /ar aoe), cast it
     -- on cooldown right after the strike so it is a primary AoE source rather
     -- than a leftover filler. Held during mana recovery. Ground-targeted, but a
     -- plain cast drops it at your feet on the usual SuperWoW/Nampower setup.
-    if cfg.spells.consecration and not self.manaMgmtActive
+    -- (damage/tank mode only)
+    if not cfg.healMode and cfg.spells.consecration and not self.manaMgmtActive
         and self:KnowsSpell("Consecration") and self:IsReady("Consecration") then
         if self:Cast("Consecration") then return end
     end
     -- 3. Seal upkeep and judgement (damage/tank mode only; heal mode runs its
     -- own Seal of Wisdom upkeep via HealSeals above)
     if not cfg.healMode and self:HandleSeals(cfg) then return end
-    -- 4. Hammer of Wrath as execute
-    if cfg.spells.hammerOfWrath and self:TargetHPPct() <= 20 and self:IsReady("Hammer of Wrath") then
+    -- 4. Hammer of Wrath as execute (damage/tank mode only)
+    if not cfg.healMode and cfg.spells.hammerOfWrath and self:TargetHPPct() <= 20 and self:IsReady("Hammer of Wrath") then
         if self:Cast("Hammer of Wrath") then return end
     end
-    -- 5. Repentance (boss damage proc on Turtle)
-    if cfg.spells.repentance and self:IsReady("Repentance") then
+    -- 5. Repentance (boss damage proc on Turtle) (damage/tank mode only)
+    if not cfg.healMode and cfg.spells.repentance and self:IsReady("Repentance") then
         if self:Cast("Repentance") then return end
     end
     -- 6. Exorcism, a strong nuke but only against Undead and Demon targets.
     -- Skipped during mana recovery so it does not burn the mana we are saving.
-    if cfg.spells.exorcism and not self.manaMgmtActive
+    -- (damage/tank mode only)
+    if not cfg.healMode and cfg.spells.exorcism and not self.manaMgmtActive
         and self:KnowsSpell("Exorcism") and self:TargetIsUndeadOrDemon()
         and self:IsReady("Exorcism") then
         if self:Cast("Exorcism") then return end

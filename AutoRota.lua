@@ -688,7 +688,11 @@ function AutoRota:RunRotation()
     -- grabs and pulls a random mob). "manual" defers entirely, only dropping
     -- a corpse so a separate assist addon can reassign you.
     local mode = self:TargetMode()
-    if mode == "assist" and not supportRun then
+    if mode == "assist" then
+        -- Unlike "auto" below, mirroring an ally's existing target is never a
+        -- fresh pull, so it runs for support modules (e.g. the paladin heal
+        -- mode) too - that's what lets a melee-holy healer's strike weaving
+        -- (which needs an actual target) follow the tank hands-free.
         self:RunAssist()
     elseif not UnitExists("target") or UnitIsDead("target") then
         if mode == "auto" and self.active.autoAcquireTarget ~= false and not supportRun then
