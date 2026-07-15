@@ -75,4 +75,52 @@ Judgement of Wisdom stamp.
 
 ---
 
-*(Sections 2-9 appended as each class is audited.)*
+## 2. HUNTER (`classes/Class_Hunter.lua`)
+
+### What the code does
+
+Mode = ranged / melee / auto (auto picks by ~10yd `CheckInteractDistance` with 0.75s
+stickiness). Off-GCD layer each press: pet attack / smart Growl / AoE Thunderstomp, burst
+CDs (Rapid Fire + Bestial Wrath, always/elite/off), Kill Command on CD, Baited Shot in the
+4s pet-crit window. Then strict GCD priority: `1` aspect upkeep (mana-aspect hysteresis
+overrides Wolf/Hawk) → `2` **Hunter's Mark strict opener** (nothing proceeds until
+confirmed) → `3` optional Aimed opener (pre-pull only) → `4` Auto Shot upkeep (ranged;
+event-timed with stall restart) / melee swing start → `5a` sting upkeep (ranged-distance
+only, Nampower-queued, immunity learning per target, queue-hold so lower shots can't evict
+it) → `5b` Mend Pet → `5c` **Aimed Shot on Lock-and-Load proc** → `5d` Immolation Trap on
+CD → melee branch: Carve (AoE lead) → Mongoose Bite (5s dodge window) → Lacerate upkeep →
+Raptor Strike → Wing Clip; ranged branch: AoE (Multi-Shot → Volley) → **Steady Shot woven
+1:1 in the post-Auto-Shot window** (event-timed, never clips) → Multi-Shot ST → Arcane
+finisher ≤30% target HP → Arcane filler (≥50% mana or while Auto Shot is stale/moving) →
+Aimed on CD only when both proc-guard and opener mode are off.
+
+### Discrepancies
+
+| # | Ability / order | What the code does | What research says | Source + confidence | Recommended action | RISK if changed |
+|---|---|---|---|---|---|---|
+| H1 | **Serpent Sting icon fallback (the known bug)** | Every sting/Mark detection is `TargetDebuffUp(name, nil)` — **no icon-fragment fallback**. If SuperWoW's id→name path misses (or no SuperWoW), the debuff always reads "not up" and the sting is blind-recast every throttle interval — wasted casts + debuff-slot churn | rotations.md flags it: "Known bug (Phase 1): Serpent Sting icon fallback" | rotations.md Hunter, explicit | **Fix now (pre-authorized by roadmap as a non-priority display/detection fix)**: pass the classic icon fragments as fallback (Serpent=`Ability_Hunter_Quickshot`, Scorpid=`Ability_Hunter_CriticalShot`, Viper=`Ability_Hunter_AimedShot`, Mark=`Ability_Hunter_SniperShot`). No priority change; SuperWoW clients unaffected (name path still wins) | Fragment collision with another debuff icon could false-positive "up" — fragments chosen are the stings' own 1.12 icons; name match still takes precedence |
+| H2 | **AoE: Explosive Trap missing** | AoE = Carve (melee) / Multi-Shot → Volley (ranged) + Immolation Trap on CD. No Explosive Trap anywhere | Survival AoE = "**Carve + Explosive Trap**" | rotations.md Survival `[T]` | **Gap, report**: add opt-in Explosive Trap (combat traps are legal on 1.18.1). New ability = gated change; needs the exact Turtle spell name | Low — KnowsSpell-gated addition no-ops if absent; trap GCD economics need a dummy check vs Immolation |
+| H3 | **Low-mana sting swap** | Sting choice is static config; only the ASPECT swaps at low mana (hysteresis) | "drop to **Viper Sting** / Aspect of the Viper at low mana" | rotations.md MM `[T]` | **User decision**: optional "auto-Viper-Sting below X% mana" mirroring the aspect hysteresis. Gated | Sting swap burns a GCD + debuff slot mid-fight; auto-swapping can churn slots near the 16-debuff cap |
+| H4 | **README/code disagree on AoE order** | Code: Multi-Shot first, then Volley | README: "*Volley* leads then *Multi-Shot* fills"; rotations.md doesn't order them | README vs code — doc bug on one side | **Decide which is intended**: fixing README = ungated doc fix; reordering code = gated rotation change. (Multi-first is defensible: instant, then channel) | If Volley-first is the tuned intent, current code under-uses the channel on dense packs |
+| H5 | **Lock and Load / Baited Shot / Kill Command names** | Implemented from proc-buff and spell names the research doc doesn't document (`Lock and Load`, `Baited Shot`, `Kill Command` on CD) | rotations.md MM says only "'Trueshot' renamed Steady Shot (first MM capstone)"; no L&L entry. README already flags these as best-effort | Code ahead of research — **[?]** | **Verify in-game** (`/sbr talents`, `/sbr debug`) and then document in rotations.md; wrong names are inert (KnowsSpell/HasBuff gates), so no rotation risk today | — (no-op if names wrong) |
+| H6 | **Melee priority order** | Mongoose (reactive) → Lacerate → Raptor → Wing Clip | "Raptor Strike / Mongoose Bite with **Lacerate priority** → … → Wing Clip strict filler" — reads as Lacerate above the strikes | rotations.md Survival `[T]`, ordering phrasing ambiguous | **Dummy-verify [?]** whether Lacerate-before-Mongoose matters; Mongoose has a 5s reactive window so firing it first rarely costs a Lacerate tick | Swapping could waste Mongoose windows (they expire); current order is defensible — don't change on paper |
+| H7 | **Wing Clip default** | `useWingClip = false` in every template | Wing Clip is the Survival "strict filler" (Phantom Strike procs on-swing effects) | rotations.md Survival `[T]` | **User decision**: template default only (existing profiles untouched). Mostly matters with Windfury Totem support | Wing Clip costs mana per filler press; solo/leveling it's waste — default-off is defensible |
+| H8 | **Stinging Nettle Lacing not modeled** | Sting only applied at range; no awareness that talented Mongoose/fire traps apply reduced-duration Serpent | "Mongoose Bite + Fire traps apply your highest Serpent Sting at reduced duration" (2 pts) | rotations.md Survival `[T]` | **Note only**: melee hunters with the talent keep Serpent up implicitly; no code change needed unless sting bookkeeping starts double-counting (it keys off the debuff scan, so it self-corrects) | — |
+
+### Match notes (checked, no discrepancy)
+
+- Steady Shot weave is event-timed 1:1 after each Auto Shot with clip protection — exactly
+  the `[T]` "Auto + Steady weave" model, more precisely than the research's `[?]`
+  weapon-speed patterns (which stay unverified; don't implement on paper).
+- Aimed Shot default = proc-only (never on CD) matches "often dropped / clips Auto" `[T]`.
+- Survival is a real melee archetype in code (Wolf aspect, Raptor/Mongoose/Lacerate/Carve,
+  Carve sharing Multi-Shot's CD comes free via the client's shared-CD IsReady). ✓
+- Mark-before-sting strict opener matches the "Hunter's Mark pre-pull" note; sting is
+  distance-gated so a melee hunter lands it on approach then stops. ✓
+- Mana-aspect hysteresis (Viper at low, back at +15%) matches the mana-efficiency core. ✓
+- Sting poison-immunity handling (Mechanical/Elemental type-block + learned per-target
+  immunity) is beyond the research doc — keep.
+
+---
+
+*(Sections 3-9 appended as each class is audited.)*
