@@ -219,4 +219,53 @@ AoE deliberately excluded.
 
 ---
 
-*(Sections 5-9 appended as each class is audited.)*
+## 5. DRUID (`classes/Class_Druid.lua`)
+
+### What the code does
+
+Form-adaptive: the rotation follows the form you are IN (caster form shifts into the
+profile's preferred form; unlearned forms degrade to the caster loop). **Cat**: stealth
+opener (Ravage/Pounce) → Faerie Fire (Feral) upkeep → Tiger's Fury renewed when <2s left →
+finisher at the CP threshold (bleed style: Rip if missing, else Ferocious Bite; shred
+style: Ferocious Bite) → Rake upkeep (bleed style) → builder (Claw / Shred) → powershift
+(shred style opt-in, energy <15, never while Tiger's Fury runs; shift-out lands caster,
+next press shifts back). **Bear**: smart Growl (only when the target isn't on you) → Faerie
+Fire as the 30yd ranged opener → Enrage when rage-starved (opt-in, combat only) →
+Demoralizing Roar upkeep → Swipe when AoE-toggled → Maul rage dump. **Caster/Moonkin**:
+Moonfire upkeep → Insect Swarm upkeep → Eclipse-proc reaction (empowered opposite nuke;
+buff detected by name list + "Eclipse"-substring fallback) → chain the primary nuke
+(default Wrath) to fish for procs. **Tree/Resto**: same heal engine family as
+Shaman/Priest (Innervate low-mana → NS+instant max Healing Touch → Swiftmend off own HoTs
+→ Regrowth burst → downranked Healing Touch → Rejuvenation roll → optional Wild
+Growth/Lifebloom → optional damage weave).
+
+### Discrepancies
+
+| # | Ability / order | What the code does | What research says | Source + confidence | Recommended action | RISK if changed |
+|---|---|---|---|---|---|---|
+| D1 | **Bear: Savage Bite missing** | Not referenced anywhere in the module | "**Savage Bite** high threat (replaces MCP dependency)" — core Turtle bear threat button | rotations.md + turtle-mechanics.md `[T]` | **Headline bear gap, report**: add as a toggle in the bear priority (placement vs Maul needs a threat test; exact name/cost from the client) | Wrong placement steals rage from Maul; needs the live rage cost + threat feel, not paper |
+| D2 | **Cat: default style vs raid-dominant Shred** | `starter`/`catbleed` templates default to the bleed style; `catshred` (Shred + powershift) exists but isn't the default | "**Powershift Shred is dominant** [in raids] — bleeds remain weaker / less energy-efficient (can't crit)" | rotations.md `[T]`, bleed-build viability `[?]` | **User decision, template-level**: leveling default = bleed is defensible; raiders pick `catshred`. Maybe a README/panel hint, not a logic change | None (both styles fully implemented) |
+| D3 | **Cat: Tiger's Fury constant upkeep** | Renewed whenever <2s remain (permanent uptime, 30 energy each) | "Tiger's Fury **window**" — used as a damage window, not permanent upkeep | rotations.md `[T]` phrasing, energy math `[?]` | **Dummy-verify**: TF's Turtle cost/duration decides whether 100% uptime is energy-positive. Report numbers before changing | If TF upkeep is a net energy loss, current code bleeds builder energy; if it's cheap on Turtle, windowing would be a nerf — measure first |
+| D4 | **Cat: powershift doesn't check Furor** | Powershift is a pure profile toggle; no talent check | Powershift works "via **Furor**" (shift-in energy) — without 5/5 it's mana + 2 GCDs for nothing | rotations.md `[T]` | **Report**: cheap safety = read Furor's talent rank and warn (or hold powershift) when untalented. Behavior-adjacent → gated | A warning is riskless; auto-blocking could surprise a player using Wolfshead-style effects instead of Furor |
+| D5 | **Balance: alternate vs proc-fishing** | Alternation happens only on a detected Eclipse buff; otherwise chain-casts ONE nuke (default Wrath) | "maintain IS + MF → **alternate Wrath and Starfire**" — reads as continuous alternation | rotations.md + turtle-mechanics.md `[T]`, exact proc mechanic `[?]` | **Verify the Turtle mechanic**: if Eclipse-style procs exist (code's model), proc-fishing is right and research phrasing is loose; if the rework rewards strict alternation, the filler needs changing. `/sbr debug` during Balance play settles it | Strict alternation without a proc reason wastes the stronger nuke's ratio; don't change until the buff behavior is confirmed |
+| D6 | **Balance: no AoE (Hurricane)** | No caster AoE path | "AoE via Hurricane (Gale Winds restores the slow)" | rotations.md `[T]` | **Note**: Hurricane is ground-targeted — same cursor constraint that excludes Blizzard/Flamestrike (documented design rule). Revisit only if SuperWoW 2.0's `CastSpellByName(spell, "CLICK")` is adopted (roadmap-gated) | — |
+| D7 | **Resto: Tranquility missing / Wild Growth extra** | Kit = HT/Regrowth/Rejuv/Swiftmend/NS/Innervate + optional Wild Growth + Lifebloom; no Tranquility | Research sketch lists "**Tranquility** (group)"; doesn't list Wild Growth/Lifebloom (Turtle additions) | rotations.md Resto `[V]` needs-`[?]`-tuning | **Fold into Phase 3 live tuning** (healer priorities are the least-sourced): decide Tranquility's place (long channel + threat) with real play; keep WG/LB as the Turtle-native tools they are | Tranquility mid-rotation is risky (channel lock); the Phase 3 plan already owns this |
+| D8 | **Sylvan Blessing / Omen of Clarity not modeled** | No handling | Balance rework lists both | rotations.md `[T]` | **Note only**: Sylvan Blessing is passive regen; Omen procs could later gate the expensive nuke — polish backlog | — |
+
+### Match notes (checked, no discrepancy)
+
+- Powershift loop is implemented exactly (recast form → caster → re-shift; blocked while
+  Tiger's Fury runs so the buff is never tossed) — matches `[T]` powershift-Shred, with the
+  correct anti-waste guard.
+- Faerie Fire (Feral) armor debuff kept up in both feral forms; bear uses it as the ranged
+  opener because Moonfire is uncastable in bear (documented). ✓
+- Bear core = Maul dump + Swipe AoE + Demo Roar upkeep + smart Growl — matches `[T]` minus
+  D1. Enrage armor-loss caution handled (opt-in, combat-only). ✓
+- Moonfire + Insect Swarm upkeep matches the Balance rework's DoT-augmentation core `[T]`.
+- Open Wounds-style bleed pairing (Rip + Claw) exists as the bleed style — consistent with
+  research's "Turtle added a bleed build" note, with raids steered to Shred (D2).
+- Barkskin (Feral) / Frenzied Regeneration / defensives = Phase 4 scope, correctly absent.
+
+---
+
+*(Sections 6-9 appended as each class is audited.)*
