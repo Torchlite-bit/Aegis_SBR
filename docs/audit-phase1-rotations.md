@@ -268,4 +268,45 @@ Growth/Lifebloom → optional damage weave).
 
 ---
 
-*(Sections 6-9 appended as each class is audited.)*
+## 6. WARRIOR (`classes/Class_Warrior.lua`)
+
+### What the code does
+
+Off-GCD fire-and-continue layer: Bloodrage below 30 rage → burst CDs by pop-mode (Death
+Wish; Recklessness/Berserker Rage in Berserker) → Sweeping Strikes in AoE → Shield Block in
+Defensive → rage dump on next swing at ≥`dumpRage` (Cleave in AoE else Heroic Strike;
+suppressed in execute phase). Then strict GCD priority: Charge opener (out of combat, out
+of melee, Battle or dance-in) → Revenge in its 5s reactive window (Defensive) → Execute
+≤20% → Overpower in its reactive window (Battle, dance-in optional) → primary strike
+(Shield Slam → Bloodthirst → Mortal Strike; normally only one is talented) → Rend upkeep
+(toggle, off by default) → Whirlwind (AoE, or ST at ≥`wwExcess` rage, Berserker) → Thunder
+Clap in AoE (**Battle-stance-gated**) → Sunder upkeep to N stacks → Slam filler → drift
+back to home stance. Stance requirements are vanilla-1.12-conservative by design.
+
+### Discrepancies
+
+| # | Ability / order | What the code does | What research says | Source + confidence | Recommended action | RISK if changed |
+|---|---|---|---|---|---|---|
+| W1 | **Battle Shout missing** | No Battle Shout anywhere in the module | "Maintain **Battle Shout**" — listed for Arms AND Fury as the first rotation element | rotations.md Arms/Fury `[T]` | **Headline gap, report**: add a Battle Shout upkeep toggle (buff-time gated so it refreshes in downtime, not over strikes). Gated | Shout costs 10 rage a refresh; badly placed it eats strike rage — placement (dump-layer vs GCD tail) needs a dummy pass |
+| W2 | **Prot: Thunder Clap stance gate** | `STANCE_REQ["Thunder Clap"] = Battle only` (vanilla-conservative) + prot template ships `useThunderClap = false` — a Defensive tank never TCs | "**Thunder Clap is usable in Defensive Stance** = primary AoE threat" for Turtle prot | rotations.md Prot `[T]` | **Verify in-game, then relax the stance list** and flip the prot template default. The module header explicitly says stance rules stay conservative until Turtle confirms — this is that confirmation case | If TC is NOT defensive-legal on live, the rotation burns a press on a rejected cast every AoE cycle — hence verify first |
+| W3 | **Prot: Revenge fires above Shield Slam** | Priority: Revenge (reactive window) → … → Shield Slam | "**Shield Slam = top single-target threat** (Turtle: scales with AP) → Revenge when available"; Turtle note: Revenge threat is FIXED and doesn't scale | rotations.md Prot `[T]` | **Report + swap candidates**: SS-before-Revenge matches Turtle's scaling claim. One-line order swap, but it IS a priority change → sign-off + threat test | Revenge's 5s window can expire while SS + GCD resolve — the swap trades a possibly-lost Revenge for faster SS; measure, don't guess |
+| W4 | **Prot: Demoralizing Shout missing** | Not in the module | "Demoralizing Shout for AoE mitigation" (prot); also in the leveling line | rotations.md Prot/Leveling `[T]`/`[V]` | **Gap, report**: opt-in Demo Shout upkeep (debuff-tracked like the bear's Demo Roar, which already exists as a pattern) | 16-debuff cap pressure on raid bosses — needs the low-value-debuff caution from the research's cross-cutting notes |
+| W5 | **Arms: Rend default off** | `useRend = false` in the arms template (toggle fully implemented) | Arms: "keep **Rend** up (2H)" | rotations.md Arms `[T]` baseline/`[V]` rotation | **Template-level user decision**: flip arms template default on. Existing profiles unaffected | Rend on high-armor raid bosses was often skipped in vanilla practice; `[V]`-grade evidence — cheap either way |
+| W6 | **Arms: Slam not swing-synced** | Slam is a plain low-priority filler; module comment admits it "resets the swing timer… may feel awkward" | "**Slam on free swings**" — swing-timer-aware usage | rotations.md Arms `[V]` | **Report**: the core already has a swing timer (`SwingTimeLeft`); gating Slam on post-swing windows (like the hunter's Steady gate) is implementable. Gated + dummy-verified | Bad windowing turns Slam into a pure swing-DPS loss; keep off/late priority until measured |
+| W7 | **Shield Bash / Shield Slam dispel (Gag Order)** | No dispel logic | Prot: "Shield Bash / Shield Slam to **dispel magic** (Gag Order)" | rotations.md Prot `[T]` | **Note only**: dispel-on-buff detection is interrupt-tier logic (Phase 4 / polish interrupt work fits it better) | — |
+| W8 | **Fury/Arms burst in Berserker only** | Recklessness/Berserker Rage require Berserker stance (correct); Death Wish any stance ✓; all default per-template | "Death Wish / Recklessness / trinkets in burst windows" | rotations.md Fury `[T]` | **No change** (trinkets = polish backlog item already) | — |
+
+### Match notes (checked, no discrepancy)
+
+- Fury/Arms templates set `dumpRage = 50` — exactly research's "~50 rage" dump line
+  (starter keeps a more conservative 60). ✓
+- Execute ≤20% as top strike priority, dump suppressed in execute so rage funnels ✓.
+- Overpower/Revenge reactive windows from combat-log events (5s) ✓; Charge as the
+  out-of-combat opener ✓; Sunder to 5 stacks with stack detection ✓ (prot core `[T]`).
+- Whirlwind: AoE on CD + ST rage-excess valve matches both Arms and Fury lines ✓.
+- The "Known Turtle weakness" (fixed Revenge/Sunder threat) is an expectations note, not a
+  rotation change — nothing to do in code beyond W3's ordering question.
+
+---
+
+*(Sections 7-9 appended as each class is audited.)*
