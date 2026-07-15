@@ -172,4 +172,51 @@ with 55s water / 110s other redrop timers.
 
 ---
 
-*(Sections 4-9 appended as each class is audited.)*
+## 4. MAGE (`classes/Class_Mage.lua`)
+
+### What the code does
+
+Channel guard first (never acts over Missiles/Icicles/Blizzard/Evocation; 16s wedge
+ceiling), then shared upkeep in every spec: Ice Barrier when ready → optional Mana Shield
+(never under Ice Barrier) → emergency Evocation (<15% mana, in combat, target >30% HP).
+Then per-spec: **Frost** — Frost Nova when the mob reaches melee → wand gate → Cone of Cold
+(melee-gated) → Icicles whenever ready (freeze-procs keep resetting its CD, so the
+empowered window is caught implicitly) → Frostbolt filler. **Fire** — Frost Nova → wand →
+Combustion → **Pyroblast whenever target ≥85% HP (hardcast opener)** → Scorch until *Fire
+Vulnerability* reaches the configured stacks (1.5s per-target throttle so undetectable
+stacks can't spam) → Fire Blast on CD → Fireball filler. **Arcane** — Frost Nova → wand →
+Arcane Rupture upkeep (target-debuff OR self-buff detection) → Arcane Power → Arcane Surge
+only while NOT hasted (AP/MQG/Enlightenment buffs) → Arcane Missiles filler. **AoE** (all
+specs): Frost Nova → Cone of Cold → Icicles → wand floor → Arcane Explosion; ground-target
+AoE deliberately excluded.
+
+### Discrepancies
+
+| # | Ability / order | What the code does | What research says | Source + confidence | Recommended action | RISK if changed |
+|---|---|---|---|---|---|---|
+| M1 | **Fire: Hot Streak not modeled** | Pyroblast fires only as an opener (target ≥85% HP, full hardcast); no Hot Streak awareness | Core Fire rotation: "**Hot Streak Pyroblast (when available)** → Fire Blast → Fireball"; Hot Streak = Fireball/Fire Blast crits cut the next Pyroblast's cast 0.5s/stack (3/6/9, 30s) | rotations.md + turtle-mechanics.md `[T]` | **Headline gap, report**: add a Hot-Streak-reactive Pyroblast (buff-stack detection via `/sbr debug` first — exact buff name needed). Gated + dummy-verified | Casting Pyro on low stacks = long hardcasts mid-fight (DPS loss). Needs the real stack threshold from testing, not paper |
+| M2 | **Fire: Pyroblast ≥85% re-fires on big targets** | The ≥85% gate re-queues hardcast Pyroblast until the boss drops below 85% — on raid HP pools that's several 6s casts in a row | Research has Pyro only via Hot Streak (and the opener as Fire Blast → 3× Scorch → Fireball) | rotations.md `[T]` | **Report**: likely unintended at raid scale (fine while leveling). Options: once-per-combat opener latch, or fold into M1's Hot-Streak rework | Leveling profiles genuinely want the opener Pyro; a pure once-latch is safe; removing it entirely hurts open-world play |
+| M3 | **Fire: opener order (Fire Blast stacks Scorch)** | Scorch loop runs before Fire Blast; FB is just "on CD" filler | "**Fire Blast now applies Scorch stacks**"; opener: "Fire Blast → 3× Scorch → Fireball" — FB-first accelerates the Fire Vulnerability ramp | rotations.md + turtle-mechanics.md `[T]` | **Report**: consider Fire Blast before/into the Scorch ramp while stacks < target. Gated; cheap dummy test (watch stack counter) | FB on CD early delays its next use ~8s; net ramp gain needs the stack-application fact confirmed on live |
+| M4 | **Arcane: Surge order + availability model** | Rupture upkeep → Arcane Power → Surge (only when un-hasted, cast when `IsReady`) | "**Arcane Surge (when available)** → Arcane Rupture → Missiles"; Surge is usable **only after one of your spells is (partially) resisted** | rotations.md `[T]` | **Report + verify [?]**: if the client leaves Surge "ready" when not resist-primed, the rotation queues an uncastable spell and wastes the press (Queue returns true). Needs in-game check of how un-primed Surge reports; then either reorder (Surge first when truly available) or add a primed-detection | If Surge-first is wrong about availability, it wastes the top priority slot every press; verify before touching |
+| M5 | **Arcane: Rupture double-proc guard missing** | Rupture recast whenever its debuff/buff is missing | "**Avoid casting Rupture when BOTH Clearcasting and Temporal Convergence procs are up** — one Rupture wastes both" | rotations.md `[T]` | **Gap, report**: add the two-proc hold (buff names need `/sbr debug` confirmation). Gated | Holding Rupture too long drops its Missiles buff — the hold must be a one-press defer, not a hard block |
+| M6 | **Fire: Ignite 4s window pacing** | No Ignite tracking (Fireball simply fills) | "~2-4% haste + Nampower to fit 2 Fireballs inside the 4s Ignite window" | rotations.md `[T]` mechanics, pacing `[?]` | **Note only**: cast pacing is Nampower's job; revisit with the profiling tool (polish backlog) | — |
+| M7 | **Frost matches** | Ice Barrier upkeep → Icicles weave → Frostbolt, CoC/Nova melee-gated | "maintain Ice Barrier → Frostbolt → weave Icicles", Flash Freeze synergy implicit | rotations.md `[T]` | **No change** — implicit Icicles-reset handling matches research's model | — |
+
+### Match notes (checked, no discrepancy)
+
+- Frost = research shape exactly (M7); Icicles' freeze-empowerment is captured by casting
+  on every CD reset — no explicit Flash Freeze tracking needed.
+- Arcane Surge skipped while hasted (AP/MQG buffs) matches "drops out above ~30% haste"
+  in spirit — a buff-proxy instead of a haste% calc; fine at current itemization.
+- Channel protection (never clip Missiles/Icicles/Evocation) matches research's channel
+  warnings; Evocation gated on combat + target-HP is sensible and un-contradicted.
+- AoE deliberately excludes Blizzard/Flamestrike (cursor placement) — documented design
+  constraint, matches README; kite-AoE chain (Nova → CoC → Icicles → AE) is the research
+  leveling pattern.
+- Turtle spell names (Icicles, Arcane Rupture, Arcane Surge, Flash Freeze, Fire
+  Vulnerability) were name-confirmed against the client DB per module header; proc
+  behaviors remain `[?]` best-effort as the README already states.
+
+---
+
+*(Sections 5-9 appended as each class is audited.)*
