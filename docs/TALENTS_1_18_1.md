@@ -1,4 +1,4 @@
-# AutoRota — Talent Reference (Turtle WoW 1.18.1)
+# Aegis_SBR — Talent Reference (Turtle WoW 1.18.1)
 
 Authoritative talent-name dictionary, extracted in-game via `/ar talents`. These
 are the exact `GetTalentInfo` strings for the 1.18.1 client. **Use these spellings
@@ -23,7 +23,7 @@ for any name-based talent detection** in the class modules.
 - **Paladin is included below**, sourced from an earlier in-game talent dump (a `/run`
   macro printing tab + name). Its two name-based constants are confirmed present.
 
-## Verification status of the strings AutoRota currently keys off
+## Verification status of the strings Aegis_SBR currently keys off
 
 | Module | Constant / check | String | Status |
 | :--- | :--- | :--- | :--- |

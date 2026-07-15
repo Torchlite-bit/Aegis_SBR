@@ -1,11 +1,11 @@
 -- ============================================================
--- Class_Druid_UI  -  feral druid window body for AutoRota
+-- Class_Druid_UI  -  feral druid window body for Aegis_SBR
 -- Builds and binds only the druid specific controls. The shared
--- window shell and profile management live in AutoRota_UI.lua.
+-- window shell and profile management live in Aegis_SBR_UI.lua.
 -- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
-local M = AutoRota.classes.DRUID
+local M = Aegis_SBR.classes.DRUID
 M.useScrollLayout = true
 M.specTabs = {
     field = "form", default = "cat",
@@ -79,7 +79,7 @@ function M:BuildBody(ui, parent)
 
     L:Finish()
 
-    ui:Tip(self.styleDD, "Cat style", "Claw & Bleed keeps Rake and Rip rolling (pairs with bleed-energy talents). Shred & Powershift builds with Shred and finishes with Ferocious Bite.", "Use Shred for bleed-immune bosses (MC/BWL). Swap mid-fight with /ar style.")
+    ui:Tip(self.styleDD, "Cat style", "Claw & Bleed keeps Rake and Rip rolling (pairs with bleed-energy talents). Shred & Powershift builds with Shred and finishes with Ferocious Bite.", "Use Shred for bleed-immune bosses (MC/BWL). Swap mid-fight with /sbr style.")
     ui:Tip(self.openerDD, "Stealth opener", "Used on the first press while Prowl is up.", "Auto picks Ravage if known (needs behind), else Pounce.")
     ui:Tip(self.tfRow.cb, "Tiger's Fury", "Recast just before the buff falls off.")
     ui:Tip(self.ffCatRow.cb, "Faerie Fire (Feral)", "Free armor debuff, kept up first in the priority.")
@@ -89,13 +89,13 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.ffBearRow.cb, "Faerie Fire (Feral)", "Free threat plus the armor debuff, kept up first.")
     ui:Tip(self.demoRow.cb, "Demoralizing Roar", "Reapplied whenever the debuff is missing.")
     ui:Tip(self.maulRow.cb, "Maul", "Queued on the next swing as the single-target rage dump.")
-    ui:Tip(self.swipeRow.cb, "Swipe (AoE)", "When on, Swipe leads the priority for multi-target threat.", "Manual toggle, also /ar aoe, since 1.12 cannot count nearby enemies.")
+    ui:Tip(self.swipeRow.cb, "Swipe (AoE)", "When on, Swipe leads the priority for multi-target threat.", "Manual toggle, also /sbr aoe, since 1.12 cannot count nearby enemies.")
     ui:Tip(self.enrageRow.cb, "Enrage", "Used in combat when rage is starved. Lowers your armor while active, so it is off by default.")
     ui:Tip(self.growlRow.cb, "Growl", "Taunts to grab threat on the pull and whenever the target is not focused on you. Faerie Fire (Feral) is the ranged opener that starts damage + threat from a distance.")
     ui:Tip(self.nukeDD, "Primary nuke", "Chain-cast to fish for Eclipse procs.", "Casting Wraths empowers Starfire and vice versa, the rotation swaps automatically on the proc.")
     ui:Tip(self.mfRow.cb, "Moonfire", "Kept up first. At low levels this plus the nuke IS the rotation.")
     ui:Tip(self.isRow.cb, "Insect Swarm", "Kept up right after Moonfire.")
-    ui:Tip(self.eclipseRow.cb, "Eclipse reaction", "On a proc, cast the empowered opposite nuke. Casts are queued, so the swap lands the moment the window opens.", "If procs are not detected, run /ar debug with the proc up and report the buff name.")
+    ui:Tip(self.eclipseRow.cb, "Eclipse reaction", "On a proc, cast the empowered opposite nuke. Casts are queued, so the swap lands the moment the window opens.", "If procs are not detected, run /sbr debug with the proc up and report the buff name.")
     ui:Tip(self.htRow.slider, "Heal threshold", "An ally below this health counts as hurt and pulls a heal. Everything in this section keys off it.")
     ui:Tip(self.hpowRow.slider, "Heal power", "Your bonus healing (+heal) from gear. Used to size downranks so each heal just covers the deficit.", "Leave at 0 to let it heal by rank only.")
     ui:Tip(self.innervateRow.cb, "Innervate", "Cast on yourself when your own mana drops, to keep the fight going.", "Slider: use Innervate once your mana falls under this percent.")
@@ -107,7 +107,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.swiftmendRow.slider, "Swiftmend HP", "Swiftmend when a target with a HoT drops under this health.")
     ui:Tip(self.regrowthRow.slider, "Regrowth HP", "Cast Regrowth when a target without one drops under this health.")
     ui:Tip(self.wgRow.cb, "Wild Growth", "Turtle AoE HoT. Fires when several allies are hurt at once (if learned).", "Slider: how many hurt allies are needed before it fires.")
-    ui:Tip(self.weaveRow.cb, "Weave damage", "When nobody needs healing and you have an enemy targeted, cast Moonfire + Wrath in the downtime.", "Mana-gated so it never starves heals. Off by default - same as /ar weave on|off.")
+    ui:Tip(self.weaveRow.cb, "Weave damage", "When nobody needs healing and you have an enemy targeted, cast Moonfire + Wrath in the downtime.", "Mana-gated so it never starves heals. Off by default - same as /sbr weave on|off.")
     ui:Tip(self.wgRow.slider, "Wild Growth count", "How many hurt allies are needed before Wild Growth fires.")
     ui:Tip(self.weaveRow.slider, "Weave mana floor", "Only weave damage while your mana is above this percent.")
     ui:Tip(self.rejuvRow.cb, "Rejuvenation", "Kept rolling on the hurt target as the baseline maintenance HoT.")
@@ -235,9 +235,9 @@ end
 
 -- Open the shared window for this class.
 M.OpenConfig = function(mod)
-    if not AutoRotaUI then
-        AutoRota:Throttle("UI framework not loaded. AutoRota_UI.lua is missing or mislabeled in your AutoRota folder, reinstall the files.")
+    if not Aegis_SBR_UI then
+        Aegis_SBR:Throttle("UI framework not loaded. Aegis_SBR_UI.lua is missing or mislabeled in your Aegis_SBR folder, reinstall the files.")
         return
     end
-    AutoRotaUI:Toggle()
+    Aegis_SBR_UI:Toggle()
 end

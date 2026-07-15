@@ -1,10 +1,10 @@
 -- ============================================================
--- Class_Mage  -  mage module for AutoRota
+-- Class_Mage  -  mage module for Aegis_SBR
 -- Turtle WoW 1.12 (SuperWoW). Frost / Fire / Arcane, mode adaptive,
 -- works from level 1 to raiding.
 -- ============================================================
 -- Model:
---  * Three specs, chosen in the panel or with /ar mode frost|fire|arcane:
+--  * Three specs, chosen in the panel or with /sbr mode frost|fire|arcane:
 --      - frost: the leveling / kiting and Turtle Icicles spec. Frostbolt nuke,
 --        Frost Nova root, Icicles (reset/empowered by freeze effects via Flash
 --        Freeze), Ice Barrier, Cone of Cold.
@@ -31,13 +31,13 @@
 -- resetting that cooldown, so it fires in the empowered window automatically.
 -- ============================================================
 
-local M = AutoRota:NewClassModule("MAGE")
+local M = Aegis_SBR:NewClassModule("MAGE")
 M.uiTitle = "Mage"
 M.uiHeight = 628
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 
 -- ---------- channel-clip protection ----------
 -- Arcane Missiles, Icicles, Blizzard and Evocation are channels; once one runs
@@ -438,25 +438,25 @@ end
 -- ============================================================
 function M:HandleCommand(cmd, t)
     if cmd == "mode" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         local mode = self.modeAlias[string.lower(t[2] or "")]
         if cfg and mode then
             cfg.mode = mode
             msgOut("mode = " .. mode .. ".")
         else
-            msgOut("usage: /ar mode <frost|fire|arcane>", 1, 0.5, 0.3)
+            msgOut("usage: /sbr mode <frost|fire|arcane>", 1, 0.5, 0.3)
         end
         return true
     end
     if cmd == "aoe" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return true end
         cfg.aoeMode = not cfg.aoeMode
         msgOut("AoE mode " .. (cfg.aoeMode and "on" or "off") .. ".")
         return true
     end
     if cmd == "wandhp" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local v = tonumber(t[2])
         if v and v >= 0 and v <= 100 then
@@ -464,7 +464,7 @@ function M:HandleCommand(cmd, t)
             if v == 0 then msgOut("wand-finish off (cast targets to death).")
             else msgOut("wand-finish below " .. v .. "% target health.") end
         else
-            msgOut("usage: /ar wandhp <0-100> (0 = off)", 1, 0.5, 0.3)
+            msgOut("usage: /sbr wandhp <0-100> (0 = off)", 1, 0.5, 0.3)
         end
         return true
     end

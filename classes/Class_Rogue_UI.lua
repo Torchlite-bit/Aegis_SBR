@@ -1,13 +1,13 @@
 -- ============================================================
--- Class_Rogue_UI  -  rogue window body for AutoRota
+-- Class_Rogue_UI  -  rogue window body for Aegis_SBR
 -- Builds and binds only the rogue specific controls. The shared
--- window shell and profile management live in AutoRota_UI.lua.
+-- window shell and profile management live in Aegis_SBR_UI.lua.
 -- Uses the shell's scroll layout (M.useScrollLayout): BuildBody is
 -- handed the scroll child and the cursor-based layout API places
 -- everything; detail lives in tooltips so labels stay short.
 -- ============================================================
 
-local M = AutoRota.classes.ROGUE
+local M = Aegis_SBR.classes.ROGUE
 M.useScrollLayout = true
 
 -- ============================================================
@@ -73,9 +73,9 @@ end
 
 -- Open the shared window for this class.
 M.OpenConfig = function(mod)
-    if not AutoRotaUI then
-        AutoRota:Throttle("UI not ready yet, try again in a moment.")
+    if not Aegis_SBR_UI then
+        Aegis_SBR:Throttle("UI not ready yet, try again in a moment.")
         return
     end
-    AutoRotaUI:Toggle()
+    Aegis_SBR_UI:Toggle()
 end

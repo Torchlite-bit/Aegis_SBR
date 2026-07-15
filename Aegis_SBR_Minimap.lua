@@ -1,16 +1,16 @@
 -- ============================================================
--- AutoRota_Minimap  -  draggable minimap button + addon options
+-- Aegis_SBR_Minimap  -  draggable minimap button + addon options
 -- Turtle WoW 1.12 frame API. No external libraries.
---   * Left-click  : open the class configuration window (AutoRotaUI:Toggle).
+--   * Left-click  : open the class configuration window (Aegis_SBR_UI:Toggle).
 --   * Right-click : open a small options panel (self-targeting toggle plus a
 --                   shortcut to the config window).
 --   * Drag        : ride the minimap edge; position saved per character in
---                   AutoRotaDB.minimapAngle, visibility in AutoRotaDB.minimapHide.
+--                   AegisDB.minimapAngle, visibility in AegisDB.minimapHide.
 -- The button wears the player's class crest, falling back to a cog.
 -- ============================================================
 
-AutoRotaMinimap = {}
-local AM = AutoRotaMinimap
+Aegis_SBR_Minimap = {}
+local AM = Aegis_SBR_Minimap
 
 local DEFAULT_ANGLE = 200   -- degrees around the minimap, lower-left by default
 local RADIUS = 80           -- distance from the minimap centre to the button
@@ -36,7 +36,7 @@ local CLASS_TCOORDS = {
 -- placement, dragging, and the class icon
 -- ------------------------------------------------------------
 local function placeButton()
-    local angle = math.rad((AutoRotaDB and AutoRotaDB.minimapAngle) or DEFAULT_ANGLE)
+    local angle = math.rad((AegisDB and AegisDB.minimapAngle) or DEFAULT_ANGLE)
     AM.button:ClearAllPoints()
     AM.button:SetPoint("CENTER", Minimap, "CENTER", RADIUS * math.cos(angle), RADIUS * math.sin(angle))
 end
@@ -46,7 +46,7 @@ local function dragUpdate()
     local scale = Minimap:GetEffectiveScale()
     local px, py = GetCursorPosition()
     px = px / scale; py = py / scale
-    if AutoRotaDB then AutoRotaDB.minimapAngle = math.deg(math.atan2(py - cy, px - cx)) end
+    if AegisDB then AegisDB.minimapAngle = math.deg(math.atan2(py - cy, px - cx)) end
     placeButton()
 end
 
@@ -65,7 +65,7 @@ end
 -- ============================================================
 -- shared group-member picker popup, used by the assist-target row below.
 -- Lists raid1-40 while in a raid, else party1-4 plus the player. Only feeds
--- a NAME into the edit box; the actual assist logic (AutoRota:RunAssist)
+-- a NAME into the edit box; the actual assist logic (Aegis_SBR:RunAssist)
 -- re-resolves the unit and matches by GUID every press, so a stale or
 -- same-named pick here can never cause it to track the wrong mob.
 -- ============================================================
@@ -73,7 +73,7 @@ local pickerFrame = nil
 
 local function showGroupPicker(anchorFrame, onPick)
     if not pickerFrame then
-        local pf = CreateFrame("Frame", "AutoRotaGroupPicker", UIParent)
+        local pf = CreateFrame("Frame", "Aegis_SBR_GroupPicker", UIParent)
         pf:SetWidth(150)
         pf:SetBackdrop({
             bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -137,7 +137,7 @@ local function showGroupPicker(anchorFrame, onPick)
 
     if table.getn(members) == 0 then
         pf:Hide()
-        DEFAULT_CHAT_FRAME:AddMessage("AutoRota: no group members found.", 1, 0.5, 0.3)
+        DEFAULT_CHAT_FRAME:AddMessage("Aegis: no group members found.", 1, 0.5, 0.3)
         return
     end
 
@@ -165,7 +165,7 @@ end
 -- options panel (right-click): addon-wide, non class-specific options
 -- ============================================================
 local function buildPanel()
-    local p = CreateFrame("Frame", "AutoRotaMinimapPanel", UIParent)
+    local p = CreateFrame("Frame", "Aegis_SBR_MinimapPanel", UIParent)
     p:SetWidth(232); p:SetHeight(214)
     p:SetFrameStrata("DIALOG")
     p:SetBackdrop({
@@ -182,14 +182,14 @@ local function buildPanel()
 
     local title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", 12, -10)
-    title:SetText("AutoRota options")
+    title:SetText("Aegis SBR options")
 
     local modeLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     modeLabel:SetPoint("TOPLEFT", 12, -30)
     modeLabel:SetText("Targeting")
 
     -- Three mutually exclusive radios. Each one, on click, just writes its
-    -- own mode to AutoRotaDB and re-syncs all three from that single source
+    -- own mode to AegisDB and re-syncs all three from that single source
     -- of truth (RefreshPanel), rather than manually unchecking siblings.
     local function makeRadio(yOff, text, mode)
         local r = CreateFrame("CheckButton", nil, p, "UIRadioButtonTemplate")
@@ -200,7 +200,7 @@ local function buildPanel()
         lbl:SetText(text)
         r.mode = mode
         r:SetScript("OnClick", function()
-            if AutoRotaDB then AutoRotaDB.targetMode = this.mode end
+            if AegisDB then AegisDB.targetMode = this.mode end
             AM:RefreshPanel()
         end)
         return r
@@ -212,15 +212,15 @@ local function buildPanel()
 
     -- Assist target: a name (typed or picked), matched to a live group unit
     -- and then to that unit's target by GUID every press - see RunAssist.
-    local edit = CreateFrame("EditBox", "AutoRotaAssistEdit", p, "InputBoxTemplate")
+    local edit = CreateFrame("EditBox", "Aegis_SBR_AssistEdit", p, "InputBoxTemplate")
     edit:SetWidth(112); edit:SetHeight(18)
     edit:SetAutoFocus(false)
     edit:SetPoint("LEFT", p.assistRadio, "RIGHT", 44, 0)
     edit:SetScript("OnEnterPressed", function()
         local txt = edit:GetText()
-        if AutoRotaDB then
-            AutoRotaDB.assistTarget = txt
-            if txt ~= "" then AutoRotaDB.targetMode = "assist" end
+        if AegisDB then
+            AegisDB.assistTarget = txt
+            if txt ~= "" then AegisDB.targetMode = "assist" end
         end
         AM:RefreshPanel()
         edit:ClearFocus()
@@ -255,9 +255,9 @@ local function buildPanel()
     pickBtn:SetScript("OnClick", function()
         showGroupPicker(pickBtn, function(name)
             p.assistEdit:SetText(name)
-            if AutoRotaDB then
-                AutoRotaDB.assistTarget = name
-                AutoRotaDB.targetMode = "assist"
+            if AegisDB then
+                AegisDB.assistTarget = name
+                AegisDB.targetMode = "assist"
             end
             AM:RefreshPanel()
         end)
@@ -275,21 +275,21 @@ local function buildPanel()
     cfg:SetText("Open rotation config")
     cfg:SetScript("OnClick", function()
         p:Hide()
-        if AutoRotaUI then AutoRotaUI:Toggle() end
+        if Aegis_SBR_UI then Aegis_SBR_UI:Toggle() end
     end)
 
     AM.panel = p
 end
 
--- Re-sync all three radios and the assist edit box from AutoRotaDB.
+-- Re-sync all three radios and the assist edit box from AegisDB.
 function AM:RefreshPanel()
     local p = self.panel
     if not p then return end
-    local mode = AutoRota and AutoRota:TargetMode() or "auto"
+    local mode = Aegis_SBR and Aegis_SBR:TargetMode() or "auto"
     p.autoRadio:SetChecked(mode == "auto")
     p.manualRadio:SetChecked(mode == "manual")
     p.assistRadio:SetChecked(mode == "assist")
-    p.assistEdit:SetText((AutoRotaDB and AutoRotaDB.assistTarget) or "")
+    p.assistEdit:SetText((AegisDB and AegisDB.assistTarget) or "")
 end
 
 function AM:TogglePanel()
@@ -305,7 +305,7 @@ end
 -- the button
 -- ============================================================
 local function buildButton()
-    local b = CreateFrame("Button", "AutoRotaMinimapButton", Minimap)
+    local b = CreateFrame("Button", "Aegis_SBR_MinimapButton", Minimap)
     b:SetWidth(31); b:SetHeight(31)
     b:SetFrameStrata("MEDIUM")
     b:SetFrameLevel(8)
@@ -334,10 +334,10 @@ local function buildButton()
             AM:TogglePanel()
         else
             if AM.panel then AM.panel:Hide() end
-            if AutoRotaUI then
-                AutoRotaUI:Toggle()
+            if Aegis_SBR_UI then
+                Aegis_SBR_UI:Toggle()
             else
-                AutoRota:Throttle("UI framework not loaded. AutoRota_UI.lua is missing or mislabeled in your AutoRota folder, reinstall the files.")
+                Aegis_SBR:Throttle("UI framework not loaded. Aegis_SBR_UI.lua is missing or mislabeled in your Aegis_SBR folder, reinstall the files.")
             end
         end
     end)
@@ -347,25 +347,25 @@ local function buildButton()
 
     b:SetScript("OnEnter", function()
         GameTooltip:SetOwner(this, "ANCHOR_LEFT")
-        GameTooltip:SetText("AutoRota", 1, 0.82, 0)
+        GameTooltip:SetText("Aegis SBR", 1, 0.82, 0)
         GameTooltip:AddLine("Left-click: configure rotation.", 1, 1, 1)
         GameTooltip:AddLine("Right-click: addon options.", 1, 1, 1)
         GameTooltip:AddLine("Drag: move around the minimap.", 0.7, 0.7, 0.7)
-        GameTooltip:AddLine("/armap or /ar minimap to hide or show.", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("/sbrmap or /sbr minimap to hide or show.", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
--- Show or hide the button, remembered across sessions. Called by /ar minimap
--- (through the core) and by /armap. Returns the new hidden state.
+-- Show or hide the button, remembered across sessions. Called by /sbr
+-- minimap (through the core) and by /sbrmap. Returns the new hidden state.
 function AM:ToggleShown()
-    if type(AutoRotaDB) ~= "table" then AutoRotaDB = {} end
-    AutoRotaDB.minimapHide = not AutoRotaDB.minimapHide
+    if type(AegisDB) ~= "table" then AegisDB = {} end
+    AegisDB.minimapHide = not AegisDB.minimapHide
     if self.button then
-        if AutoRotaDB.minimapHide then self.button:Hide() else self.button:Show() end
+        if AegisDB.minimapHide then self.button:Hide() else self.button:Show() end
     end
-    return AutoRotaDB.minimapHide
+    return AegisDB.minimapHide
 end
 
 -- ============================================================
@@ -373,11 +373,11 @@ end
 -- ADDON_LOADED and PLAYER_LOGIN so it is robust to reload timing.
 -- ============================================================
 local function init()
-    if type(AutoRotaDB) ~= "table" then AutoRotaDB = {} end
-    if AutoRotaDB.minimapAngle == nil then AutoRotaDB.minimapAngle = DEFAULT_ANGLE end
+    if type(AegisDB) ~= "table" then AegisDB = {} end
+    if AegisDB.minimapAngle == nil then AegisDB.minimapAngle = DEFAULT_ANGLE end
     applyClassIcon()
     placeButton()
-    if AutoRotaDB.minimapHide then AM.button:Hide() else AM.button:Show() end
+    if AegisDB.minimapHide then AM.button:Hide() else AM.button:Show() end
 end
 
 local ev = CreateFrame("Frame")
@@ -385,7 +385,7 @@ ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:SetScript("OnEvent", function()
-    if event == "ADDON_LOADED" and arg1 ~= "AutoRota" then return end
+    if event == "ADDON_LOADED" and arg1 ~= "Aegis_SBR" then return end
     init()
 end)
 
@@ -396,12 +396,14 @@ end)
 buildButton()
 buildPanel()
 placeButton()
-if not (AutoRotaDB and AutoRotaDB.minimapHide) then AM.button:Show() end
+if not (AegisDB and AegisDB.minimapHide) then AM.button:Show() end
 
--- /armap toggles visibility (kept as a convenience alongside /ar minimap).
-SLASH_AUTOROTAMAP1 = "/armap"
-SlashCmdList["AUTOROTAMAP"] = function()
+-- /sbrmap toggles visibility (kept as a convenience alongside /sbr minimap;
+-- /armap stays as a legacy alias on the same handler key).
+SLASH_AEGIS_SBR_MAP1 = "/sbrmap"
+SLASH_AEGIS_SBR_MAP2 = "/armap"
+SlashCmdList["AEGIS_SBR_MAP"] = function()
     local hidden = AM:ToggleShown()
-    DEFAULT_CHAT_FRAME:AddMessage("AutoRota: minimap button "
-        .. (hidden and "hidden (/armap to show)." or "shown."), 1, 0.8, 0)
+    DEFAULT_CHAT_FRAME:AddMessage("Aegis: minimap button "
+        .. (hidden and "hidden (/sbrmap to show)." or "shown."), 1, 0.8, 0)
 end

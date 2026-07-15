@@ -1,5 +1,5 @@
 -- ============================================================
--- Class_Paladin  -  paladin module for AutoRota
+-- Class_Paladin  -  paladin module for Aegis_SBR
 -- Turtle WoW 1.12 (SuperWoW). Roleless seal model.
 -- ============================================================
 -- Model:
@@ -14,12 +14,12 @@
 --  * Strikes are driven by the Holy Strike / Crusader Strike checkboxes.
 -- ============================================================
 
-local M = AutoRota:NewClassModule("PALADIN")
+local M = Aegis_SBR:NewClassModule("PALADIN")
 M.uiTitle = "Paladin"
 M.uiHeight = 820
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 
 -- Tunable buff renew thresholds for the strike buffs
 local HM_RENEW    = 7
@@ -37,7 +37,7 @@ local DOWNRANK = {
 }
 
 -- Talents that change what the strikes do (Turtle WoW). Exact talent names as
--- they appear in GetTalentInfo (verified via /ar talents):
+-- they appear in GetTalentInfo (verified via /sbr talents):
 --  * "Vengeful Strikes" (Retribution) is what makes Holy Strike apply the Holy
 --    Might Strength buff at all.
 --  * "Righteous Strikes" (Protection) makes Holy Strike a high-threat tank tool.
@@ -84,7 +84,7 @@ M.HS_MANA  = { 225, 335, 410, 485 }
 
 -- Auto-read the gear +healing bonus by scanning equipped-item tooltips. Cached,
 -- refreshed when equipment changes. A manual healPower above zero overrides it.
-local healScanTip = CreateFrame("GameTooltip", "AutoRotaHealScan", nil, "GameTooltipTemplate")
+local healScanTip = CreateFrame("GameTooltip", "Aegis_SBR_HealScan", nil, "GameTooltipTemplate")
 healScanTip:SetOwner(healScanTip, "ANCHOR_NONE")
 
 M.cachedHealBonus = nil
@@ -122,7 +122,7 @@ function M:GearHealBonus()
             healScanTip:ClearLines()
             healScanTip:SetInventoryItem("player", slot)
             for i = 1, healScanTip:NumLines() do
-                local fs = getglobal("AutoRotaHealScanTextLeft" .. i)
+                local fs = getglobal("Aegis_SBR_HealScanTextLeft" .. i)
                 local txt = fs and fs:GetText()
                 if txt then total = total + self:ParseHealBonus(txt) end
             end
@@ -187,7 +187,7 @@ M.spellAlias = {
     exorcism = "exorcism", exo = "exorcism",
 }
 
--- Optional /ar strike <what> aliases. The UI is the primary control; this is a
+-- Optional /sbr strike <what> aliases. The UI is the primary control; this is a
 -- thin convenience for macros. off/hs/cs set the two strike toggles; auto/tank
 -- set both toggles on and pick the both-on strategy.
 M.strikeCmdAlias = {
@@ -1003,7 +1003,7 @@ function M:Rotate(cfg)
     if not cfg.healMode and cfg.spells.holyShield and self:OwnCDReady("Holy Shield") then
         if self:Cast("Holy Shield") then return end
     end
-    -- 2b. Consecration leads AoE: when toggled on (checkbox or /ar aoe), cast it
+    -- 2b. Consecration leads AoE: when toggled on (checkbox or /sbr aoe), cast it
     -- on cooldown right after the strike so it is a primary AoE source rather
     -- than a leftover filler. Held during mana recovery. Ground-targeted, but a
     -- plain cast drops it at your feet on the usual SuperWoW/Nampower setup.
@@ -1034,7 +1034,7 @@ function M:Rotate(cfg)
 end
 
 function M:CmdSeal(name, slot, alias)
-    local cfg = name and AutoRotaDB.profiles[name]
+    local cfg = name and AegisDB.profiles[name]
     if not cfg then msgOut("profile not found.", 1, 0.5, 0.3); return end
     if slot ~= "debuff" and slot ~= "damage" then msgOut("slot must be debuff or damage.", 1, 0.5, 0.3); return end
     local seal = self.sealAlias[string.lower(alias or "")]
@@ -1044,7 +1044,7 @@ function M:CmdSeal(name, slot, alias)
 end
 
 function M:CmdSpell(name, alias, onoff)
-    local cfg = name and AutoRotaDB.profiles[name]
+    local cfg = name and AegisDB.profiles[name]
     if not cfg then msgOut("profile not found.", 1, 0.5, 0.3); return end
     local key = self.spellAlias[string.lower(alias or "")]
     if not key then msgOut("unknown spell alias.", 1, 0.5, 0.3); return end
@@ -1055,7 +1055,7 @@ end
 -- Quick AoE toggle: flips Consecration on the active profile, for binding to
 -- a key. There is no reliable enemy count on 1.12, so this stays manual.
 function M:CmdAoe()
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     cfg.spells.consecration = not cfg.spells.consecration
     msgOut("Consecration " .. (cfg.spells.consecration and "on (AoE)" or "off") .. ".")
@@ -1065,10 +1065,10 @@ end
 -- hs = only Holy Strike, cs = only Crusader Strike, auto = both on + Auto DPS,
 -- tank = both on + Tank (block, then aggro). The UI is the primary control.
 function M:CmdStrike(alias)
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     local what = self.strikeCmdAlias[string.lower(alias or "")]
-    if not what then msgOut("usage: /ar strike off|hs|cs|auto|tank", 1, 0.5, 0.3); return end
+    if not what then msgOut("usage: /sbr strike off|hs|cs|auto|tank", 1, 0.5, 0.3); return end
     cfg.spells = cfg.spells or {}
     if what == "off" then
         cfg.spells.holyStrike, cfg.spells.crusaderStrike = false, false
@@ -1096,36 +1096,36 @@ function M:HandleCommand(cmd, t)
     if cmd == "aoe"    then self:CmdAoe(); return true end
     if cmd == "strike" then self:CmdStrike(t[2]); return true end
     if cmd == "heal" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local a = string.lower(t[2] or "")
         if a == "on" then cfg.healMode = true; msgOut("heal mode on.")
         elseif a == "off" then cfg.healMode = false; msgOut("heal mode off.")
-        else msgOut("heal mode is " .. (cfg.healMode and "on" or "off") .. ". Use /ar heal on or off.") end
+        else msgOut("heal mode is " .. (cfg.healMode and "on" or "off") .. ". Use /sbr heal on or off.") end
         return true
     end
     if cmd == "healat" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local v = tonumber(t[2])
         if v and v >= 1 and v <= 100 then cfg.healThreshold = v; msgOut("healing members below " .. v .. "% health.")
-        else msgOut("usage: /ar healat <1-100>.", 1, 0.5, 0.3) end
+        else msgOut("usage: /sbr healat <1-100>.", 1, 0.5, 0.3) end
         return true
     end
     if cmd == "hsat" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local v = tonumber(t[2])
         if v and v >= 1 and v <= 100 then cfg.holyShockPct = v; msgOut("Holy Shock emergency below " .. v .. "% health.")
-        else msgOut("usage: /ar hsat <1-100>.", 1, 0.5, 0.3) end
+        else msgOut("usage: /sbr hsat <1-100>.", 1, 0.5, 0.3) end
         return true
     end
     if cmd == "healpower" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local v = tonumber(t[2])
         if v and v >= 0 then cfg.healPower = v; msgOut("healing bonus set to " .. v .. " (0 = auto from gear).")
-        else msgOut("usage: /ar healpower <number>.", 1, 0.5, 0.3) end
+        else msgOut("usage: /sbr healpower <number>.", 1, 0.5, 0.3) end
         return true
     end
     return false

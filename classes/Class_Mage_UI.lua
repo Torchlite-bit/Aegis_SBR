@@ -1,7 +1,7 @@
 -- ============================================================
--- Class_Mage_UI  -  mage window body for AutoRota
+-- Class_Mage_UI  -  mage window body for Aegis_SBR
 -- Builds and binds only the mage specific controls. The shared
--- window shell and profile management live in AutoRota_UI.lua.
+-- window shell and profile management live in Aegis_SBR_UI.lua.
 -- ============================================================
 -- This module opts into the scroll layout (M.useScrollLayout): the shell hosts
 -- the body in a compact scroll frame and hands BuildBody the scroll child, and
@@ -11,7 +11,7 @@
 -- lives in the tooltips, keeping labels short for the narrower window.
 -- ============================================================
 
-local M = AutoRota.classes.MAGE
+local M = Aegis_SBR.classes.MAGE
 M.useScrollLayout = true
 M.specTabs = {
     field = "mode", default = "frost",
@@ -56,7 +56,7 @@ function M:BuildBody(ui, parent)
     L:Finish()
 
     -- Tooltips carry the detail that used to be in the labels.
-    ui:Tip(self.aoeRow.cb, "AoE mode", "Frost Nova to freeze, Cone of Cold to snare, Icicles, then Arcane Explosion.", "Blizzard / Flamestrike are not auto-cast (they need a ground click). Also /ar aoe.")
+    ui:Tip(self.aoeRow.cb, "AoE mode", "Frost Nova to freeze, Cone of Cold to snare, Icicles, then Arcane Explosion.", "Blizzard / Flamestrike are not auto-cast (they need a ground click). Also /sbr aoe.")
     ui:Tip(self.useWandRow.cb, "Use wand", "On: finish low mobs and regen mana with the wand (the 'nuke then wand' rule). Off: never wand. With no wand equipped it just keeps casting.")
     ui:Tip(self.manaShieldRow.cb, "Mana Shield", "Optional. Keeps Mana Shield up (drains mana for damage), never stacked under Ice Barrier.")
     ui:Tip(self.frostNovaRow.cb, "Frost Nova", "Root the mob when it reaches melee so you can step back and wand - the leveling kite.")
@@ -120,9 +120,9 @@ end
 
 -- Open the shared window for this class.
 M.OpenConfig = function(mod)
-    if not AutoRotaUI then
-        AutoRota:Throttle("UI not ready yet, try again in a moment.")
+    if not Aegis_SBR_UI then
+        Aegis_SBR:Throttle("UI not ready yet, try again in a moment.")
         return
     end
-    AutoRotaUI:Toggle()
+    Aegis_SBR_UI:Toggle()
 end

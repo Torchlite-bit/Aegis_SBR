@@ -1,11 +1,11 @@
 -- ============================================================
--- Class_Hunter_UI  -  hunter window body for AutoRota
+-- Class_Hunter_UI  -  hunter window body for Aegis_SBR
 -- Builds and binds only the hunter specific controls. The shared
--- window shell and profile management live in AutoRota_UI.lua.
+-- window shell and profile management live in Aegis_SBR_UI.lua.
 -- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
-local M = AutoRota.classes.HUNTER
+local M = Aegis_SBR.classes.HUNTER
 M.useScrollLayout = true
 M.specTabs = {
     field = "mode", default = "ranged",
@@ -74,13 +74,13 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.aimedRow.cb, "Aimed Shot", "Only fired when Lock and Load procs (cast time drop + line cleave), so it never clips Auto Shot.")
     ui:Tip(self.aimedProcRow.cb, "Aimed only on Lock and Load", "Recommended on. Turn off to also hard-cast Aimed Shot on cooldown (will clip Auto Shot).")
     ui:Tip(self.aimedOpenerRow.cb, "Aimed Shot opener", "Open the pull with a hard-cast Aimed Shot before combat, then never clip Auto Shot during the fight.")
-    ui:Tip(self.volleyRow.cb, "Volley", "When AoE mode is on (/ar aoe), Volley leads then Multi-Shot fills.")
+    ui:Tip(self.volleyRow.cb, "Volley", "When AoE mode is on (/sbr aoe), Volley leads then Multi-Shot fills.")
     ui:Tip(self.trapRow.cb, "Immolation Trap", "Survival: dropped on cooldown. Patch 1.18.1 allows traps in combat.")
     ui:Tip(self.raptorRow.cb, "Raptor Strike", "Melee on-next-swing strike, used on cooldown in melee mode.")
     ui:Tip(self.mongooseRow.cb, "Mongoose Bite", "Reactive: fired in the window after you dodge an enemy attack.")
     ui:Tip(self.wingRow.cb, "Wing Clip", "Optional melee slow / kite tool.")
     ui:Tip(self.lacerateRow.cb, "Lacerate", "Melee bleed, kept rolling on the target in melee mode.")
-    ui:Tip(self.carveRow.cb, "Carve", "Melee AoE strike. Leads the melee priority when AoE mode is on (/ar aoe).")
+    ui:Tip(self.carveRow.cb, "Carve", "Melee AoE strike. Leads the melee priority when AoE mode is on (/sbr aoe).")
     ui:Tip(self.aspectRow.cb, "Combat aspect", "Keeps Aspect of the Hawk up in ranged mode, Aspect of the Wolf in melee mode.")
     ui:Tip(self.manaAspRow.cb, "Mana aspect swap", "Swap to the mana-regenerating aspect below the slider value, then back to your combat aspect once mana recovers.")
     ui:Tip(self.manaAspRow.slider, "Swap below", "Mana percent under which the mana aspect is used.")
@@ -160,9 +160,9 @@ end
 
 -- Open the shared window for this class.
 M.OpenConfig = function(mod)
-    if not AutoRotaUI then
-        AutoRota:Throttle("UI framework not loaded. AutoRota_UI.lua is missing or mislabeled in your AutoRota folder, reinstall the files.")
+    if not Aegis_SBR_UI then
+        Aegis_SBR:Throttle("UI framework not loaded. Aegis_SBR_UI.lua is missing or mislabeled in your Aegis_SBR folder, reinstall the files.")
         return
     end
-    AutoRotaUI:Toggle()
+    Aegis_SBR_UI:Toggle()
 end

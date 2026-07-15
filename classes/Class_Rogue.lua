@@ -1,5 +1,5 @@
 -- ============================================================
--- Class_Rogue  -  rogue module for AutoRota
+-- Class_Rogue  -  rogue module for Aegis_SBR
 -- Turtle WoW 1.12 (SuperWoW). Assassination flavoured, configurable.
 -- ============================================================
 -- Model:
@@ -14,12 +14,12 @@
 --    automatically against elite and boss targets.
 -- ============================================================
 
-local M = AutoRota:NewClassModule("ROGUE")
+local M = Aegis_SBR:NewClassModule("ROGUE")
 M.uiTitle = "Rogue"
 M.uiHeight = 430
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 
 -- Buff duration table (seconds, index = combo points 1-5).
 -- Defaults assume the Slice and Dice duration talent is fully talented
@@ -228,12 +228,12 @@ end
 function M:HandleCommand(cmd, t)
     if cmd == "cp" then
         local n = tonumber(t[2])
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if cfg and n and n >= 1 and n <= 5 then
             cfg.cpFinish = n
             msgOut("finisher combo points = " .. n .. ".")
         else
-            msgOut("usage: /ar cp <1-5> (sets the active profile)", 1, 0.5, 0.3)
+            msgOut("usage: /sbr cp <1-5> (sets the active profile)", 1, 0.5, 0.3)
         end
         return true
     end

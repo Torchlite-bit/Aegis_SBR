@@ -5,7 +5,17 @@ cut. Items marked FUTURE are deliberately deferred.
 
 ---
 
-## Phase 0 — Rebrand AutoRota → Aegis_SBR  (FIRST, do this now)
+## Phase 0 — Rebrand AutoRota → Aegis_SBR
+
+> **STATUS: DONE — shipped as v0.14.0** (pending in-game verification: profiles survive
+> the `AutoRotaDB` → `AegisDB` migration, `/sbr` + legacy `/ar` both work, zero load
+> errors). Notes on the implementation: the saved variables are **per-character**, so the
+> toc line is `## SavedVariablesPerCharacter: AegisDB, AutoRotaDB` (not account-wide
+> `## SavedVariables:` as sketched in step 5 — same idea, correct storage kind). The core
+> global table is **`Aegis_SBR`** (user's pick). Step 6's logo STUB is wired (falls back
+> to the sigil); the **logo TGA itself is still to come**, as is the deprecation tail:
+> drop `AutoRotaDB` from the toc + clear it on PLAYER_LOGOUT ~2-3 versions from now, and
+> later remove `SLASH_AEGIS_SBR3` (`/ar`) per the gradual-break plan below.
 
 Goal: rename everything to the `Aegis_SBR` prefix, migrate the slash command and saved
 variables without breaking existing user profiles, and add the logo. Low-risk but

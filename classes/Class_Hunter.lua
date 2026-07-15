@@ -1,5 +1,5 @@
 -- ============================================================
--- Class_Hunter  -  hunter module for AutoRota
+-- Class_Hunter  -  hunter module for Aegis_SBR
 -- Turtle WoW 1.18.1 (SuperWoW). Reworked for Turtle's hunter changes.
 -- ============================================================
 -- Turtle 1.18.1 reshaped the hunter heavily, so this module is built around
@@ -26,14 +26,14 @@
 -- the server does not have simply no-ops instead of breaking the chain.
 -- ============================================================
 
-local M = AutoRota:NewClassModule("HUNTER")
+local M = Aegis_SBR:NewClassModule("HUNTER")
 M.uiTitle = "Hunter"
 M.uiHeight = 850
 M.meleeAutoAttack = false   -- managed here: Auto Shot (ranged) or Attack (melee)
 M.autoAcquireTarget = false -- a ranged class should not auto-pull random mobs; pick targets
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 local floor = math.floor
 
 local MEND_PET_CD = 12   -- Mend Pet HoT lasts ~15s, refresh a little early
@@ -614,7 +614,7 @@ function M:Rotate(cfg)
     --    backbone); melee starts swings. Starting Auto Shot is its own press
     --    (vanilla cannot also cast in the same frame), so return when it fires.
     if melee then
-        AutoRota:EnsureAutoAttack()
+        Aegis_SBR:EnsureAutoAttack()
     else
         if self:EnsureAutoShot() then return end
     end
@@ -751,32 +751,32 @@ end
 -- Class specific slash subcommands, dispatched from the core
 -- ============================================================
 function M:CmdMode(alias)
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     local mode = self.modeAlias[string.lower(alias or "")]
-    if not mode then msgOut("usage: /ar mode ranged|melee|auto", 1, 0.5, 0.3); return end
+    if not mode then msgOut("usage: /sbr mode ranged|melee|auto", 1, 0.5, 0.3); return end
     cfg.mode = mode
     msgOut("playstyle = " .. mode .. ".")
 end
 
 function M:CmdSting(alias)
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     local sting = self.stingAlias[string.lower(alias or "")]
-    if sting == nil then msgOut("usage: /ar sting serpent|scorpid|viper|none", 1, 0.5, 0.3); return end
+    if sting == nil then msgOut("usage: /sbr sting serpent|scorpid|viper|none", 1, 0.5, 0.3); return end
     cfg.sting = sting
     msgOut("sting = " .. ((sting == "") and "(none)" or sting) .. ".")
 end
 
 function M:CmdAoe()
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     cfg.aoeMode = not cfg.aoeMode
     msgOut("AoE mode " .. (cfg.aoeMode and "on (Volley + Multi-Shot)" or "off (single target)") .. ".")
 end
 
 function M:CmdCd(mode)
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     mode = string.lower(mode or "")
     if mode == "on" or mode == "always" then
@@ -789,12 +789,12 @@ function M:CmdCd(mode)
         cfg.popCDs = false; cfg.autoCDElite = false
         msgOut("cooldowns: manual (off).")
     else
-        msgOut("usage: /ar cd on | elite | off", 1, 0.5, 0.3)
+        msgOut("usage: /sbr cd on | elite | off", 1, 0.5, 0.3)
     end
 end
 
 function M:CmdSpell(alias, onoff)
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     local key = self.spellAlias[string.lower(alias or "")]
     if not key then msgOut("unknown spell alias.", 1, 0.5, 0.3); return end

@@ -1,13 +1,13 @@
 ## Interface: 11200
-## Title: AutoRota
-## Notes: Configurable one-button rotation, multi class (Turtle WoW 1.18.1 (1.12 client) / SuperWoW)
+## Title: Aegis: Single Button Rotation
+## Notes: Configurable one-button rotation, multi class (Turtle WoW 1.18.1 (1.12 client) / SuperWoW). Formerly AutoRota.
 ## Author: Mercaius & Subtilizer (Torchlite)
-## Version: 0.13.14b
-## SavedVariablesPerCharacter: AutoRotaDB
+## Version: 0.14.0
+## SavedVariablesPerCharacter: AegisDB, AutoRotaDB
 
-AutoRota.lua
-AutoRota_UI.lua
-AutoRota_Minimap.lua
+Aegis_SBR.lua
+Aegis_SBR_UI.lua
+Aegis_SBR_Minimap.lua
 classes\Class_Druid.lua
 classes\Class_Druid_UI.lua
 classes\Class_Hunter.lua

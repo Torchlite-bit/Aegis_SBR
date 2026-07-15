@@ -22,25 +22,32 @@ Author tag: "Mercaius & Subtilizer (Torchlite)".
    class. Do not "fix" rotations proactively, even if you're confident. Non-rotation work
    (rebrand, UI, tooling, bug fixes that don't alter priority) does not need this gate, but
    anything that changes WHICH ability fires or in WHAT ORDER does.
-2. **The #1 priority is the rebrand to Aegis_SBR** (Phase 0) — commands and file names.
-   Do it first, as its own verified batch, before any rotation audit.
+2. **The Phase 0 rebrand to Aegis_SBR is DONE (v0.14.0)** — folder/.toc/files renamed,
+   `/sbr` primary (+ `/aegis`, legacy `/ar`), `AutoRotaDB` → `AegisDB` migration shim in
+   place. Do not reintroduce the old names; keep the shim + toc backup line until the
+   deprecation window closes (see `docs/roadmap.md` Phase 0).
 3. Run `python3 scripts/verify.py --all` after every edit; never hand off a failing file.
 
-## Current State / First Task
-The codebase currently still uses the **AutoRota** name internally (files, `/ar` slash
-command, `AutoRotaDB` saved variable). **The first task this session is the rebrand to
-`Aegis_SBR`** — see `docs/roadmap.md` Phase 0 for the exact, ordered steps. Do the rebrand
-as its own verified batch and cut a version before starting rotation work.
+## Current State / Next Task
+The rebrand shipped as **v0.14.0** (pending the user's in-game verification: profile
+migration, `/sbr` + `/ar`, zero load errors). The addon is **Aegis_SBR** throughout:
+core global `Aegis_SBR`, UI `Aegis_SBR_UI`, layout `Aegis_SBR_Layout`, minimap
+`Aegis_SBR_Minimap`, frames `Aegis_SBR_*`/`AegisUI_*`, saved variable `AegisDB` (old
+`AutoRotaDB` still toc-listed as a rollback backup — drop it + clear on PLAYER_LOGOUT a
+few versions from now). **The next task is the Phase 1 rotation-correctness
+audit-and-report** (see `docs/roadmap.md`) — a written discrepancy report per class,
+NO rotation edits without sign-off (Critical Rule #1).
 
 **Logos:** the user will provide raw logo image files LATER. They need converting to TGA
 (power-of-two dimensions, 32-bit, GIMP/uncompressed export — see `docs/roadmap.md` Phase 0
-step 6 and `docs/architecture.md`). Until the files arrive, wire the header to reference
-`Interface\\AddOns\\Aegis_SBR\\logo` but keep it graceful if the texture is absent (stub /
-leave the existing sigil in place); don't block the rebrand on the logo.
+step 6 and `docs/architecture.md`). The header stub is already wired: it tries
+`Interface\\AddOns\\Aegis_SBR\\logo` and falls back to the sigil + wordmark while the
+file is absent (1.12 `SetTexture` returns nil for a missing file). Drop the TGA in the
+addon root as `logo.tga` and do a **full relog** to see it.
 
 All 9 class panels use a unified single-row config layout; all four healer specs have
 config panels; a Shaman totem system maintains totems across every spec via SuperWoW's
-`UNIT_CASTEVENT`. The most recent pre-rebrand version was **0.13.12b**.
+`UNIT_CASTEVENT`. Current version: **0.14.0**.
 
 ## Tech Stack / Hard Constraints (WHAT — read carefully, these bite)
 - **Language: Lua 5.0** (Turtle 1.12 client). Non-negotiable:
@@ -147,3 +154,10 @@ calculators block automated access.
   the code. Don't introduce new dependencies. Don't refactor unrelated code in a feature
   change. When you fix a class of bug, add a one-line note to this file so it isn't
   relearned.
+- **Lessons already learned (don't relearn):**
+  - `verify.py`'s ordering audit only flags a local defined past the calling body's END —
+    a function's own inner locals (incl. closure captures) are legal, don't "fix" them
+    (fixed 0.14.0; three historical false positives were exactly this).
+  - When scripting bulk renames, run mechanical sweeps BEFORE inserting text that
+    intentionally mentions the old name (migration shims, "formerly X" notes, legacy-alias
+    comments) — or the sweep eats your own insert.

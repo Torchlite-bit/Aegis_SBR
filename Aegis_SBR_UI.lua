@@ -1,14 +1,14 @@
 -- ============================================================
--- AutoRota_UI  -  shared configuration window framework
+-- Aegis_SBR_UI  -  shared configuration window framework
 -- Turtle WoW 1.12 frame API. Builds the window shell and profile
 -- management, then delegates the class specific body to the active
 -- module via M:BuildBody(ui, frame) and M:RefreshBody(ui, buf).
 -- ============================================================
 
-AutoRotaUI = { built = false, loading = false, editing = nil, buf = nil, openDD = nil }
+Aegis_SBR_UI = { built = false, loading = false, editing = nil, buf = nil, openDD = nil }
 
-local CORE = AutoRota
-local function MOD() return AutoRota.active end
+local CORE = Aegis_SBR
+local function MOD() return Aegis_SBR.active end
 
 
 local COL = {
@@ -29,8 +29,8 @@ local PAL = {
     ink   = {0.91,  0.90,  0.88},         -- primary text
     mute  = {0.55,  0.56,  0.60},         -- secondary text
 }
-local FONT_REG  = "Interface\\AddOns\\AutoRota\\Fonts\\PTSansNarrow.ttf"
-local FONT_BOLD = "Interface\\AddOns\\AutoRota\\Fonts\\PTSansNarrow-Bold.ttf"
+local FONT_REG  = "Interface\\AddOns\\Aegis_SBR\\Fonts\\PTSansNarrow.ttf"
+local FONT_BOLD = "Interface\\AddOns\\Aegis_SBR\\Fonts\\PTSansNarrow-Bold.ttf"
 local FONT_FALLBACK = "Fonts\\FRIZQT__.TTF"
 
 -- Apply a bundled font; if the file is missing/unloadable the set silently
@@ -120,7 +120,7 @@ local function SkinButton(b, style)
     end
     b:SetNormalTexture(""); b:SetPushedTexture(""); b:SetHighlightTexture("")
     if b.SetDisabledTexture then b:SetDisabledTexture("") end
-    local BTN = "Interface\\AddOns\\AutoRota\\Icons\\Btn"
+    local BTN = "Interface\\AddOns\\Aegis_SBR\\Icons\\Btn"
     local bg, outer
     local txtCol
     if style == "accent" then
@@ -187,7 +187,7 @@ local function SkinClose(b, glyph)
     b:SetNormalTexture(""); b:SetPushedTexture(""); b:SetHighlightTexture("")
     if b.SetDisabledTexture then b:SetDisabledTexture("") end
     b:SetWidth(20); b:SetHeight(20)
-    local SQ = "Interface\\AddOns\\AutoRota\\Icons\\RoundSq"
+    local SQ = "Interface\\AddOns\\Aegis_SBR\\Icons\\RoundSq"
     local outer = b:CreateTexture(nil, "BACKGROUND")
     outer:SetTexture(SQ); outer:SetVertexColor(PAL.line[1], PAL.line[2], PAL.line[3])
     outer:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0); outer:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
@@ -216,7 +216,7 @@ local function PillSkin(b)
     b.arSkinned = true
     b:SetNormalTexture(""); b:SetPushedTexture(""); b:SetHighlightTexture("")
     if b.SetDisabledTexture then b:SetDisabledTexture("") end
-    local PILL = "Interface\\AddOns\\AutoRota\\Icons\\Pill"
+    local PILL = "Interface\\AddOns\\Aegis_SBR\\Icons\\Pill"
     local outer = b:CreateTexture(nil, "BACKGROUND")
     outer:SetTexture(PILL); outer:SetVertexColor(PAL.line[1], PAL.line[2], PAL.line[3])
     outer:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0); outer:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0)
@@ -300,7 +300,7 @@ end
 
 -- Flat 1px separator at a given y offset from the frame top (palette line
 -- colour). Section headers no longer use this - cards separate them - but it
--- stays available for class bodies via AutoRotaUI:Divider.
+-- stays available for class bodies via Aegis_SBR_UI:Divider.
 local function divider(parent, y)
     local t = parent:CreateTexture(nil, "ARTWORK")
     t:SetTexture(PAL.line[1], PAL.line[2], PAL.line[3], 0.9)
@@ -310,24 +310,24 @@ local function divider(parent, y)
 end
 
 -- Wrappers so class body files (separate files) can use the framework helpers.
-AutoRotaUI.COL = COL
-function AutoRotaUI:FS(parent, font, text) return FS(parent, font, text) end
-function AutoRotaUI:Color(fs, c) color(fs, c) end
-function AutoRotaUI:Tip(frame, title, l1, l2) Tip(frame, title, l1, l2) end
-function AutoRotaUI:Divider(parent, y) divider(parent, y) end
+Aegis_SBR_UI.COL = COL
+function Aegis_SBR_UI:FS(parent, font, text) return FS(parent, font, text) end
+function Aegis_SBR_UI:Color(fs, c) color(fs, c) end
+function Aegis_SBR_UI:Tip(frame, title, l1, l2) Tip(frame, title, l1, l2) end
+function Aegis_SBR_UI:Divider(parent, y) divider(parent, y) end
 
 
 -- ------------------------------------------------------------
 -- custom dropdown
 -- ------------------------------------------------------------
-function AutoRotaUI:CreateDropdown(uniqueName, parent, width, onSelect, style)
-    local b = CreateFrame("Button", "ARUI_DD_" .. uniqueName, parent, "UIPanelButtonTemplate")
+function Aegis_SBR_UI:CreateDropdown(uniqueName, parent, width, onSelect, style)
+    local b = CreateFrame("Button", "AegisUI_DD_" .. uniqueName, parent, "UIPanelButtonTemplate")
     b:SetWidth(width); b:SetHeight(22)
     b.onSelect = onSelect; b.options = {}; b.rows = {}
     if style == "pill" then PillSkin(b) else SkinButton(b, "dd") end
     -- Parent the popup to the window (not the button) so a body scroll frame
     -- cannot clip it; it is still anchored under the button below.
-    local list = CreateFrame("Frame", "ARUI_DD_" .. uniqueName .. "_List", self.frame or parent)
+    local list = CreateFrame("Frame", "AegisUI_DD_" .. uniqueName .. "_List", self.frame or parent)
     list:SetBackdrop(LIST_BACKDROP)
     list:SetBackdropColor(PAL.panel[1], PAL.panel[2], PAL.panel[3], 0.98)
     list:SetBackdropBorderColor(PAL.line[1], PAL.line[2], PAL.line[3], 1)
@@ -335,17 +335,17 @@ function AutoRotaUI:CreateDropdown(uniqueName, parent, width, onSelect, style)
     list:SetPoint("TOPLEFT", b, "BOTTOMLEFT", 0, 2); list:Hide()
     b.list = list
     b:SetScript("OnClick", function()
-        if list:IsShown() then AutoRotaUI:CloseDropdown(b) else AutoRotaUI:OpenDropdown(b) end
+        if list:IsShown() then Aegis_SBR_UI:CloseDropdown(b) else Aegis_SBR_UI:OpenDropdown(b) end
     end)
     return b
 end
 
-function AutoRotaUI:CloseDropdown(b)
+function Aegis_SBR_UI:CloseDropdown(b)
     b.list:Hide()
     if self.openDD == b then self.openDD = nil end
 end
 
-function AutoRotaUI:OpenDropdown(b)
+function Aegis_SBR_UI:OpenDropdown(b)
     if self.openDD and self.openDD ~= b then self:CloseDropdown(self.openDD) end
     self.openDD = b
     local n = table.getn(b.options)
@@ -367,7 +367,7 @@ function AutoRotaUI:OpenDropdown(b)
         row.txt:SetText(opt.label); row.value = opt.value
         row:SetScript("OnClick", function()
             b.value = row.value
-            AutoRotaUI:CloseDropdown(b)
+            Aegis_SBR_UI:CloseDropdown(b)
             if b.onSelect then b.onSelect(row.value) end
         end)
         row:Show()
@@ -376,7 +376,7 @@ function AutoRotaUI:OpenDropdown(b)
     b.list:SetHeight(8 + n * rowH); b.list:Raise(); b.list:Show()
 end
 
-function AutoRotaUI:SetDropdown(b, options, value, text, c)
+function Aegis_SBR_UI:SetDropdown(b, options, value, text, c)
     b.options = options; b.value = value; b:SetText(text)
     local fs = b:GetFontString()
     if fs and c then color(fs, c) end
@@ -385,15 +385,15 @@ end
 -- ------------------------------------------------------------
 -- checkbox
 -- ------------------------------------------------------------
-function AutoRotaUI:CreateCheck(uniqueName, parent, labelText, spellName, onClick)
-    local cb = CreateFrame("CheckButton", "ARUI_CB_" .. uniqueName, parent, "UICheckButtonTemplate")
+function Aegis_SBR_UI:CreateCheck(uniqueName, parent, labelText, spellName, onClick)
+    local cb = CreateFrame("CheckButton", "AegisUI_CB_" .. uniqueName, parent, "UICheckButtonTemplate")
     cb:SetWidth(30); cb:SetHeight(16)
     -- skin: toggle-switch art from Icons\. The 1.12 client's CheckButton
     -- ignores file paths on SetCheckedTexture and the disabled variants (only
     -- SetNormalTexture takes a path), so for those slots we grab the
     -- template's texture OBJECTS and repoint their files instead. The ON pill
     -- ships white and is tinted to the class colour; OFF ships in final greys.
-    cb:SetNormalTexture("Interface\\AddOns\\AutoRota\\Icons\\ToggleOff")
+    cb:SetNormalTexture("Interface\\AddOns\\Aegis_SBR\\Icons\\ToggleOff")
     cb:SetPushedTexture("")
     local a = classColor()
     local function repoint(tex, file, r, g, b)
@@ -402,20 +402,20 @@ function AutoRotaUI:CreateCheck(uniqueName, parent, labelText, spellName, onClic
         if r then tex:SetVertexColor(r, g, b) else tex:SetVertexColor(1, 1, 1) end
     end
     repoint(cb.GetCheckedTexture and cb:GetCheckedTexture(),
-        "Interface\\AddOns\\AutoRota\\Icons\\ToggleOn", a[1], a[2], a[3])
+        "Interface\\AddOns\\Aegis_SBR\\Icons\\ToggleOn", a[1], a[2], a[3])
     repoint(cb.GetDisabledTexture and cb:GetDisabledTexture(),
-        "Interface\\AddOns\\AutoRota\\Icons\\ToggleOff")
+        "Interface\\AddOns\\Aegis_SBR\\Icons\\ToggleOff")
     repoint(cb.GetDisabledCheckedTexture and cb:GetDisabledCheckedTexture(),
-        "Interface\\AddOns\\AutoRota\\Icons\\ToggleOn", a[1] * 0.6, a[2] * 0.6, a[3] * 0.6)
+        "Interface\\AddOns\\Aegis_SBR\\Icons\\ToggleOn", a[1] * 0.6, a[2] * 0.6, a[3] * 0.6)
     local ht = cb.GetHighlightTexture and cb:GetHighlightTexture()
     if ht then
-        ht:SetTexture("Interface\\AddOns\\AutoRota\\Icons\\ToggleOn")
+        ht:SetTexture("Interface\\AddOns\\Aegis_SBR\\Icons\\ToggleOn")
         ht:SetBlendMode("ADD"); ht:SetAlpha(0.08)
     end
     local lab = FS(parent, "GameFontNormalSmall", labelText)
     lab:SetPoint("LEFT", cb, "RIGHT", 2, 0)
     cb:SetScript("OnClick", function()
-        if AutoRotaUI.loading then return end
+        if Aegis_SBR_UI.loading then return end
         if onClick then onClick(cb:GetChecked() and true or false) end
     end)
     return { cb = cb, label = lab, baseText = labelText, spellName = spellName }
@@ -425,7 +425,7 @@ end
 -- attached (per-call override, else the one given at creation), the label is
 -- greyed with "(not learned)" when unknown, or red when enabled-but-unknown.
 -- Every class body used to hand-roll this; now they all share it.
-function AutoRotaUI:BindCheck(item, on, spellName)
+function Aegis_SBR_UI:BindCheck(item, on, spellName)
     item.cb:SetChecked(on and true or false)
     item.cb:Enable()
     local name = spellName
@@ -447,7 +447,7 @@ function AutoRotaUI:BindCheck(item, on, spellName)
         sliderShown(true)
         return
     end
-    local known = AutoRota.active and AutoRota.active:KnowsSpell(name)
+    local known = Aegis_SBR.active and Aegis_SBR.active:KnowsSpell(name)
     if known then
         item.label:SetText(item.baseText); color(item.label, COL.white)
         sliderShown(true)
@@ -463,7 +463,7 @@ end
 -- Enable or grey out a slider in one call (mouse + alpha), so callers do not
 -- repeat the EnableMouse/SetAlpha pair. Used by the class config bodies to
 -- follow a checkbox's on/off and learned state.
-function AutoRotaUI:SliderEnable(slider, on)
+function Aegis_SBR_UI:SliderEnable(slider, on)
     if on then
         slider:EnableMouse(true);  slider:SetAlpha(1)
     else
@@ -476,7 +476,7 @@ end
 -- For compatibility the 4th argument may be the onChange function,
 -- in which case default percent options are used.
 -- ------------------------------------------------------------
-function AutoRotaUI:CreateSlider(uniqueName, parent, labelText, opts, onChange)
+function Aegis_SBR_UI:CreateSlider(uniqueName, parent, labelText, opts, onChange)
     if type(opts) == "function" then onChange = opts; opts = nil end
     opts = opts or {}
     local mn = opts.min or 0
@@ -484,7 +484,7 @@ function AutoRotaUI:CreateSlider(uniqueName, parent, labelText, opts, onChange)
     local stp = opts.step or 5
     local suffix = opts.suffix
     if suffix == nil then suffix = "%" end
-    local nm = "ARUI_SL_" .. uniqueName
+    local nm = "AegisUI_SL_" .. uniqueName
     local s = CreateFrame("Slider", nm, parent, "OptionsSliderTemplate")
     s:SetWidth(150); s:SetHeight(16)
     s:SetMinMaxValues(mn, mx); s:SetValueStep(stp)
@@ -498,7 +498,7 @@ function AutoRotaUI:CreateSlider(uniqueName, parent, labelText, opts, onChange)
     local fill = s:CreateTexture(nil, "BORDER")
     fill:SetTexture(acc[1], acc[2], acc[3], 0.9); fill:SetHeight(3)
     fill:SetPoint("LEFT", s, "LEFT", 2, 0); fill:SetWidth(1)
-    s:SetThumbTexture("Interface\\AddOns\\AutoRota\\Icons\\SliderThumb")
+    s:SetThumbTexture("Interface\\AddOns\\Aegis_SBR\\Icons\\SliderThumb")
     local th = s:GetThumbTexture()
     if th then th:SetWidth(14); th:SetHeight(14); th:SetVertexColor(PAL.ink[1], PAL.ink[2], PAL.ink[3]) end
     local t = getglobal(nm .. "Text");  if t then t:SetText(labelText); SetFontSafe(t, false, 10); t:SetTextColor(PAL.ink[1], PAL.ink[2], PAL.ink[3]) end
@@ -516,7 +516,7 @@ function AutoRotaUI:CreateSlider(uniqueName, parent, labelText, opts, onChange)
             if fw < 1 then fw = 1 end
             fill:SetWidth(fw)
         end
-        if not AutoRotaUI.loading and onChange then onChange(v) end
+        if not Aegis_SBR_UI.loading and onChange then onChange(v) end
     end)
     return s
 end
@@ -544,8 +544,8 @@ local SCROLL = {
     LEFT = 16, WIDTH = 322, BAR_W = 16,
 }
 
-local AutoRotaLayout = {}
-AutoRotaLayout.__index = AutoRotaLayout
+local Aegis_SBR_Layout = {}
+Aegis_SBR_Layout.__index = Aegis_SBR_Layout
 
 -- A section groups the controls placed under one Header so a class body can dim
 -- the whole block (fade + lock) when its mode is not the active one. This is the
@@ -565,15 +565,15 @@ function Section:SetDimmed(d)
     for i = 1, table.getn(self.controls) do self.controls[i]:EnableMouse(not d) end
 end
 
-function AutoRotaUI:NewLayout(parent)
-    local L = setmetatable({ ui = self, p = parent, host = nil, y = 0, sections = {}, cur = nil }, AutoRotaLayout)
+function Aegis_SBR_UI:NewLayout(parent)
+    local L = setmetatable({ ui = self, p = parent, host = nil, y = 0, sections = {}, cur = nil }, Aegis_SBR_Layout)
     self.bodyLayout = L   -- Refresh reflows this when the spec tab changes
     return L
 end
 
 -- Record a region (and whether it can take mouse input) into the section being
 -- filled, if any. A no-op before the first Header, so shared controls never dim.
-function AutoRotaLayout:_rec(region, interactive)
+function Aegis_SBR_Layout:_rec(region, interactive)
     if self.cur then self.cur:_add(region, interactive) end
 end
 
@@ -581,7 +581,7 @@ end
 -- The row's controls light it up on hover (see wireHover); it renders on the
 -- BORDER layer - above the section card fill, below the controls - and never
 -- takes mouse input itself, so it cannot block a click.
-function AutoRotaLayout:_hl(h)
+function Aegis_SBR_Layout:_hl(h)
     local P = self.host or self.p
     local hl = P:CreateTexture(nil, "BORDER")
     hl:SetTexture(1, 1, 1, 0.05)
@@ -594,7 +594,7 @@ end
 -- Concept-style row separator: a soft hairline above every row except the
 -- first one under a section's eyebrow. Registered on the section so it dims
 -- with its card.
-function AutoRotaLayout:_sep()
+function Aegis_SBR_Layout:_sep()
     if self.y >= -LAY.HEADER_H then return end
     local P = self.host or self.p
     local t = P:CreateTexture(nil, "BORDER")
@@ -621,7 +621,7 @@ end
 -- registered on the section so SetDimmed fades the card with its controls.
 -- Close the section being filled: freeze its container height to the content
 -- laid out inside it. Reflow (below) stacks the visible containers.
-function AutoRotaLayout:_closeSection()
+function Aegis_SBR_Layout:_closeSection()
     if not self.cur or not self.cur.cont then return end
     self.cur.h = -self.y + 4
     self.cur.cont:SetHeight(self.cur.h)
@@ -634,7 +634,7 @@ end
 -- like { enhancement = true, tank = true }); tagged sections only exist on
 -- screen while their spec's tab is active - Reflow stacks whatever is shown.
 -- Returns the section handle for SetDimmed, as before.
-function AutoRotaLayout:Header(text, spec)
+function Aegis_SBR_Layout:Header(text, spec)
     self:_closeSection()
     local cont = CreateFrame("Frame", nil, self.p)
     cont:SetPoint("TOPLEFT", self.p, "TOPLEFT", 0, 0)
@@ -642,7 +642,7 @@ function AutoRotaLayout:Header(text, spec)
     cont:SetHeight(10)
     local sec = setmetatable({ regions = {}, controls = {}, dimmed = false,
         cont = cont, spec = spec }, Section)
-    NineSlice(cont, "Interface\\AddOns\\AutoRota\\Icons\\Card", 10,
+    NineSlice(cont, "Interface\\AddOns\\Aegis_SBR\\Icons\\Card", 10,
         function(t) sec:_add(t, false) end)
     local fs = FS(cont, "GameFontNormal", string.upper(text or ""))
     SetFontSafe(fs, true, 10)
@@ -657,7 +657,7 @@ function AutoRotaLayout:Header(text, spec)
 end
 
 -- A single full-width checkbox row. args mirror CreateCheck.
-function AutoRotaLayout:Check(key, label, spell, onChange)
+function Aegis_SBR_Layout:Check(key, label, spell, onChange)
     self:_sep()
     local hl = self:_hl(LAY.ROW_H)
     local P = self.host or self.p
@@ -671,7 +671,7 @@ function AutoRotaLayout:Check(key, label, spell, onChange)
 end
 
 -- Two checkboxes side by side; a/b are {key,label,spell,onChange}.
-function AutoRotaLayout:CheckPair(a, b)
+function Aegis_SBR_Layout:CheckPair(a, b)
     self:_sep()
     local hl = self:_hl(LAY.ROW_H)
     local P = self.host or self.p
@@ -690,7 +690,7 @@ end
 
 -- A full-width slider (label centred above the bar). opts is optional; a
 -- function passed in its place is treated as the onChange (CreateSlider shim).
-function AutoRotaLayout:Slider(key, label, opts, onChange)
+function Aegis_SBR_Layout:Slider(key, label, opts, onChange)
     self:_sep()
     local hl = self:_hl(LAY.SLIDER_H)
     local P = self.host or self.p
@@ -704,7 +704,7 @@ end
 
 -- Two sliders side by side; a/b are {key,label,onChange} or {key,label,opts,onChange}
 -- (a function in the opts slot is treated as onChange by CreateSlider).
-function AutoRotaLayout:SliderPair(a, b)
+function Aegis_SBR_Layout:SliderPair(a, b)
     self:_sep()
     local hl = self:_hl(LAY.SLIDER_H)
     local P = self.host or self.p
@@ -720,7 +720,7 @@ end
 
 -- A label with a dropdown to its right (the dropdown floats right after the
 -- label, so longer labels never collide with it).
-function AutoRotaLayout:Dropdown(key, label, width, onChange)
+function Aegis_SBR_Layout:Dropdown(key, label, width, onChange)
     self:_sep()
     local hl = self:_hl(LAY.DD_H)
     local P = self.host or self.p
@@ -745,7 +745,7 @@ end
 
 -- A label + dropdown on the left, and a checkbox on the right of the same row.
 -- dd = {key,label,width,onChange}; ck = {key,label,spell,onChange}.
-function AutoRotaLayout:DropdownCheck(dd, ck)
+function Aegis_SBR_Layout:DropdownCheck(dd, ck)
     self:_sep()
     local hl = self:_hl(LAY.DD_H)
     local P = self.host or self.p
@@ -763,7 +763,7 @@ function AutoRotaLayout:DropdownCheck(dd, ck)
     return d, item
 end
 
-function AutoRotaLayout:Gap(n) self.y = self.y - (n or 8) end
+function Aegis_SBR_Layout:Gap(n) self.y = self.y - (n or 8) end
 
 -- Concept-style row: [switch] Label sub ............ [slider--] [value]
 -- One row per setting. o = { key, label, sub, spell, onToggle, slider = {
@@ -772,7 +772,7 @@ function AutoRotaLayout:Gap(n) self.y = self.y - (n or 8) end
 -- inside the label string as an inline colour code, so BindCheck's
 -- "(not learned)" suffixing keeps working. Returns { cb, label, baseText,
 -- spellName, slider, value } - BindCheck-compatible.
-function AutoRotaLayout:Row(o)
+function Aegis_SBR_Layout:Row(o)
     self:_sep()
     local P = self.host or self.p
     local hl = self:_hl(LAY.VROW_H)
@@ -818,7 +818,7 @@ function AutoRotaLayout:Row(o)
         local s = self.ui:CreateSlider(so.key, P, "", so, so.onChange)
         s:SetWidth(so.width or 70); s:SetHeight(14)
         s:SetPoint("TOPRIGHT", P, "TOPRIGHT", -54, self.y - 8)
-        local tt = getglobal("ARUI_SL_" .. so.key .. "Text")
+        local tt = getglobal("AegisUI_SL_" .. so.key .. "Text")
         if tt then tt:SetText("") end
         s.valText = valFS   -- value writes land in the row's right column
         wireHover(s, hl)
@@ -833,7 +833,7 @@ function AutoRotaLayout:Row(o)
 end
 
 -- Close the last section and stack everything; returns the content height.
-function AutoRotaLayout:Finish()
+function Aegis_SBR_Layout:Finish()
     self:_closeSection()
     self:Reflow()
     return self.total or 0
@@ -843,7 +843,7 @@ end
 -- when it is untagged, when the class has no spec tabs, when no profile is
 -- loaded, or when its spec tag matches the active tab. Resizes the scroll
 -- child and re-ranges the scrollbar, so tab switches reflow live.
-function AutoRotaLayout:Reflow()
+function Aegis_SBR_Layout:Reflow()
     local st = MOD() and MOD().specTabs
     local cur
     if st and self.ui.buf then cur = self.ui:CurrentSpecKey() end
@@ -875,22 +875,22 @@ end
 
 -- Build the scroll frame + child + scrollbar inside the window, and return the
 -- child for BuildBody to fill. Mouse wheel and the scrollbar both pan it.
-function AutoRotaUI:MakeScroll(f)
+function Aegis_SBR_UI:MakeScroll(f)
     local top = SCROLL.TOP
     if MOD() and MOD().specTabs then
         top = self:SpecHasSubtitles() and SCROLL.TOP_TABS_SUB or SCROLL.TOP_TABS
     end
     local viewH = SCROLL.WIN_H + top - SCROLL.BOTTOM_PAD   -- top is negative
 
-    local sf = CreateFrame("ScrollFrame", "ARUI_BodyScroll", f)
+    local sf = CreateFrame("ScrollFrame", "AegisUI_BodyScroll", f)
     sf:SetPoint("TOPLEFT", f, "TOPLEFT", SCROLL.LEFT, top)
     sf:SetWidth(SCROLL.WIDTH); sf:SetHeight(viewH)
 
-    local child = CreateFrame("Frame", "ARUI_BodyScrollChild", sf)
+    local child = CreateFrame("Frame", "AegisUI_BodyScrollChild", sf)
     child:SetWidth(SCROLL.WIDTH); child:SetHeight(viewH)
     sf:SetScrollChild(child)
 
-    local sb = CreateFrame("Slider", "ARUI_BodyScrollBar", f, "UIPanelScrollBarTemplate")
+    local sb = CreateFrame("Slider", "AegisUI_BodyScrollBar", f, "UIPanelScrollBarTemplate")
     -- Inset the slider top/bottom by the thumb margin; the groove (drawn below)
     -- spans the full visible rail, so the thumb travels inside it with margin
     -- at each end and its half-height never overhangs.
@@ -899,8 +899,8 @@ function AutoRotaUI:MakeScroll(f)
     sb:SetWidth(SCROLL.BAR_W)
     -- skin: drop the template's arrow buttons (the wheel and thumb-drag below
     -- cover scrolling), draw a slim dark groove, and use a flat bright thumb.
-    local up = getglobal("ARUI_BodyScrollBarScrollUpButton")
-    local dn = getglobal("ARUI_BodyScrollBarScrollDownButton")
+    local up = getglobal("AegisUI_BodyScrollBarScrollUpButton")
+    local dn = getglobal("AegisUI_BodyScrollBarScrollDownButton")
     if up then up:Hide() end
     if dn then dn:Hide() end
     -- Groove = the visible rail. It extends THUMB_MARGIN beyond the (inset)
@@ -932,7 +932,7 @@ end
 
 -- After the body is built, set the scrollbar range from the child height and
 -- hide the bar when everything already fits.
-function AutoRotaUI:UpdateScrollRange()
+function Aegis_SBR_UI:UpdateScrollRange()
     local sf, child, sb = self.bodyScroll, self.bodyChild, self.bodyScrollBar
     if not (sf and child and sb) then return end
     local maxScroll = child:GetHeight() - sf:GetHeight()
@@ -959,9 +959,9 @@ end
 -- ------------------------------------------------------------
 -- reusable dialog (input and yes/no), avoids StaticPopup quirks
 -- ------------------------------------------------------------
-function AutoRotaUI:EnsureDialog()
+function Aegis_SBR_UI:EnsureDialog()
     if self.dlg then return end
-    local d = CreateFrame("Frame", "AutoRotaDialog", UIParent)
+    local d = CreateFrame("Frame", "Aegis_SBR_Dialog", UIParent)
     d:SetWidth(300); d:SetHeight(140)
     d:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
     d:SetBackdrop(FLAT_BACKDROP)
@@ -973,7 +973,7 @@ function AutoRotaUI:EnsureDialog()
     local prompt = FS(d, "GameFontNormal", ""); prompt:SetPoint("TOP", d, "TOP", 0, -24)
     prompt:SetWidth(260); prompt:SetJustifyH("CENTER")
     d.prompt = prompt
-    local eb = CreateFrame("EditBox", "AutoRotaDialogEdit", d, "InputBoxTemplate")
+    local eb = CreateFrame("EditBox", "Aegis_SBR_DialogEdit", d, "InputBoxTemplate")
     eb:SetWidth(220); eb:SetHeight(20); eb:SetPoint("TOP", prompt, "BOTTOM", 0, -14)
     eb:SetAutoFocus(false); eb:SetMaxLetters(32)
     eb:SetScript("OnEscapePressed", function() d:Hide() end)
@@ -990,7 +990,7 @@ function AutoRotaUI:EnsureDialog()
     self.dlg = d
 end
 
-function AutoRotaUI:ShowDialog(opts)
+function Aegis_SBR_UI:ShowDialog(opts)
     self:EnsureDialog()
     local d = self.dlg
     d.prompt:SetText(opts.prompt or "")
@@ -1022,7 +1022,7 @@ end
 -- field the dropdown wrote to, so the body's dim logic and the rotation's
 -- branching are untouched. Classes without specTabs are unaffected.
 -- ------------------------------------------------------------
-function AutoRotaUI:BuildSpecTabs(f)
+function Aegis_SBR_UI:BuildSpecTabs(f)
     local st = MOD() and MOD().specTabs
     if not st or not st.tabs then return end
     local n = table.getn(st.tabs)
@@ -1037,7 +1037,7 @@ function AutoRotaUI:BuildSpecTabs(f)
     self.specTabBtns = {}
     for i = 1, n do
         local tab = st.tabs[i]
-        local b = CreateFrame("Button", "ARUI_TAB_" .. tab.key, f)
+        local b = CreateFrame("Button", "AegisUI_TAB_" .. tab.key, f)
         b:SetWidth(w); b:SetHeight(23)
         b:SetPoint("TOPLEFT", f, "TOPLEFT", 16 + (i - 1) * w, -81)
         local hov = b:CreateTexture(nil, "BACKGROUND")
@@ -1057,7 +1057,7 @@ function AutoRotaUI:BuildSpecTabs(f)
         ul:Hide()
         b:SetScript("OnEnter", function() hov:Show() end)
         b:SetScript("OnLeave", function() hov:Hide() end)
-        b:SetScript("OnClick", function() AutoRotaUI:SelectSpecTab(tab.key) end)
+        b:SetScript("OnClick", function() Aegis_SBR_UI:SelectSpecTab(tab.key) end)
         if tab.tip1 then Tip(b, tab.label, tab.tip1, tab.tip2) end
         self.specTabBtns[i] = { key = tab.key, fs = fs, ul = ul }
     end
@@ -1076,7 +1076,7 @@ function AutoRotaUI:BuildSpecTabs(f)
 end
 
 -- True if the active class's spec tabs carry per-tab subtitle lines.
-function AutoRotaUI:SpecHasSubtitles()
+function Aegis_SBR_UI:SpecHasSubtitles()
     local st = MOD() and MOD().specTabs
     if not st or not st.tabs then return false end
     for i = 1, table.getn(st.tabs) do
@@ -1085,7 +1085,7 @@ function AutoRotaUI:SpecHasSubtitles()
     return false
 end
 
-function AutoRotaUI:SelectSpecTab(key)
+function Aegis_SBR_UI:SelectSpecTab(key)
     if not self.buf then return end
     local st = MOD() and MOD().specTabs
     if not st then return end
@@ -1109,26 +1109,26 @@ end
 -- what trapped a heal profile whose seals were not trained yet - the tab looked
 -- switched but nothing applied, so only the slash command worked. Editing a
 -- non-active profile stays buffered and the footer prompts for Activate.
-function AutoRotaUI:AutoApplyActive()
+function Aegis_SBR_UI:AutoApplyActive()
     if not self.buf or not self.editing then return end
-    if AutoRotaDB.active ~= self.editing then return end
-    AutoRotaDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
+    if AegisDB.active ~= self.editing then return end
+    AegisDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
 end
 
 -- Current tab key for the loaded profile: decodes the stored field value back to
 -- a tab key (identity for plain string rails), falling back to the default.
-function AutoRotaUI:CurrentSpecKey()
+function Aegis_SBR_UI:CurrentSpecKey()
     local st = MOD() and MOD().specTabs
     if not st or not self.buf then return nil end
     if st.decode then return st.decode(self.buf[st.field]) end
     return self.buf[st.field] or st.default
 end
 
-function AutoRotaUI:Build()
+function Aegis_SBR_UI:Build()
     if self.built then return end
 
     local scrolled = MOD() and MOD().useScrollLayout
-    local f = CreateFrame("Frame", "AutoRotaUIFrame", UIParent)
+    local f = CreateFrame("Frame", "Aegis_SBR_UIFrame", UIParent)
     f:SetWidth(380); f:SetHeight(scrolled and SCROLL.WIN_H or ((MOD() and MOD().uiHeight) or 520))
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     f:SetBackdrop(FLAT_BACKDROP)
@@ -1150,11 +1150,11 @@ function AutoRotaUI:Build()
     strip:SetPoint("TOPLEFT", f, "TOPLEFT", 1, -1)
     strip:SetPoint("TOPRIGHT", f, "TOPRIGHT", -1, -1)
 
-    -- Identity row (concept-aligned): "AR" sigil square in the class accent,
+    -- Identity row (concept-aligned): "A" sigil square in the class accent,
     -- uppercase wordmark, and a version chip; a hairline closes the row. The
     -- class identity is carried by the accent itself (strip, sigil, tabs).
     local sigil = f:CreateTexture(nil, "ARTWORK")
-    sigil:SetTexture("Interface\\AddOns\\AutoRota\\Icons\\RoundSq")
+    sigil:SetTexture("Interface\\AddOns\\Aegis_SBR\\Icons\\RoundSq")
     if sigil.SetGradientAlpha then
         -- bright accent at the top fading darker below, like the concept
         sigil:SetGradientAlpha("VERTICAL", acc[1] * 0.45, acc[2] * 0.45, acc[3] * 0.45, 1,
@@ -1164,26 +1164,43 @@ function AutoRotaUI:Build()
     end
     sigil:SetWidth(20); sigil:SetHeight(20)
     sigil:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -10)
-    local sigilFS = FS(f, "GameFontNormal", "AR")
+    local sigilFS = FS(f, "GameFontNormal", "A")
     SetFontSafe(sigilFS, true, 9)
     sigilFS:SetPoint("CENTER", sigil, "CENTER", 0, 0)
     sigilFS:SetTextColor(0.06, 0.07, 0.09)
 
-    local brand = FS(f, "GameFontNormalLarge", "AUTOROTA")
+    local brand = FS(f, "GameFontNormalLarge", "AEGIS SBR")
     SetFontSafe(brand, true, 14)
     brand:SetPoint("LEFT", sigil, "RIGHT", 8, 0)
     brand:SetTextColor(PAL.ink[1], PAL.ink[2], PAL.ink[3])
 
-    local chipFS = FS(f, "GameFontNormalSmall", AutoRota.ver or "")
+    local chipFS = FS(f, "GameFontNormalSmall", Aegis_SBR.ver or "")
     SetFontSafe(chipFS, true, 10)
     chipFS:SetTextColor(PAL.mute[1], PAL.mute[2], PAL.mute[3])
     local chip = f:CreateTexture(nil, "BORDER")
-    chip:SetTexture("Interface\\AddOns\\AutoRota\\Icons\\Pill")
+    chip:SetTexture("Interface\\AddOns\\Aegis_SBR\\Icons\\Pill")
     chip:SetVertexColor(0.13, 0.14, 0.17)
     chip:SetHeight(16)
     chip:SetWidth((chipFS:GetStringWidth() or 40) + 16)
     chip:SetPoint("LEFT", brand, "RIGHT", 10, 0)
     chipFS:SetPoint("CENTER", chip, "CENTER", 0, 0)
+
+    -- Aegis logo (Phase 0 stub): the raw art arrives later as
+    -- Interface\AddOns\Aegis_SBR\logo.tga (power-of-two, 32-bit). The 1.12
+    -- client's SetTexture returns nil for a missing file, so until the file
+    -- exists the row keeps the sigil + wordmark fallback and no stray solid
+    -- quad is ever drawn. New textures need a full relog, not just /reload.
+    local logo = f:CreateTexture(nil, "ARTWORK")
+    local logoOK = logo:SetTexture("Interface\\AddOns\\Aegis_SBR\\logo")
+    if logoOK then
+        logo:SetWidth(96); logo:SetHeight(24)
+        logo:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -8)
+        sigil:Hide(); sigilFS:Hide(); brand:Hide()
+        chip:ClearAllPoints()
+        chip:SetPoint("LEFT", logo, "RIGHT", 10, 0)
+    else
+        logo:Hide()
+    end
 
     local hl1 = f:CreateTexture(nil, "ARTWORK")
     hl1:SetTexture(PAL.line[1], PAL.line[2], PAL.line[3], 1); hl1:SetHeight(1)
@@ -1212,30 +1229,30 @@ function AutoRotaUI:Build()
     self.helpBtn:SetScript("OnClick", function()
         if self.helpFrame:IsShown() then self.helpFrame:Hide() else self.helpFrame:Show() end
     end)
-    Tip(self.helpBtn, "Help", "The one-button concept and the /ar commands.")
+    Tip(self.helpBtn, "Help", "The one-button concept and the /sbr commands.")
 
     local helpText =
-        "|cffFFFFFFAutoRota runs your whole rotation from one key.|r Put |cffFFD100/ar|r " ..
+        "|cffFFFFFFAegis runs your whole rotation from one key.|r Put |cffFFD100/sbr|r " ..
         "(nothing else) in a macro, drag it to your bar, and press it over and over - " ..
         "each press fires the best spell for the moment from your active profile.\n\n" ..
         "|cffFFD100Setup|r\n" ..
-        "|cffFFD100/ar|r - fire the rotation (your one button)\n" ..
-        "|cffFFD100/ar ui|r - open this window\n" ..
-        "|cffFFD100/ar minimap|r - show/hide the minimap button (also |cffFFD100/armap|r)\n\n" ..
+        "|cffFFD100/sbr|r - fire the rotation (your one button)\n" ..
+        "|cffFFD100/sbr ui|r - open this window\n" ..
+        "|cffFFD100/sbr minimap|r - show/hide the minimap button (also |cffFFD100/sbrmap|r)\n\n" ..
         "|cffFFD100Profiles|r\n" ..
-        "|cffFFD100/ar list|r - list your profiles\n" ..
-        "|cffFFD100/ar use <name>|r - activate a profile\n" ..
-        "|cffFFD100/ar new <name>|r - create a profile\n" ..
-        "|cffFFD100/ar del <name>|r - delete a profile\n" ..
-        "|cffFFD100/ar off|r - stop using any profile\n\n" ..
+        "|cffFFD100/sbr list|r - list your profiles\n" ..
+        "|cffFFD100/sbr use <name>|r - activate a profile\n" ..
+        "|cffFFD100/sbr new <name>|r - create a profile\n" ..
+        "|cffFFD100/sbr del <name>|r - delete a profile\n" ..
+        "|cffFFD100/sbr off|r - stop using any profile\n\n" ..
         "|cffFFD100Troubleshooting|r\n" ..
-        "|cffFFD100/ar check|r - sanity-check the active profile\n" ..
-        "|cffFFD100/ar reset|r - restore default profiles\n" ..
-        "|cffFFD100/ar debug|r - dump live spell and buff names\n" ..
-        "|cffFFD100/ar trace|r - toggle a per-press log of the rotation\n\n" ..
-        "|cff888888Also /autorota and /pa. Plus class-specific commands.|r"
+        "|cffFFD100/sbr check|r - sanity-check the active profile\n" ..
+        "|cffFFD100/sbr reset|r - restore default profiles\n" ..
+        "|cffFFD100/sbr debug|r - dump live spell and buff names\n" ..
+        "|cffFFD100/sbr trace|r - toggle a per-press log of the rotation\n\n" ..
+        "|cff888888Also /aegis; /ar still works as a legacy alias. Plus class-specific commands.|r"
 
-    local hf = CreateFrame("Frame", "AutoRotaHelpFrame", f)
+    local hf = CreateFrame("Frame", "Aegis_SBR_HelpFrame", f)
     hf:SetWidth(360); hf:SetHeight(358)
     hf:SetPoint("CENTER", f, "CENTER", 0, 0)
     hf:SetBackdrop(FLAT_BACKDROP)
@@ -1244,7 +1261,7 @@ function AutoRotaUI:Build()
     hf:SetFrameStrata("DIALOG")
     hf:EnableMouse(true); hf:Hide()
     self.helpFrame = hf
-    local ht = FS(hf, "GameFontNormalLarge", "AutoRota - Help"); ht:SetPoint("TOP", hf, "TOP", 0, -14)
+    local ht = FS(hf, "GameFontNormalLarge", "Aegis SBR - Help"); ht:SetPoint("TOP", hf, "TOP", 0, -14)
     ht:SetTextColor(PAL.ink[1], PAL.ink[2], PAL.ink[3])
     local hbody = FS(hf, "GameFontHighlightSmall", helpText)
     hbody:SetPoint("TOPLEFT", hf, "TOPLEFT", 16, -42)
@@ -1262,7 +1279,7 @@ function AutoRotaUI:Build()
     self.liveDot = self.profileDD:CreateTexture(nil, "OVERLAY")
     self.liveDot:SetWidth(7); self.liveDot:SetHeight(7)
     self.liveDot:SetPoint("LEFT", self.profileDD, "LEFT", 10, 0)
-    self.liveDot:SetTexture("Interface\\AddOns\\AutoRota\\Icons\\SliderThumb")
+    self.liveDot:SetTexture("Interface\\AddOns\\Aegis_SBR\\Icons\\SliderThumb")
     self.liveDot:SetVertexColor(0.25, 0.75, 0.37)
     self.liveDot:Hide()
 
@@ -1278,7 +1295,7 @@ function AutoRotaUI:Build()
     self.newBtn:SetText("New"); self.newBtn:SetScript("OnClick", function() self:AskNew() end)
 
     self.statusDot = f:CreateTexture(nil, "ARTWORK")
-    self.statusDot:SetTexture("Interface\\AddOns\\AutoRota\\Icons\\SliderThumb")
+    self.statusDot:SetTexture("Interface\\AddOns\\Aegis_SBR\\Icons\\SliderThumb")
     self.statusDot:SetWidth(8); self.statusDot:SetHeight(8)
     self.statusDot:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 24)
     self.status = FS(f, "GameFontNormalSmall", "")
@@ -1330,31 +1347,31 @@ end
 -- ============================================================
 -- data binding
 -- ============================================================
-function AutoRotaUI:CopyBuf(name)
-    local src = AutoRotaDB.profiles[name]
+function Aegis_SBR_UI:CopyBuf(name)
+    local src = AegisDB.profiles[name]
     if not src then return nil end
     return CORE.CopyProfile(CORE, src)
 end
 
-function AutoRotaUI:Load(name)
-    if not AutoRotaDB.profiles[name] then return end
+function Aegis_SBR_UI:Load(name)
+    if not AegisDB.profiles[name] then return end
     self.editing = name
     self.buf = self:CopyBuf(name)
     self:Refresh()
 end
 
-function AutoRotaUI:ProfileNameList()
+function Aegis_SBR_UI:ProfileNameList()
     local list = {}
-    for n in pairs(AutoRotaDB.profiles) do table.insert(list, n) end
+    for n in pairs(AegisDB.profiles) do table.insert(list, n) end
     table.sort(list)
     return list
 end
 
-function AutoRotaUI:Toggle()
+function Aegis_SBR_UI:Toggle()
     self:Build()
     if self.frame:IsShown() then self.frame:Hide(); return end
-    local pick = AutoRotaDB.active
-    if not pick or not AutoRotaDB.profiles[pick] then pick = self:ProfileNameList()[1] end
+    local pick = AegisDB.active
+    if not pick or not AegisDB.profiles[pick] then pick = self:ProfileNameList()[1] end
     if pick then self.editing = pick; self.buf = self:CopyBuf(pick) else self.editing = nil; self.buf = nil end
     self.frame:Show()
     self:Refresh()
@@ -1363,7 +1380,7 @@ end
 -- ============================================================
 -- refresh (profile bar and validity, then class body)
 -- ============================================================
-function AutoRotaUI:Refresh()
+function Aegis_SBR_UI:Refresh()
     if not self.built then return end
     self.loading = true
 
@@ -1373,7 +1390,7 @@ function AutoRotaUI:Refresh()
     self:SetDropdown(self.profileDD, opts, self.editing, self.editing or "(none)", COL.white)
     if self.profileDD.arFitText then self.profileDD.arFitText() end
     if self.liveDot then
-        if self.editing and AutoRotaDB.active == self.editing then self.liveDot:Show() else self.liveDot:Hide() end
+        if self.editing and AegisDB.active == self.editing then self.liveDot:Show() else self.liveDot:Hide() end
     end
 
     -- spec tab rail active state (classes with M.specTabs)
@@ -1415,7 +1432,7 @@ function AutoRotaUI:Refresh()
     self:AutoApplyActive()
 
     local ok, missing = MOD():ProfileValidity(self.buf)
-    local isActive = self.editing and AutoRotaDB.active == self.editing
+    local isActive = self.editing and AegisDB.active == self.editing
     -- Missing spells no longer block anything: the rotation skips whatever is
     -- not trained, so a profile is always usable and always applies. Validity is
     -- now purely an amber note. This is what keeps the heal/damage tab from
@@ -1443,24 +1460,24 @@ end
 -- ------------------------------------------------------------
 -- profile management
 -- ------------------------------------------------------------
-function AutoRotaUI:AskNew()
+function Aegis_SBR_UI:AskNew()
     self:ShowDialog({
         prompt = "New profile name:", withInput = true, acceptLabel = "Create",
         onAccept = function(txt) self:NewProfile(txt) end,
     })
 end
 
-function AutoRotaUI:NewProfile(name)
+function Aegis_SBR_UI:NewProfile(name)
     name = trim(name)
-    if name == "" then DEFAULT_CHAT_FRAME:AddMessage("AutoRota: name required.", 1, 0.5, 0.3); return end
-    if AutoRotaDB.profiles[name] then DEFAULT_CHAT_FRAME:AddMessage("AutoRota: '" .. name .. "' already exists.", 1, 0.5, 0.3); return end
-    AutoRotaDB.profiles[name] = CORE.CopyProfile(CORE, MOD().templates.starter)
+    if name == "" then DEFAULT_CHAT_FRAME:AddMessage("Aegis: name required.", 1, 0.5, 0.3); return end
+    if AegisDB.profiles[name] then DEFAULT_CHAT_FRAME:AddMessage("Aegis: '" .. name .. "' already exists.", 1, 0.5, 0.3); return end
+    AegisDB.profiles[name] = CORE.CopyProfile(CORE, MOD().templates.starter)
     self.editing = name
     self.buf = self:CopyBuf(name)
     self:Refresh()
 end
 
-function AutoRotaUI:AskRename()
+function Aegis_SBR_UI:AskRename()
     if not self.editing then return end
     self:ShowDialog({
         prompt = "Rename '" .. self.editing .. "' to:", withInput = true, initialText = self.editing, acceptLabel = "Rename",
@@ -1468,21 +1485,21 @@ function AutoRotaUI:AskRename()
     })
 end
 
-function AutoRotaUI:RenameProfile(newName)
+function Aegis_SBR_UI:RenameProfile(newName)
     newName = trim(newName)
     if newName == "" or not self.editing then return end
     if newName == self.editing then return end
-    if AutoRotaDB.profiles[newName] then DEFAULT_CHAT_FRAME:AddMessage("AutoRota: '" .. newName .. "' already exists.", 1, 0.5, 0.3); return end
+    if AegisDB.profiles[newName] then DEFAULT_CHAT_FRAME:AddMessage("Aegis: '" .. newName .. "' already exists.", 1, 0.5, 0.3); return end
     local old = self.editing
-    AutoRotaDB.profiles[newName] = AutoRotaDB.profiles[old]
-    AutoRotaDB.profiles[old] = nil
-    if AutoRotaDB.active == old then AutoRotaDB.active = newName end
+    AegisDB.profiles[newName] = AegisDB.profiles[old]
+    AegisDB.profiles[old] = nil
+    if AegisDB.active == old then AegisDB.active = newName end
     self.editing = newName
     self.buf = self:CopyBuf(newName)
     self:Refresh()
 end
 
-function AutoRotaUI:AskDelete()
+function Aegis_SBR_UI:AskDelete()
     if not self.editing then return end
     self:ShowDialog({
         prompt = "Delete profile '" .. self.editing .. "'?", withInput = false,
@@ -1491,11 +1508,11 @@ function AutoRotaUI:AskDelete()
     })
 end
 
-function AutoRotaUI:DeleteProfile()
+function Aegis_SBR_UI:DeleteProfile()
     if not self.editing then return end
     local name = self.editing
-    AutoRotaDB.profiles[name] = nil
-    if AutoRotaDB.active == name then AutoRotaDB.active = nil end
+    AegisDB.profiles[name] = nil
+    if AegisDB.active == name then AegisDB.active = nil end
     local nxt = self:ProfileNameList()[1]
     if nxt then self.editing = nxt; self.buf = self:CopyBuf(nxt) else self.editing = nil; self.buf = nil end
     self:Refresh()
@@ -1504,17 +1521,17 @@ end
 -- ------------------------------------------------------------
 -- commit
 -- ------------------------------------------------------------
-function AutoRotaUI:DoSave()
+function Aegis_SBR_UI:DoSave()
     if not self.buf or not self.editing then return end
-    AutoRotaDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
-    DEFAULT_CHAT_FRAME:AddMessage("AutoRota: saved '" .. self.editing .. "'.", 1, 0.8, 0)
+    AegisDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
+    DEFAULT_CHAT_FRAME:AddMessage("Aegis: saved '" .. self.editing .. "'.", 1, 0.8, 0)
     self:Refresh()
 end
 
-function AutoRotaUI:DoActivate()
+function Aegis_SBR_UI:DoActivate()
     if not self.buf or not self.editing then return end
-    AutoRotaDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
-    AutoRotaDB.active = self.editing
-    DEFAULT_CHAT_FRAME:AddMessage("AutoRota: activated '" .. self.editing .. "'.", 1, 0.8, 0)
+    AegisDB.profiles[self.editing] = CORE.CopyProfile(CORE, self.buf)
+    AegisDB.active = self.editing
+    DEFAULT_CHAT_FRAME:AddMessage("Aegis: activated '" .. self.editing .. "'.", 1, 0.8, 0)
     self:Refresh()
 end

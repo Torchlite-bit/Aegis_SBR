@@ -1,23 +1,31 @@
 # Aegis_SBR — Architecture & Conventions
 
 How the addon is put together, and the conventions to follow. Read this before working in
-an area you haven't touched. (File names below reflect the pre-rebrand state; the core file
-becomes `Aegis_SBR.lua` after Phase 0. Update this doc as part of the rebrand.)
+an area you haven't touched. (File names reflect the post-rebrand state as of v0.14.0.
+Shared globals: core `Aegis_SBR`, UI `Aegis_SBR_UI`, layout `Aegis_SBR_Layout`, minimap
+`Aegis_SBR_Minimap`; named frames use the `Aegis_SBR_*` prefix, UI-internal element names
+the `AegisUI_*` prefix.)
 
 ## File layout (load order matters — set by the .toc)
 - **Core / shell**: `Aegis_SBR.lua` (was `AutoRota.lua`) — the engine tick, event frame,
-  slash handling, profile management, saved-variables, shared helpers
+  slash handling (`/sbr`, `/aegis`, legacy `/ar`), profile management, saved-variables
+  (`AegisDB`, plus the `AutoRotaDB` migration shim in `OnAddonLoaded`), shared helpers
   (`EnsureAutoAttack`, `InMeleeRange`, `KnowsSpell`, `ScanTargetDebuff`, `Queue`, etc.),
   the class-module dispatch.
-- **Shared UI framework**: `AutoRota_UI.lua` → (`Aegis_SBR_UI.lua`) — the config window,
+- **Shared UI framework**: `Aegis_SBR_UI.lua` (was `AutoRota_UI.lua`) — the config window,
   theme/palette, all UI primitives (see below), the scroll system, header/footer, profile
   pill, spec tab rails.
-- **Minimap**: `AutoRota_Minimap.lua` → button + options.
+- **Minimap**: `Aegis_SBR_Minimap.lua` (was `AutoRota_Minimap.lua`) — button + options
+  (`/sbrmap`, legacy `/armap`).
 - **Per-class rotation modules**: `Class_<Name>.lua` (Warrior, Paladin, Hunter, Rogue,
   Priest, Shaman, Mage, Warlock, Druid) — the priority lists + class helpers.
 - **Per-class UI panels**: `Class_<Name>_UI.lua` — the config panel for that class.
-- **Assets**: `Icons/` (TGA textures — toggles, sliders, buttons, pills, cards, sigil, and
-  the new `logo`), `Fonts/` (PT Sans Narrow, OFL-licensed + `OFL.txt`).
+- **Assets**: `Icons/` (TGA textures — toggles, sliders, buttons, pills, cards, sigil),
+  `Fonts/` (PT Sans Narrow, OFL-licensed + `OFL.txt`; moved into `Fonts/` at 0.14.0 to
+  match the UI's font paths). The **logo** is stubbed: the header tries
+  `Interface\AddOns\Aegis_SBR\logo` (addon ROOT, `logo.tga` once it exists — power-of-two,
+  32-bit) and falls back to the sigil + wordmark while absent; new textures need a full
+  relog.
 - **Meta**: `.toc`, `README.md`, `CHANGELOG.md`, `docs/`, `scripts/verify.py`,
   `docs/TALENTS_1_18_1.md` (talent name reference used by the modules).
 
@@ -70,8 +78,9 @@ becomes `Aegis_SBR.lua` after Phase 0. Update this doc as part of the rebrand.)
 - **Comments explain WHY.** Match the existing flat-dark palette and naming.
 - **Textures**: power-of-two TGA, referenced without extension, double backslashes; new/
   renamed textures need a full relog.
-- **Versioning**: letter-suffix (e.g. `0.13.12b`); bump `.toc` + core `.lua` `ver` + README
-  H1 together and prepend a `CHANGELOG.md` entry; grep to confirm no stale version strings.
+- **Versioning**: `0.14.0` and up (letter-suffix `0.13.xb` was the pre-rebrand scheme); bump
+  `.toc` + core `.lua` `ver` + README H1 together and prepend a `CHANGELOG.md` entry; grep
+  to confirm no stale version strings.
 - **Profiles**: `NormalizeProfile` fills MISSING keys only (never clobbers user values) — so
   adding a config field is backward-safe. Templates per spec provide sensible defaults.
 

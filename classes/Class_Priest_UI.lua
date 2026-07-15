@@ -1,11 +1,11 @@
 -- ============================================================
--- Class_Priest_UI  -  priest window body for AutoRota
+-- Class_Priest_UI  -  priest window body for Aegis_SBR
 -- Builds and binds only the priest specific controls. The shared
--- window shell and profile management live in AutoRota_UI.lua.
+-- window shell and profile management live in Aegis_SBR_UI.lua.
 -- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
-local M = AutoRota.classes.PRIEST
+local M = Aegis_SBR.classes.PRIEST
 M.useScrollLayout = true
 
 function M:BuildBody(ui, parent)
@@ -45,7 +45,7 @@ function M:BuildBody(ui, parent)
 
     L:Finish()
 
-    ui:Tip(self.healRow.cb, "Heal mode", "Heal the party/raid with responsive downranking, and weave damage between heals.", "Also /ar heal on|off. Off runs the shadow/leveling damage rotation.")
+    ui:Tip(self.healRow.cb, "Heal mode", "Heal the party/raid with responsive downranking, and weave damage between heals.", "Also /sbr heal on|off. Off runs the shadow/leveling damage rotation.")
     ui:Tip(self.innerFireRow.cb, "Inner Fire", "Keep Inner Fire active at all times for the armor and spell bonus.")
     ui:Tip(self.shadowformRow.cb, "Hold Shadowform", "Stay in Shadowform. While in it, Holy spells (Smite, Holy Fire, heals) are skipped.", "Leave off for a leveling priest who still casts Holy spells.")
     ui:Tip(self.mindBlastRow.cb, "Mind Blast", "Cast on cooldown - the Shadow Weaving trigger and the leveling pull.")
@@ -126,9 +126,9 @@ end
 
 -- Open the shared window for this class.
 M.OpenConfig = function(mod)
-    if not AutoRotaUI then
-        AutoRota:Throttle("UI not ready yet, try again in a moment.")
+    if not Aegis_SBR_UI then
+        Aegis_SBR:Throttle("UI not ready yet, try again in a moment.")
         return
     end
-    AutoRotaUI:Toggle()
+    Aegis_SBR_UI:Toggle()
 end

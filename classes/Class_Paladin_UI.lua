@@ -1,11 +1,11 @@
 -- ============================================================
--- Class_Paladin_UI  -  paladin window body for AutoRota
+-- Class_Paladin_UI  -  paladin window body for Aegis_SBR
 -- Builds and binds only the paladin specific controls. The shared
--- window shell and profile management live in AutoRota_UI.lua.
+-- window shell and profile management live in Aegis_SBR_UI.lua.
 -- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
-local M = AutoRota.classes.PALADIN
+local M = Aegis_SBR.classes.PALADIN
 
 local function setBlockEnabled(cbItem, sLow, sHigh, on, reason)
     if on then
@@ -105,7 +105,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.spellCB.holyShield.cb,     "Holy Shield",     "Cast right after the strike, before seals.", "Fires whenever its own cooldown is ready.")
     ui:Tip(self.spellCB.hammerOfWrath.cb,  "Hammer of Wrath", "Execute, used only at or below 20 percent target HP.")
     ui:Tip(self.spellCB.repentance.cb,     "Repentance",      "Cast on cooldown as a damage proc on Turtle.")
-    ui:Tip(self.spellCB.consecration.cb,   "Consecration (AoE)", "AoE filler, cast on cooldown. Manual toggle (also /ar aoe), since 1.12 cannot count nearby enemies.", "Held during mana recovery.")
+    ui:Tip(self.spellCB.consecration.cb,   "Consecration (AoE)", "AoE filler, cast on cooldown. Manual toggle (also /sbr aoe), since 1.12 cannot count nearby enemies.", "Held during mana recovery.")
     ui:Tip(self.spellCB.exorcism.cb,       "Exorcism",        "Strong nuke, used on cooldown but only against Undead and Demon targets.", "Held during mana recovery.")
     ui:Tip(self.spellCB.holyStrike.cb, "Holy Strike", "Shares the 6s strike cooldown with Crusader Strike.", "With Vengeful Strikes it grants Holy Might. Even untalented it returns mana and heals the group.")
     ui:Tip(self.spellCB.crusaderStrike.cb, "Crusader Strike", "Shares the 6s strike cooldown with Holy Strike.", "Builds Zeal. Tank: with Righteous Strikes it also loads the block buff Zealous Defense.")
@@ -119,10 +119,10 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.twistRow.cb, "Seal twisting (experimental)", "Holds the damage seal judge until just before the next swing.", "Needs a damage seal. Tune in game, timing depends on latency.")
     ui:Tip(self.wisdomRow.cb, "Wisdom debuff in mana mode", "During mana recovery, judge Seal of Wisdom onto the TARGET (Judgement of Wisdom) instead of your configured debuff.", "The target then returns mana to everyone attacking it, so the whole group recovers.")
 
-    ui:Tip(self.healAtRow.slider, "Heal members below", "Members below this health get healed; the attack rotation yields while anyone is below it.", "Also /ar healat <1-100>.")
+    ui:Tip(self.healAtRow.slider, "Heal members below", "Members below this health get healed; the attack rotation yields while anyone is below it.", "Also /sbr healat <1-100>.")
     ui:Tip(self.holyShockRow.cb, "Holy Shock emergencies", "Use the instant Holy Shock for an emergency or a hurt unit out of melee range.")
     ui:Tip(self.holyShockRow.cb, "Holy Shock emergencies", "In heal mode Holy Shock is used ONLY as an instant heal, never for damage.", "Fires for an emergency or a hurt unit out of melee range, below the health value on the right.")
-    ui:Tip(self.holyShockRow.slider, "Holy Shock below", "Health under which Holy Shock is used as an instant emergency heal.", "Below this same line, Flash of Light is also kept over Holy Light even for a big deficit - faster beats fuller when it's this close. Also /ar hsat <1-100>. +healing auto-reads from gear; override with /ar healpower <n>.")
+    ui:Tip(self.holyShockRow.slider, "Holy Shock below", "Health under which Holy Shock is used as an instant emergency heal.", "Below this same line, Flash of Light is also kept over Holy Light even for a big deficit - faster beats fuller when it's this close. Also /sbr hsat <1-100>. +healing auto-reads from gear; override with /sbr healpower <n>.")
     ui:Tip(self.healReloadRow.cb, "Reload Holy Shock (CS)", "When Holy Shock is on cooldown, use Crusader Strike to reset it (Blessed Strikes, auto-detected), keeping the emergency instant loaded.", "Uses a GCD, but never fires while anyone is below the Holy Shock line - the heal comes first. Not limited by the filler mana floor.")
     ui:Tip(self.healSplashRow.cb, "Holy Strike filler", "In downtime with nobody to heal, use Holy Strike so its splash tops the melee group.", "Uses a GCD, and only above the mana value on the right, so filler never starves a heal.")
     ui:Tip(self.healSplashRow.slider, "Filler mana floor", "Holy Strike filler only fires while your mana is above this.")
@@ -274,9 +274,9 @@ end
 
 -- Open the shared window for this class.
 M.OpenConfig = function(mod)
-    if not AutoRotaUI then
-        AutoRota:Throttle("UI not ready yet, try again in a moment.")
+    if not Aegis_SBR_UI then
+        Aegis_SBR:Throttle("UI not ready yet, try again in a moment.")
         return
     end
-    AutoRotaUI:Toggle()
+    Aegis_SBR_UI:Toggle()
 end

@@ -1,6 +1,20 @@
 # 📜 Changelog
 
-All notable changes to **AutoRota** are documented here. Versions are listed newest first.
+All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**) are documented here. Versions are listed newest first. Entries up to v0.13.15b predate the rebrand and keep their original AutoRota/`/ar` wording.
+
+---
+
+## v0.14.0 — Rebrand: AutoRota → Aegis: Single Button Rotation (Aegis_SBR)
+
+**Rebrand (roadmap Phase 0).** The addon is now **Aegis: Single Button Rotation** — folder, files, commands, and saved variables. Rotations, priority lists, and panels are deliberately untouched; this release only renames and migrates.
+
+- **Folder + files:** install as `Interface\AddOns\Aegis_SBR\` (`Aegis_SBR.toc`; core files renamed to `Aegis_SBR.lua` / `Aegis_SBR_UI.lua` / `Aegis_SBR_Minimap.lua`; class modules keep their names and load order). **Remove the old `AutoRota` folder when installing this version** so both never load at once.
+- **Slash commands:** `/sbr` is the primary command (long form `/aegis`), and **`/ar` keeps working as a legacy alias** so existing macros don't break — all on one handler key, so nothing double-fires. The minimap toggle is `/sbrmap` (legacy `/armap` kept). The paladin-era aliases (`/autorota`, `/paladinauto`, `/pa`, `/autopala`) are removed.
+- **Profiles migrate automatically:** per-character saved variables move from `AutoRotaDB` to `AegisDB` on first login (the shim only adopts the old data when `AegisDB` is empty, and tags it `_migratedFrom`). `AutoRotaDB` stays listed in the `.toc` as a live rollback backup for a few versions. **Back up your `WTF\` folder before the first login on 0.14.0.** If your profiles don't appear: while logged out, copy `WTF\Account\<ACCOUNT>\<Realm>\<Character>\SavedVariables\AutoRota.lua` → `Aegis_SBR.lua` in the same folder, then log in again.
+- **Fonts packaging fix:** the bundled *PT Sans Narrow* faces (and `OFL.txt`) now actually ship inside `Fonts\`, where the UI's font paths and the README always pointed — fresh installs no longer silently fall back to the client font. New/renamed files mean a **full relog**, not just `/reload` (the folder rename forces one anyway).
+- **Logo header stub:** the config window tries `Interface\AddOns\Aegis_SBR\logo` at build time and falls back to the sigil + `AEGIS SBR` wordmark while the file is absent (1.12 `SetTexture` returns nil for a missing file, so no broken quad). The real TGA lands in a later cut.
+- **Tooling:** `scripts/verify.py`'s define-before-use audit no longer flags a function's own inner locals (e.g. locals captured by closures) — three long-standing false positives cleared, and the `--all` baseline is green again.
+- **Versioning:** this cut supersedes the drifted 0.13.13b (core `ver`) / 0.13.14b (`.toc`, README) / 0.13.15b (changelog) stamps; all version spots now read 0.14.0.
 
 ---
 

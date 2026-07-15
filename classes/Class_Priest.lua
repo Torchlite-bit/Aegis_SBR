@@ -1,8 +1,8 @@
 -- ============================================================
--- Class_Priest  -  priest module for AutoRota
+-- Class_Priest  -  priest module for Aegis_SBR
 -- Turtle WoW 1.12 (SuperWoW). Shadow / leveling DPS + Disc/Holy healing.
 -- ============================================================
--- Two play modes, switched by the heal toggle (or /ar heal on|off):
+-- Two play modes, switched by the heal toggle (or /sbr heal on|off):
 --
 --  DPS (Shadow + leveling), the default:
 --   * Keep Inner Fire up; optionally hold Shadowform.
@@ -35,13 +35,13 @@
 -- queued with QueueSpellByName so the rotation never clips a cast or a channel.
 -- ============================================================
 
-local M = AutoRota:NewClassModule("PRIEST")
+local M = Aegis_SBR:NewClassModule("PRIEST")
 M.uiTitle = "Priest"
 M.uiHeight = 680
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 
 -- ---------- channel-clip protection ----------
 -- Mind Flay (and Mana Burn) are channels; once one runs the rotation must not
@@ -88,7 +88,7 @@ M.LH_HEAL = { 55, 95, 150 }                                       -- Lesser Heal
 M.LH_MANA = { 30, 45, 65 }
 
 -- ---------- gear +healing scan (own tooltip, unique global name) ----------
-local healScanTip = CreateFrame("GameTooltip", "AutoRotaPriestHealScan", nil, "GameTooltipTemplate")
+local healScanTip = CreateFrame("GameTooltip", "Aegis_SBR_PriestHealScan", nil, "GameTooltipTemplate")
 healScanTip:SetOwner(healScanTip, "ANCHOR_NONE")
 M.cachedHealBonus = nil
 local healBonusFrame = CreateFrame("Frame")
@@ -120,7 +120,7 @@ function M:GearHealBonus()
             healScanTip:ClearLines()
             healScanTip:SetInventoryItem("player", slot)
             for i = 1, healScanTip:NumLines() do
-                local fs = getglobal("AutoRotaPriestHealScanTextLeft" .. i)
+                local fs = getglobal("Aegis_SBR_PriestHealScanTextLeft" .. i)
                 local txt = fs and fs:GetText()
                 if txt then total = total + self:ParseHealBonus(txt) end
             end
@@ -640,46 +640,46 @@ end
 -- ============================================================
 function M:HandleCommand(cmd, t)
     if cmd == "heal" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local a = string.lower(t[2] or "")
         if a == "on" then cfg.healMode = true; msgOut("heal mode on.")
         elseif a == "off" then cfg.healMode = false; msgOut("heal mode off.")
-        else msgOut("heal mode is " .. (cfg.healMode and "on" or "off") .. ". Use /ar heal on or off.") end
+        else msgOut("heal mode is " .. (cfg.healMode and "on" or "off") .. ". Use /sbr heal on or off.") end
         return true
     end
     if cmd == "healat" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local v = tonumber(t[2])
         if v and v >= 1 and v <= 100 then cfg.healThreshold = v; msgOut("healing members below " .. v .. "% health.")
-        else msgOut("usage: /ar healat <1-100>.", 1, 0.5, 0.3) end
+        else msgOut("usage: /sbr healat <1-100>.", 1, 0.5, 0.3) end
         return true
     end
     if cmd == "flashat" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local v = tonumber(t[2])
         if v and v >= 1 and v <= 100 then cfg.flashHealPct = v; msgOut("Flash Heal reserved for below " .. v .. "% health.")
-        else msgOut("usage: /ar flashat <1-100>.", 1, 0.5, 0.3) end
+        else msgOut("usage: /sbr flashat <1-100>.", 1, 0.5, 0.3) end
         return true
     end
     if cmd == "filler" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local a = t[2]
         if a == "wand" then cfg.filler = "Wand"; msgOut("filler = Wand.")
         elseif a == "flay" then cfg.filler = "Mind Flay"; msgOut("filler = Mind Flay.")
         elseif a == "smite" then cfg.filler = "Smite"; msgOut("filler = Smite.")
-        else msgOut("usage: /ar filler <wand|flay|smite>.", 1, 0.5, 0.3) end
+        else msgOut("usage: /sbr filler <wand|flay|smite>.", 1, 0.5, 0.3) end
         return true
     end
     if cmd == "healpower" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then return true end
         local v = tonumber(t[2])
         if v and v >= 0 then cfg.healPower = v; msgOut("healing bonus set to " .. v .. " (0 = auto from gear).")
-        else msgOut("usage: /ar healpower <number>.", 1, 0.5, 0.3) end
+        else msgOut("usage: /sbr healpower <number>.", 1, 0.5, 0.3) end
         return true
     end
     return false

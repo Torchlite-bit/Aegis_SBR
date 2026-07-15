@@ -1,5 +1,5 @@
 -- ============================================================
--- Class_Druid  -  feral + balance druid module for AutoRota
+-- Class_Druid  -  feral + balance druid module for Aegis_SBR
 -- Turtle WoW 1.12 (SuperWoW). Cat (DPS), Bear (tank), and a caster /
 -- Moonkin (Balance) rotation, form adaptive, works from level 1.
 -- ============================================================
@@ -26,10 +26,10 @@
 --  * Powershifting never fires while Tiger's Fury is up, so the buff is
 --    not thrown away; it waits for the buff to fall off.
 --  * Bear keeps Faerie Fire and Demoralizing Roar up, dumps rage into
---    Maul, and leads with Swipe when the AoE toggle (/ar aoe) is on.
+--    Maul, and leads with Swipe when the AoE toggle (/sbr aoe) is on.
 -- ============================================================
 
-local M = AutoRota:NewClassModule("DRUID")
+local M = Aegis_SBR:NewClassModule("DRUID")
 M.uiTitle = "Druid"
 M.uiHeight = 768
 -- Auto-attack is managed per form in this module instead of by the core, so a
@@ -38,7 +38,7 @@ M.uiHeight = 768
 M.meleeAutoAttack = false
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 
 -- Untalented 1.12 base costs; talents only lower these, so gating on the
 -- base never blocks an affordable cast for long, it just avoids burning a
@@ -154,7 +154,7 @@ end
 -- or not SuperCleveRoidMacros is loaded: the core's EnsureAutoAttack only
 -- toggles Attack when you are NOT already swinging (its IsCurrentAction guard),
 -- so if SCRM already started the swing this is a no-op, and if nothing did
--- (e.g. a bare "/ar" macro gives SCRM no /startattack to hook) AutoRota starts
+-- (e.g. a bare "/sbr" macro gives SCRM no /startattack to hook) Aegis_SBR starts
 -- it. Either way the swing runs, with no double-toggle.
 -- NOTE: the Attack action must sit on a bar slot that is NOT replaced by the
 -- Cat/Bear form bar (a side or bottom bar), otherwise there is nothing for
@@ -166,10 +166,10 @@ function M:EnsureMeleeSwing()
     -- on the now-current bars and restarts the swing that the shift halted.
     local form = self:CurrentForm() or "none"
     if form ~= self.lastSwingForm then
-        AutoRota.attackSlot = nil
+        Aegis_SBR.attackSlot = nil
         self.lastSwingForm = form
     end
-    AutoRota:EnsureAutoAttack()
+    Aegis_SBR:EnsureAutoAttack()
 end
 
 function M:ProfileValidity(cfg)
@@ -256,7 +256,7 @@ end
 -- Which Eclipse side is up on the player, if any: "lunar" empowers
 -- Starfire, "solar" empowers Wrath. Exact buff names are tried first,
 -- then a texture scan as a fallback (orange = solar, blue/plain = lunar).
--- If Turtle uses different names, /ar debug with the proc up shows them;
+-- If Turtle uses different names, /sbr debug with the proc up shows them;
 -- they drop into this list in one place.
 M.ECLIPSE_LUNAR = { "Eclipse (Lunar)", "Lunar Eclipse", "Eclipse" }
 M.ECLIPSE_SOLAR = { "Eclipse (Solar)", "Solar Eclipse" }
@@ -816,14 +816,14 @@ end
 -- ============================================================
 function M:HandleCommand(cmd, t)
     if cmd == "aoe" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return true end
         cfg.aoeSwipe = not cfg.aoeSwipe
         msgOut("Swipe " .. (cfg.aoeSwipe and "on (AoE)" or "off") .. ".")
         return true
     end
     if cmd == "weave" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return true end
         local a = string.lower(t[2] or "")
         if a == "on" then cfg.weaveDamage = true
@@ -833,24 +833,24 @@ function M:HandleCommand(cmd, t)
         return true
     end
     if cmd == "style" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         local style = self.styleAlias[string.lower(t[2] or "")]
         if cfg and style then
             cfg.catStyle = style
             msgOut("cat style = " .. (style == "bleed" and "Claw & Bleed" or "Shred & Powershift") .. ".")
         else
-            msgOut("usage: /ar style <bleed|shred>", 1, 0.5, 0.3)
+            msgOut("usage: /sbr style <bleed|shred>", 1, 0.5, 0.3)
         end
         return true
     end
     if cmd == "form" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         local form = self.formAlias[string.lower(t[2] or "")]
         if cfg and form then
             cfg.form = form
             msgOut("preferred form = " .. form .. ".")
         else
-            msgOut("usage: /ar form <cat|bear|caster|resto>", 1, 0.5, 0.3)
+            msgOut("usage: /sbr form <cat|bear|caster|resto>", 1, 0.5, 0.3)
         end
         return true
     end

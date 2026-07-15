@@ -1,10 +1,10 @@
 -- ============================================================
--- Class_Shaman  -  shaman module for AutoRota
+-- Class_Shaman  -  shaman module for Aegis_SBR
 -- Turtle WoW 1.12 (SuperWoW). Enhancement, Elemental, and Tank, mode
 -- adaptive, works from level 1.
 -- ============================================================
 -- Model:
---  * Three modes, chosen in the panel or with /ar mode:
+--  * Three modes, chosen in the panel or with /sbr mode:
 --      - enhancement (melee): auto-attack, Stormstrike, Lightning Strike,
 --        a shock on cooldown, with Lightning Bolt weaved as a filler.
 --      - elemental (caster): Flame Shock plus a Lightning Bolt filler that
@@ -31,25 +31,25 @@
 --    rotation never clips the current cast.
 -- ============================================================
 
-local M = AutoRota:NewClassModule("SHAMAN")
+local M = Aegis_SBR:NewClassModule("SHAMAN")
 M.uiTitle = "Shaman"
 M.uiHeight = 642
 M.meleeAutoAttack = false   -- melee swing is managed per-mode in the module
 
 -- Talent that grants the Clearcasting proc. It grants no spell, so KnowsSpell
 -- cannot see it; reading the talent rank is the only way to know it is present.
--- Adjust the name here if Turtle renames it (confirm with /ar talents).
+-- Adjust the name here if Turtle renames it (confirm with /sbr talents).
 local TALENT_CLEARCAST = "Elemental Focus"
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 
 -- Flame Shock blind-reapply interval when its debuff cannot be detected.
 local FLAMESHOCK_DUR = 12
 
 -- Restoration: flat-healing talent (Turtle's resto tree may have none, so this
 -- is ~neutral by default), the NS-equivalent / Mana Tide spell names, and the
--- totem blind-redrop intervals. Confirm names/durations via /ar talents and /ar debug.
+-- totem blind-redrop intervals. Confirm names/durations via /sbr talents and /sbr debug.
 local TALENT_HEALBONUS   = "Purification"
 local MANATIDE_SPELL     = "Mana Tide Totem"
 local WATER_TOTEM_REDROP = 55
@@ -64,7 +64,7 @@ M.SHOCKS  = { earth = "Earth Shock", frost = "Frost Shock", flame = "Flame Shock
 M.SHIELDS = { lightning = "Lightning Shield", water = "Water Shield", earth = "Earth Shield", none = "" }
 
 -- Restoration totem picks (key -> spell), resolved per element. Names are
--- vanilla baselines - confirm against Turtle's spellbook with /ar debug.
+-- vanilla baselines - confirm against Turtle's spellbook with /sbr debug.
 M.WATER_TOTEMS = { manaspring = "Mana Spring Totem", healingstream = "Healing Stream Totem", none = "" }
 M.EARTH_TOTEMS = { strength = "Strength of Earth Totem", stoneskin = "Stoneskin Totem", tremor = "Tremor Totem", none = "" }
 M.FIRE_TOTEMS  = { searing = "Searing Totem", magma = "Magma Totem", firenova = "Fire Nova Totem", flametongue = "Flametongue Totem", none = "" }
@@ -221,7 +221,7 @@ end
 -- toggles Attack when you are not already swinging, so it is a no-op if SCRM
 -- already started it and fills the gap otherwise.
 function M:EnsureMeleeSwing()
-    AutoRota:EnsureAutoAttack()
+    Aegis_SBR:EnsureAutoAttack()
 end
 
 -- Flame Shock maintained as a DoT (used when shock == flame). Returns true if
@@ -233,7 +233,7 @@ function M:MaintainFlameShock()
     if not self:IsReady("Flame Shock") then return false end
     local tex = self.dotTex["Flame Shock"]
     if self:TargetDebuffUp("Flame Shock", tex) then return false end
-    local detectable = tex or AutoRota:CanResolveDebuffNames()
+    local detectable = tex or Aegis_SBR:CanResolveDebuffNames()
     local now = GetTime()
     if not detectable and (now - (self.flameT or 0)) < FLAMESHOCK_DUR then return false end
     if self:Queue("Flame Shock") then self.flameT = now; return true end
@@ -387,7 +387,7 @@ function M:GcdReady()
 end
 
 -- Nature's Swiftness equivalent. The talent is "Ancestral Swiftness"; the spell
--- it grants may be named either of these on Turtle - try both (confirm /ar debug).
+-- it grants may be named either of these on Turtle - try both (confirm /sbr debug).
 M.NS_CANDIDATES = { "Nature's Swiftness", "Ancestral Swiftness" }
 function M:NSSpell()
     for i = 1, table.getn(self.NS_CANDIDATES) do
@@ -711,29 +711,29 @@ end
 -- ============================================================
 function M:HandleCommand(cmd, t)
     if cmd == "mode" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         local mode = self.modeAlias[string.lower(t[2] or "")]
         if cfg and mode then
             cfg.mode = mode
             msgOut("mode = " .. mode .. ".")
         else
-            msgOut("usage: /ar mode <enhancement|elemental|tank|resto>", 1, 0.5, 0.3)
+            msgOut("usage: /sbr mode <enhancement|elemental|tank|resto>", 1, 0.5, 0.3)
         end
         return true
     end
     if cmd == "shock" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         local shock = self.shockAlias[string.lower(t[2] or "")]
         if cfg and shock then
             cfg.shock = shock
             msgOut("shock = " .. (shock == "none" and "(none)" or self.SHOCKS[shock]) .. ".")
         else
-            msgOut("usage: /ar shock <earth|frost|flame|none>", 1, 0.5, 0.3)
+            msgOut("usage: /sbr shock <earth|frost|flame|none>", 1, 0.5, 0.3)
         end
         return true
     end
     if cmd == "weave" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return true end
         local a = string.lower(t[2] or "")
         if a == "on" then cfg.weaveDamage = true
@@ -743,13 +743,13 @@ function M:HandleCommand(cmd, t)
         return true
     end
     if cmd == "shield" then
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         local shield = self.shieldAlias[string.lower(t[2] or "")]
         if cfg and shield then
             cfg.shield = shield
             msgOut("shield = " .. (shield == "none" and "(none)" or self.SHIELDS[shield]) .. ".")
         else
-            msgOut("usage: /ar shield <lightning|water|earth|none>", 1, 0.5, 0.3)
+            msgOut("usage: /sbr shield <lightning|water|earth|none>", 1, 0.5, 0.3)
         end
         return true
     end
