@@ -1,11 +1,11 @@
 -- ============================================================
--- Class_Shaman_UI  -  shaman window body for AutoRota
+-- Class_Shaman_UI  -  shaman window body for Aegis_SBR
 -- Builds and binds only the shaman specific controls. The shared
--- window shell and profile management live in AutoRota_UI.lua.
+-- window shell and profile management live in Aegis_SBR_UI.lua.
 -- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
-local M = AutoRota.classes.SHAMAN
+local M = Aegis_SBR.classes.SHAMAN
 M.useScrollLayout = true
 M.specTabs = {
     field = "mode", default = "enhancement",
@@ -87,7 +87,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.lhwRow.slider, "Lesser HW HP", "Use Lesser Healing Wave when a target drops under this health.")
     ui:Tip(self.chainRow.slider, "Chain Heal count", "How many hurt allies are needed before Chain Heal fires.")
     ui:Tip(self.totemsRow.cb, "Maintain totems", "Keeps the totems below dropped in every spec, re-cast during a lull. Cast timing is tracked from your actual casts (SuperWoW), not a blind clock.")
-    ui:Tip(self.weaveRow.cb, "Weave damage", "When nobody needs healing and you have an enemy targeted, cast Lightning Bolt in the downtime.", "Mana-gated so it never starves heals. Off by default - same as /ar weave on|off.")
+    ui:Tip(self.weaveRow.cb, "Weave damage", "When nobody needs healing and you have an enemy targeted, cast Lightning Bolt in the downtime.", "Mana-gated so it never starves heals. Off by default - same as /sbr weave on|off.")
     ui:Tip(self.weaveRow.slider, "Weave mana floor", "Only weave damage while your mana is above this percent.")
     ui:Tip(self.waterDD, "Water totem", "Which water totem to keep down. Mana Spring restores party mana.")
     ui:Tip(self.earthDD, "Earth totem", "Which earth totem to keep down (or none).")
@@ -208,9 +208,9 @@ end
 
 -- Open the shared window for this class.
 M.OpenConfig = function(mod)
-    if not AutoRotaUI then
-        AutoRota:Throttle("UI not ready yet, try again in a moment.")
+    if not Aegis_SBR_UI then
+        Aegis_SBR:Throttle("UI not ready yet, try again in a moment.")
         return
     end
-    AutoRotaUI:Toggle()
+    Aegis_SBR_UI:Toggle()
 end

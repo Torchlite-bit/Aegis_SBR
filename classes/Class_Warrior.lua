@@ -1,5 +1,5 @@
 -- ============================================================
--- Class_Warrior  -  warrior module for AutoRota
+-- Class_Warrior  -  warrior module for Aegis_SBR
 -- Turtle WoW 1.12 (SuperWoW). Roleless, configurable, all specs.
 -- ============================================================
 -- Model:
@@ -20,17 +20,17 @@
 --    block/dodge/parry) are tracked from the combat log into short
 --    windows, mirroring the rogue's Riposte tracker.
 --  * AoE has no reliable enemy counter on 1.12 (SuperWoW exposes none),
---    so AoE is a manual toggle, flippable mid-fight with /ar aoe.
+--    so AoE is a manual toggle, flippable mid-fight with /sbr aoe.
 --  * Cooldowns follow the rogue's pattern: pop always, only on
 --    elite/boss, or never (manual) via two checkboxes.
 -- ============================================================
 
-local M = AutoRota:NewClassModule("WARRIOR")
+local M = Aegis_SBR:NewClassModule("WARRIOR")
 M.uiTitle = "Warrior"
 M.uiHeight = 730
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 
 -- Reactive proc windows (seconds). Overpower and Revenge stay usable for
 -- about 5s after the triggering event.
@@ -418,7 +418,7 @@ function M:Rotate(cfg)
     --      the target. Skipped in the execute phase so rage funnels to Execute.
     if cfg.useRend and not inExecute and self:KnowsSpell("Rend")
         and self:CanCast("Rend", RAGE["Rend"], STANCE_REQ["Rend"])
-        and not AutoRota:TargetDebuffUp("Rend", "ability_rend") then
+        and not Aegis_SBR:TargetDebuffUp("Rend", "ability_rend") then
         if self:Cast("Rend") then return end
     end
 
@@ -458,14 +458,14 @@ end
 -- Class specific slash subcommands, dispatched from the core
 -- ============================================================
 function M:CmdAoe()
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     cfg.aoeMode = not cfg.aoeMode
     msgOut("AoE mode " .. (cfg.aoeMode and "on (Cleave + Whirlwind)" or "off (single target)") .. ".")
 end
 
 function M:CmdCd(mode)
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     mode = string.lower(mode or "")
     if mode == "on" or mode == "always" then
@@ -478,19 +478,19 @@ function M:CmdCd(mode)
         cfg.popCDs = false; cfg.autoCDElite = false
         msgOut("cooldowns: manual (off).")
     else
-        msgOut("usage: /ar cd on | elite | off", 1, 0.5, 0.3)
+        msgOut("usage: /sbr cd on | elite | off", 1, 0.5, 0.3)
     end
 end
 
 function M:CmdDance()
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     cfg.stanceDance = not cfg.stanceDance
     msgOut("stance dancing " .. (cfg.stanceDance and "on" or "off") .. ".")
 end
 
 function M:CmdSpell(alias, onoff)
-    local cfg = AutoRota:GetActiveProfile()
+    local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then msgOut("no profile active.", 1, 0.5, 0.3); return end
     local key = self.spellAlias[string.lower(alias or "")]
     if not key then msgOut("unknown spell alias.", 1, 0.5, 0.3); return end

@@ -1,11 +1,11 @@
 -- ============================================================
--- Class_Warlock_UI  -  warlock window body for AutoRota
+-- Class_Warlock_UI  -  warlock window body for Aegis_SBR
 -- Builds and binds only the warlock specific controls. The shared
--- window shell and profile management live in AutoRota_UI.lua.
+-- window shell and profile management live in Aegis_SBR_UI.lua.
 -- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
-local M = AutoRota.classes.WARLOCK
+local M = Aegis_SBR.classes.WARLOCK
 M.useScrollLayout = true
 
 -- ============================================================
@@ -170,9 +170,9 @@ end
 
 -- Open the shared window for this class.
 M.OpenConfig = function(mod)
-    if not AutoRotaUI then
-        AutoRota:Throttle("UI not ready yet, try again in a moment.")
+    if not Aegis_SBR_UI then
+        Aegis_SBR:Throttle("UI not ready yet, try again in a moment.")
         return
     end
-    AutoRotaUI:Toggle()
+    Aegis_SBR_UI:Toggle()
 end

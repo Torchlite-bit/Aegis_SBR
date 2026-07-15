@@ -1,11 +1,11 @@
 -- ============================================================
--- Class_Warrior_UI  -  warrior window body for AutoRota
+-- Class_Warrior_UI  -  warrior window body for Aegis_SBR
 -- Builds and binds only the warrior specific controls. The shared
--- window shell and profile management live in AutoRota_UI.lua.
+-- window shell and profile management live in Aegis_SBR_UI.lua.
 -- Uses the shell's scroll layout (M.useScrollLayout).
 -- ============================================================
 
-local M = AutoRota.classes.WARRIOR
+local M = Aegis_SBR.classes.WARRIOR
 M.useScrollLayout = true
 
 -- Maps each boolean toggle to the spell it depends on, so the label can
@@ -96,7 +96,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.cb.useRevenge.cb,      "Revenge",       "Defensive stance only. Fires after you block, dodge, or parry.")
     ui:Tip(self.cb.stanceDance.cb,     "Stance dancing (experimental)", "Auto-swaps to Battle for Overpower (and to Defensive for Revenge when home is Defensive), then drifts back to your home stance.", "Costs a little rage per swap; tune in game.")
     ui:Tip(self.stanceDD,              "Home stance",   "The stance the rotation returns to when dancing. Berserker for most DPS, Defensive for tanking.")
-    ui:Tip(self.cb.aoeMode.cb,         "AoE mode",      "Switches the rage dump to Cleave and uses Whirlwind on cooldown. Flip mid-fight with /ar aoe.")
+    ui:Tip(self.cb.aoeMode.cb,         "AoE mode",      "Switches the rage dump to Cleave and uses Whirlwind on cooldown. Flip mid-fight with /sbr aoe.")
     ui:Tip(self.cb.useSweeping.cb,     "Sweeping Strikes", "Fired on cooldown while AoE mode is on (off the global cooldown).")
     ui:Tip(self.cb.useSunder.cb,       "Sunder Armor",  "Applied as a filler up to the stack count below, then left to ride.")
     ui:Tip(self.cb.useThunderClap.cb,  "Thunder Clap",  "AoE filler. Battle stance in 1.12, so a Defensive tank will not auto-cast it.")
@@ -149,9 +149,9 @@ end
 
 -- Open the shared window for this class.
 M.OpenConfig = function(mod)
-    if not AutoRotaUI then
-        AutoRota:Throttle("UI not ready yet, try again in a moment.")
+    if not Aegis_SBR_UI then
+        Aegis_SBR:Throttle("UI not ready yet, try again in a moment.")
         return
     end
-    AutoRotaUI:Toggle()
+    Aegis_SBR_UI:Toggle()
 end

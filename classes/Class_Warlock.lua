@@ -1,5 +1,5 @@
 -- ============================================================
--- Class_Warlock  -  warlock module for AutoRota
+-- Class_Warlock  -  warlock module for Aegis_SBR
 -- Turtle WoW 1.12 (SuperWoW). DoT priority, configurable, level 1+.
 -- ============================================================
 -- Model (mirrors the proven leveling macro):
@@ -36,7 +36,7 @@
 -- the rotation never clips the current cast.
 -- ============================================================
 
-local M = AutoRota:NewClassModule("WARLOCK")
+local M = Aegis_SBR:NewClassModule("WARLOCK")
 M.uiTitle = "Warlock"
 M.uiHeight = 716
 M.meleeAutoAttack = false   -- caster, no white melee swing
@@ -72,7 +72,7 @@ local DH_TICK_BOOST = 0.30
 local WAND_STOP_BEFORE_DOT = 1.5
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 
 -- Channel-clip protection (merged from the modified branch). Drain Life and
 -- Drain Soul are channels; once one is running the rotation must not queue a
@@ -141,7 +141,7 @@ M.CURSES = {
 }
 M.curseTex = {
     ["Curse of Agony"] = "Spell_Shadow_CurseOfSargeras",
-    -- Add more here once confirmed in game with /ar debug.
+    -- Add more here once confirmed in game with /sbr debug.
 }
 
 -- Base duration in seconds for each DoT, used only to estimate remaining time
@@ -516,7 +516,7 @@ end
 function M:ApplyDot(spellName, texFrag, interval)
     interval = interval or 3
     if self:TargetDebuffUp(spellName, texFrag) then return "up" end
-    local detectable = (texFrag ~= nil) or AutoRota:CanResolveDebuffNames()
+    local detectable = (texFrag ~= nil) or Aegis_SBR:CanResolveDebuffNames()
     local id = self:TargetId()
     local rec = self.dotThrottle[spellName]
     local now = GetTime()
@@ -675,7 +675,7 @@ function M:Rotate(cfg)
         -- Exact upkeep when the curse is detectable (known icon, or SuperWoW
         -- name resolution); only a curse we cannot see at all falls back to the
         -- 20s blind reapply timer.
-        local detectable = tex or AutoRota:CanResolveDebuffNames()
+        local detectable = tex or Aegis_SBR:CanResolveDebuffNames()
         table.insert(order, { cfg.curse, tex, detectable and 3 or 20 })
     end
     -- Malediction secondary curse: with that talent Curse of Agony coexists
@@ -686,7 +686,7 @@ function M:Rotate(cfg)
     if cfg.coaSecondary and self:KnowsSpell("Curse of Agony")
         and cfg.curse ~= "Curse of Agony" and cfg.curse ~= "Curse of Doom" then
         local coaTex = self:CurseTex("Curse of Agony")
-        local coaDetectable = coaTex or AutoRota:CanResolveDebuffNames()
+        local coaDetectable = coaTex or Aegis_SBR:CanResolveDebuffNames()
         table.insert(order, { "Curse of Agony", coaTex, coaDetectable and 3 or 20 })
     end
     if cfg.useCorruption then table.insert(order, { "Corruption", self.dotTex["Corruption"], 3 }) end
@@ -799,12 +799,12 @@ end
 function M:HandleCommand(cmd, t)
     if cmd == "curse" then
         local curse = self.curseAlias[string.lower(t[2] or "")]
-        local cfg = AutoRota:GetActiveProfile()
+        local cfg = Aegis_SBR:GetActiveProfile()
         if cfg and curse ~= nil then
             cfg.curse = curse
             msgOut("curse = " .. ((curse == "") and "(none)" or curse) .. ".")
         else
-            msgOut("usage: /ar curse <agony|elements|shadow|weakness|recklessness|tongues|doom|none>", 1, 0.5, 0.3)
+            msgOut("usage: /sbr curse <agony|elements|shadow|weakness|recklessness|tongues|doom|none>", 1, 0.5, 0.3)
         end
         return true
     end
