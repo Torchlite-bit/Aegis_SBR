@@ -14,10 +14,14 @@ client's single-pass Lua 5.0 loader (no external Lua interpreter available):
 
   2. ORDERING  — define-before-use audit. Lua 5.0 loads each file top-to-bottom
                  exactly once, so a local function/table used before its own
-                 definition (in file order) crashes on load. This flags any
-                 function body that CALLS a local defined LATER in the same file.
-                 This has historically caught real crashes (e.g. a layout row
-                 primitive placed above the helper it calls).
+                 definition (in file order) crashes on load: the name inside the
+                 earlier body binds to a (nil) global, not the later local. This
+                 flags any function body that CALLS a local defined LATER in the
+                 file OUTSIDE that body. A local first defined INSIDE the body
+                 itself (e.g. captured by a closure) is in scope by the time it
+                 runs and is deliberately not flagged. This has historically
+                 caught real crashes (e.g. a layout row primitive placed above
+                 the helper it calls).
 
 Usage:
     python3 scripts/verify.py <file.lua> [more.lua ...]      # both checks
@@ -197,7 +201,10 @@ def check_ordering(path):
         body = re.sub(r'"[^"]*"', '""', body)     # neutralize strings
         body = re.sub(r"'[^']*'", "''", body)
         for ident, dline in defs.items():
-            if dline > start and re.search(r'\b' + re.escape(ident) + r'\s*\(', body):
+            # dline inside (start, end] is the body's own inner local (in scope
+            # when the body runs); only a def past the body's end is a genuine
+            # file-order forward reference.
+            if dline > end and re.search(r'\b' + re.escape(ident) + r'\s*\(', body):
                 issues.append(f"    '{name}' (line {start}) calls '{ident}' "
                               f"defined later (line {dline})")
 
