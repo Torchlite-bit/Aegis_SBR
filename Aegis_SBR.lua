@@ -1,21 +1,22 @@
 -- ============================================================
--- AutoRota  -  configurable one-button rotation, multi class
--- Turtle WoW 1.12 (SuperWoW).
+-- Aegis: Single Button Rotation (Aegis_SBR)  -  configurable
+-- one-button rotation, multi class. Turtle WoW 1.12 (SuperWoW).
+-- Formerly AutoRota.
 -- ============================================================
 -- The core holds everything that is not class specific. Each class
 -- ships a module (Class_<Name>.lua) that registers itself here. On
 -- login the player class is detected and the matching module becomes
 -- active, providing its templates, profile rules, rotation and UI.
 -- ============================================================
--- Run with a bare macro, spam it:   /ar
--- Configure per character:          /ar ui
+-- Run with a bare macro, spam it:   /sbr
+-- Configure per character:          /sbr ui
 -- Other commands: list, use <name>, off, new <name> [template],
 --   del <name>, check, reset, debug, trace, plus class commands.
--- /pa, /paladinauto and /autopala stay as aliases for old macros.
+-- /aegis is the long form; /ar stays as a legacy alias.
 -- ============================================================
 
-AutoRota = {
-    ver = "0.13.13b",
+Aegis_SBR = {
+    ver = "0.14.0",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -25,7 +26,7 @@ AutoRota = {
 -- A class module inherits every shared helper through __index, so inside
 -- a module "self:Cast(...)" resolves to the core while "self.weaving" and
 -- the like stay private to the module instance.
-function AutoRota:NewClassModule(token)
+function Aegis_SBR:NewClassModule(token)
     local m = setmetatable({ classToken = token }, { __index = self })
     self.classes[token] = m
     return m
@@ -33,11 +34,11 @@ end
 
 -- Shared chat output, inherited by every class module (so modules use
 -- self:Msg(...) instead of redefining their own local printer).
-function AutoRota:Msg(text, r, g, b)
-    DEFAULT_CHAT_FRAME:AddMessage("AutoRota: " .. text, r or 1, g or 0.8, b or 0.0)
+function Aegis_SBR:Msg(text, r, g, b)
+    DEFAULT_CHAT_FRAME:AddMessage("Aegis: " .. text, r or 1, g or 0.8, b or 0.0)
 end
 
-local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
+local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 
 -- ============================================================
 -- Shared rotation and utility helpers (class independent)
@@ -48,7 +49,7 @@ local function msgOut(text, r, g, b) AutoRota:Msg(text, r, g, b) end
 -- rank table. Every later lookup is then a table read instead of a full scan.
 -- The index is built lazily and dropped on SPELLS_CHANGED, so learning a spell
 -- or a new rank triggers a rebuild on the next lookup.
-function AutoRota:BuildSpellIndex()
+function Aegis_SBR:BuildSpellIndex()
     local idx, ranks = {}, {}
     local i = 1
     while true do
@@ -60,36 +61,36 @@ function AutoRota:BuildSpellIndex()
         if not ranks[n] or num > ranks[n] then ranks[n] = num end
         i = i + 1
     end
-    AutoRota.spellIndex = idx
-    AutoRota.spellRanks = ranks
+    Aegis_SBR.spellIndex = idx
+    Aegis_SBR.spellRanks = ranks
 end
 
-function AutoRota:InvalidateSpellIndex()
-    AutoRota.spellIndex = nil
-    AutoRota.spellRanks = nil
+function Aegis_SBR:InvalidateSpellIndex()
+    Aegis_SBR.spellIndex = nil
+    Aegis_SBR.spellRanks = nil
 end
 
-function AutoRota:FindSpellSlot(name)
-    if not AutoRota.spellIndex then AutoRota:BuildSpellIndex() end
-    return AutoRota.spellIndex[name]
+function Aegis_SBR:FindSpellSlot(name)
+    if not Aegis_SBR.spellIndex then Aegis_SBR:BuildSpellIndex() end
+    return Aegis_SBR.spellIndex[name]
 end
 
 -- Highest known rank number of a spell (0 if unknown). Used for downranking.
-function AutoRota:MaxRank(name)
-    if not AutoRota.spellRanks then AutoRota:BuildSpellIndex() end
-    return AutoRota.spellRanks[name] or 0
+function Aegis_SBR:MaxRank(name)
+    if not Aegis_SBR.spellRanks then Aegis_SBR:BuildSpellIndex() end
+    return Aegis_SBR.spellRanks[name] or 0
 end
 
-function AutoRota:KnowsSpell(name)
+function Aegis_SBR:KnowsSpell(name)
     return self:FindSpellSlot(name) ~= nil
 end
 
-function AutoRota:Cast(name)
+function Aegis_SBR:Cast(name)
     if self:KnowsSpell(name) then CastSpellByName(name); return true end
     return false
 end
 
-function AutoRota:IsReady(name)
+function Aegis_SBR:IsReady(name)
     local slot = self:FindSpellSlot(name)
     if not slot then return false end
     local start, dur = GetSpellCooldown(slot, BOOKTYPE_SPELL)
@@ -98,7 +99,7 @@ function AutoRota:IsReady(name)
 end
 
 -- Human readable cooldown state for tracing
-function AutoRota:CDInfo(name)
+function Aegis_SBR:CDInfo(name)
     local slot = self:FindSpellSlot(name)
     if not slot then return "unknown" end
     local start, dur = GetSpellCooldown(slot, BOOKTYPE_SPELL)
@@ -112,7 +113,7 @@ end
 -- A short reported duration (<= ~1.5s) means only the GCD is active, which
 -- we treat as "ready" so a held priority spell does not lose the GCD-edge
 -- race to the unconditional seal recast.
-function AutoRota:OwnCDReady(name)
+function Aegis_SBR:OwnCDReady(name)
     local slot = self:FindSpellSlot(name)
     if not slot then return false end
     local start, dur = GetSpellCooldown(slot, BOOKTYPE_SPELL)
@@ -128,7 +129,7 @@ end
 -- swing from the last one plus the main hand speed, the same idea AttackBar
 -- uses. This is the foundation for seal twisting.
 -- ============================================================
-function AutoRota:OnSwingMessage(msg)
+function Aegis_SBR:OnSwingMessage(msg)
     if not msg then return end
     if string.find(msg, "^Your ") then return end   -- a named ability or seal, not a white swing
     if string.find(msg, "^You ") then
@@ -139,22 +140,22 @@ function AutoRota:OnSwingMessage(msg)
 end
 
 -- Predicted seconds until the next white swing, or nil if unknown.
-function AutoRota:SwingTimeLeft()
+function Aegis_SBR:SwingTimeLeft()
     if not self.lastSwing or not self.swingSpeed or self.swingSpeed <= 0 then return nil end
     local elapsed = GetTime() - self.lastSwing
     return self.swingSpeed - math.mod(elapsed, self.swingSpeed)
 end
 
--- Throttled per-press trace, toggled with /ar trace. Accepts any number of
+-- Throttled per-press trace, toggled with /sbr trace. Accepts any number of
 -- lines; the throttle is checked once so multi-line traces are never half
 -- swallowed (Lua 5.0 packs varargs into the implicit `arg` table).
-function AutoRota:Trace(...)
+function Aegis_SBR:Trace(...)
     if not self.trace then return end
     local now = GetTime()
     if now - (self.traceT or 0) < 0.4 then return end
     self.traceT = now
     for i = 1, arg.n do
-        if arg[i] then DEFAULT_CHAT_FRAME:AddMessage("AR: " .. arg[i], 0.6, 0.8, 1.0) end
+        if arg[i] then DEFAULT_CHAT_FRAME:AddMessage("SBR: " .. arg[i], 0.6, 0.8, 1.0) end
     end
 end
 
@@ -162,7 +163,7 @@ end
 -- in the same press then reads this table instead of rescanning all 32 slots.
 -- Keyed by GetTime(), which is constant within a frame, so the snapshot can
 -- never be read stale.
-function AutoRota:SnapshotBuffs()
+function Aegis_SBR:SnapshotBuffs()
     if not GetPlayerBuff then return end
     local snap = {}
     for i = 0, 31 do
@@ -184,7 +185,7 @@ function AutoRota:SnapshotBuffs()
     self.buffSnapT = GetTime()
 end
 
-function AutoRota:ScanBuff(name)
+function Aegis_SBR:ScanBuff(name)
     -- fresh snapshot from this frame: O(1) read
     if self.buffSnap and self.buffSnapT == GetTime() then
         local e = self.buffSnap[name]
@@ -210,12 +211,12 @@ function AutoRota:ScanBuff(name)
     return nil, 0
 end
 
-function AutoRota:HasBuff(name)
+function Aegis_SBR:HasBuff(name)
     local tl = self:ScanBuff(name)
     return tl ~= nil
 end
 
-function AutoRota:BuffTime(name)
+function Aegis_SBR:BuffTime(name)
     local tl, st = self:ScanBuff(name)
     return tl or 0, st or 0
 end
@@ -229,7 +230,7 @@ end
 -- the snapshot as a fallback for clients without SuperWoW (or ids we cannot
 -- map), so detection degrades to the previous behaviour rather than breaking.
 -- ============================================================
-function AutoRota:SnapshotTargetDebuffs()
+function Aegis_SBR:SnapshotTargetDebuffs()
     local byName, list = {}, {}
     if UnitExists("target") then
         for i = 1, 40 do
@@ -259,7 +260,7 @@ end
 -- Returns up (bool), stacks. Tries the exact spell name first (SuperWoW id
 -- path), then the optional icon-fragment fallback. Builds the snapshot on
 -- demand when it is stale, so slash commands and the UI work outside a press.
-function AutoRota:ScanTargetDebuff(name, texFrag)
+function Aegis_SBR:ScanTargetDebuff(name, texFrag)
     if not (self.tdebuffSnap and self.tdebuffSnapT == GetTime()) then
         self:SnapshotTargetDebuffs()
     end
@@ -277,12 +278,12 @@ function AutoRota:ScanTargetDebuff(name, texFrag)
     return false, 0
 end
 
-function AutoRota:TargetDebuffUp(name, texFrag)
+function Aegis_SBR:TargetDebuffUp(name, texFrag)
     local up = self:ScanTargetDebuff(name, texFrag)
     return up
 end
 
-function AutoRota:TargetDebuffStacks(name, texFrag)
+function Aegis_SBR:TargetDebuffStacks(name, texFrag)
     local up, st = self:ScanTargetDebuff(name, texFrag)
     if up then return st or 0 end
     return 0
@@ -291,23 +292,23 @@ end
 -- True when SuperWoW's id->name path is available, so a debuff without a
 -- known icon fragment can still be tracked exactly (used by modules to decide
 -- between exact upkeep and a blind reapply timer).
-function AutoRota:CanResolveDebuffNames()
+function Aegis_SBR:CanResolveDebuffNames()
     return SpellInfo ~= nil
 end
 
-function AutoRota:ManaPct()
+function Aegis_SBR:ManaPct()
     local mx = UnitManaMax("player")
     if mx and mx > 0 then return UnitMana("player") / mx * 100 end
     return 100
 end
 
-function AutoRota:PlayerHPPct()
+function Aegis_SBR:PlayerHPPct()
     local mx = UnitHealthMax("player")
     if mx and mx > 0 then return UnitHealth("player") / mx * 100 end
     return 100
 end
 
-function AutoRota:TargetHPPct()
+function Aegis_SBR:TargetHPPct()
     local mx = UnitHealthMax("target")
     if mx and mx > 0 then return UnitHealth("target") / mx * 100 end
     return 100
@@ -316,7 +317,7 @@ end
 -- The Attack action's bar slot is cached: one IsAttackAction call verifies it
 -- each press, and the full 1..172 scan only runs when the cache is empty or
 -- the button was moved/removed.
-function AutoRota:EnsureAutoAttack()
+function Aegis_SBR:EnsureAutoAttack()
     local slot = self.attackSlot
     if not (slot and IsAttackAction(slot)) then
         slot = nil
@@ -340,7 +341,7 @@ end
 
 -- A stable id for the current target. SuperWoW returns the GUID as the second
 -- value of UnitExists, which lets us tell apart two mobs that share a name.
-function AutoRota:TargetId()
+function Aegis_SBR:TargetId()
     local _, guid = UnitExists("target")
     if guid then return guid end
     return UnitName("target") or ""
@@ -349,15 +350,15 @@ end
 -- Best effort melee proximity. CheckInteractDistance index 3 is about 9.9
 -- yards, a practical proxy for "close enough to fight". Used only to decide
 -- whether we are still running in, so we can pre-cast the seal on the way.
-function AutoRota:InMeleeRange()
+function Aegis_SBR:InMeleeRange()
     if not UnitExists("target") then return false end
     return CheckInteractDistance("target", 3) and true or false
 end
 
-function AutoRota:Throttle(text)
+function Aegis_SBR:Throttle(text)
     local now = GetTime()
     if (now - (self.lastMsg or 0)) > 3 then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoRota: " .. text, 1, 0.5, 0.3)
+        DEFAULT_CHAT_FRAME:AddMessage("Aegis: " .. text, 1, 0.5, 0.3)
         self.lastMsg = now
     end
 end
@@ -368,8 +369,8 @@ end
 -- paladin's "Vengeful Strikes"/"Righteous Strikes"), since a one-character
 -- mismatch makes a talent read as rank 0.
 -- ============================================================
-function AutoRota:Talents()
-    DEFAULT_CHAT_FRAME:AddMessage("--- AutoRota talents ---", 1, 0.8, 0.0)
+function Aegis_SBR:Talents()
+    DEFAULT_CHAT_FRAME:AddMessage("--- Aegis talents ---", 1, 0.8, 0.0)
     local tabs = GetNumTalentTabs and GetNumTalentTabs() or 0
     if tabs == 0 then
         DEFAULT_CHAT_FRAME:AddMessage("no talent API available.", 1, 0.5, 0.3)
@@ -392,8 +393,8 @@ end
 -- ============================================================
 -- Debug dump
 -- ============================================================
-function AutoRota:Debug()
-    DEFAULT_CHAT_FRAME:AddMessage("--- AutoRota debug ---", 1, 0.8, 0.0)
+function Aegis_SBR:Debug()
+    DEFAULT_CHAT_FRAME:AddMessage("--- Aegis debug ---", 1, 0.8, 0.0)
     if UnitExists("target") then
         DEFAULT_CHAT_FRAME:AddMessage("Target debuffs (name / stacks / texture):", 1, 0.8, 0.0)
         local any = false
@@ -435,7 +436,7 @@ function AutoRota:Debug()
     end
 end
 
-function AutoRota:Tokenize(msg)
+function Aegis_SBR:Tokenize(msg)
     local t = {}
     for w in string.gfind(msg or "", "%S+") do table.insert(t, w) end
     return t
@@ -444,7 +445,7 @@ end
 -- ============================================================
 -- Saved variables and profiles (generic, schema comes from the module)
 -- ============================================================
-function AutoRota:DeepCopy(t)
+function Aegis_SBR:DeepCopy(t)
     if type(t) ~= "table" then return t end
     local r = {}
     for k, v in pairs(t) do r[k] = self:DeepCopy(v) end
@@ -453,33 +454,33 @@ end
 
 -- A full copy of a profile, then normalized by the active module. Every UI
 -- save/activate commits through here, so the cached validity is dropped.
-function AutoRota:CopyProfile(p)
+function Aegis_SBR:CopyProfile(p)
     self.validCacheName = nil
     local c = self:DeepCopy(p)
     if self.active and self.active.NormalizeProfile then self.active:NormalizeProfile(c) end
     return c
 end
 
-function AutoRota:InitDB()
-    if type(AutoRotaDB) ~= "table" then AutoRotaDB = {} end
-    if type(AutoRotaDB.profiles) ~= "table" then AutoRotaDB.profiles = {} end
+function Aegis_SBR:InitDB()
+    if type(AegisDB) ~= "table" then AegisDB = {} end
+    if type(AegisDB.profiles) ~= "table" then AegisDB.profiles = {} end
     if not self.active or not self.active.templates then return end
-    if not next(AutoRotaDB.profiles) then
+    if not next(AegisDB.profiles) then
         for name, tpl in pairs(self.active.templates) do
-            AutoRotaDB.profiles[name] = self:CopyProfile(tpl)
+            AegisDB.profiles[name] = self:CopyProfile(tpl)
         end
     end
     -- migrate any already-stored profiles to the current format
-    for _, cfg in pairs(AutoRotaDB.profiles) do self.active:NormalizeProfile(cfg) end
+    for _, cfg in pairs(AegisDB.profiles) do self.active:NormalizeProfile(cfg) end
 end
 
-function AutoRota:GetActiveProfile()
-    if not AutoRotaDB or not AutoRotaDB.active then return nil end
-    return AutoRotaDB.profiles[AutoRotaDB.active]
+function Aegis_SBR:GetActiveProfile()
+    if not AegisDB or not AegisDB.active then return nil end
+    return AegisDB.profiles[AegisDB.active]
 end
 
 -- Validity is a class rule. Without a module nothing is missing.
-function AutoRota:Validity(cfg)
+function Aegis_SBR:Validity(cfg)
     if self.active and self.active.ProfileValidity then return self.active:ProfileValidity(cfg) end
     return true, {}
 end
@@ -487,66 +488,66 @@ end
 -- ============================================================
 -- Generic profile commands (the text interface, UI is primary)
 -- ============================================================
-function AutoRota:CmdList()
+function Aegis_SBR:CmdList()
     msgOut("Profiles:")
-    local active = AutoRotaDB.active
+    local active = AegisDB.active
     local any = false
-    for name, cfg in pairs(AutoRotaDB.profiles) do
+    for name, cfg in pairs(AegisDB.profiles) do
         any = true
         local ok, missing = self:Validity(cfg)
         local mark = (name == active) and " [active]" or ""
         local valid = ok and "valid" or ("INVALID, missing " .. table.concat(missing, ", "))
         msgOut("  " .. name .. mark .. " - " .. valid)
     end
-    if not any then msgOut("  (none, use /ar reset)") end
+    if not any then msgOut("  (none, use /sbr reset)") end
     if not active then msgOut("No profile is active.") end
 end
 
-function AutoRota:CmdUse(name)
-    local cfg = name and AutoRotaDB.profiles[name]
+function Aegis_SBR:CmdUse(name)
+    local cfg = name and AegisDB.profiles[name]
     if not cfg then msgOut("profile '" .. tostring(name) .. "' not found.", 1, 0.5, 0.3); return end
     local ok, missing = self:Validity(cfg)
     if not ok then msgOut("cannot activate '" .. name .. "', missing " .. table.concat(missing, ", "), 1, 0.5, 0.3); return end
-    AutoRotaDB.active = name
+    AegisDB.active = name
     msgOut("activated '" .. name .. "'.")
 end
 
-function AutoRota:CmdOff()
-    AutoRotaDB.active = nil
+function Aegis_SBR:CmdOff()
+    AegisDB.active = nil
     msgOut("deactivated. No profile active.")
 end
 
-function AutoRota:CmdNew(name, template)
+function Aegis_SBR:CmdNew(name, template)
     if not self.active or not self.active.templates then msgOut("no class module loaded.", 1, 0.5, 0.3); return end
-    if not name then msgOut("usage: /ar new <name> [template]", 1, 0.5, 0.3); return end
-    if AutoRotaDB.profiles[name] then msgOut("'" .. name .. "' already exists.", 1, 0.5, 0.3); return end
+    if not name then msgOut("usage: /sbr new <name> [template]", 1, 0.5, 0.3); return end
+    if AegisDB.profiles[name] then msgOut("'" .. name .. "' already exists.", 1, 0.5, 0.3); return end
     if template == "" then template = nil end   -- the dispatcher lowercases t[3] or "", so a missing arg arrives as ""
     local tpl = self.active.templates[template or "starter"]
     if not tpl then msgOut("unknown template '" .. tostring(template) .. "'.", 1, 0.5, 0.3); return end
-    AutoRotaDB.profiles[name] = self:CopyProfile(tpl)
+    AegisDB.profiles[name] = self:CopyProfile(tpl)
     msgOut("created '" .. name .. "' from template '" .. (template or "starter") .. "'.")
 end
 
-function AutoRota:CmdDel(name)
-    if not name or not AutoRotaDB.profiles[name] then msgOut("profile not found.", 1, 0.5, 0.3); return end
-    AutoRotaDB.profiles[name] = nil
-    if AutoRotaDB.active == name then AutoRotaDB.active = nil end
+function Aegis_SBR:CmdDel(name)
+    if not name or not AegisDB.profiles[name] then msgOut("profile not found.", 1, 0.5, 0.3); return end
+    AegisDB.profiles[name] = nil
+    if AegisDB.active == name then AegisDB.active = nil end
     msgOut("deleted '" .. name .. "'.")
 end
 
-function AutoRota:CmdCheck()
+function Aegis_SBR:CmdCheck()
     local cfg = self:GetActiveProfile()
     if not cfg then msgOut("no profile active."); return end
     local ok, missing = self:Validity(cfg)
-    if ok then msgOut("active profile '" .. AutoRotaDB.active .. "' is valid.")
+    if ok then msgOut("active profile '" .. AegisDB.active .. "' is valid.")
     else msgOut("active profile invalid, missing " .. table.concat(missing, ", "), 1, 0.5, 0.3) end
 end
 
-function AutoRota:CmdReset()
+function Aegis_SBR:CmdReset()
     if not self.active or not self.active.templates then msgOut("no class module loaded.", 1, 0.5, 0.3); return end
-    AutoRotaDB.profiles = {}
-    for n, tpl in pairs(self.active.templates) do AutoRotaDB.profiles[n] = self:CopyProfile(tpl) end
-    AutoRotaDB.active = nil
+    AegisDB.profiles = {}
+    for n, tpl in pairs(self.active.templates) do AegisDB.profiles[n] = self:CopyProfile(tpl) end
+    AegisDB.active = nil
     msgOut("profile list reseeded from templates, nothing active.")
 end
 
@@ -556,57 +557,57 @@ end
 -- Targeting mode: three-way, mutually exclusive.
 --   "auto"   - acquire the nearest enemy when you have none (the old default).
 --   "manual" - never touch targeting; defer to you or a separate assist addon.
---   "assist" - continuously mirror AutoRotaDB.assistTarget's current target.
+--   "assist" - continuously mirror AegisDB.assistTarget's current target.
 -- Migrated transparently from the older acquire boolean (true/nil -> "auto",
 -- false -> "manual") the first time this is read after upgrading.
 -- ============================================================
-function AutoRota:TargetMode()
-    if type(AutoRotaDB) ~= "table" then return "auto" end
-    local m = AutoRotaDB.targetMode
+function Aegis_SBR:TargetMode()
+    if type(AegisDB) ~= "table" then return "auto" end
+    local m = AegisDB.targetMode
     if m == "auto" or m == "manual" or m == "assist" then return m end
-    local migrated = (AutoRotaDB.acquire == false) and "manual" or "auto"
-    AutoRotaDB.targetMode = migrated
+    local migrated = (AegisDB.acquire == false) and "manual" or "auto"
+    AegisDB.targetMode = migrated
     return migrated
 end
 
--- /ar acquire on|off|assist <name> - set targeting mode (also on the minimap
+-- /sbr acquire on|off|assist <name> - set targeting mode (also on the minimap
 -- right-click). "on"/"auto" and "off"/"manual"/"defer" keep their old
 -- meaning; "assist <name>" is new and requires a party/raid member's name.
-function AutoRota:CmdAcquire(arg, arg2)
+function Aegis_SBR:CmdAcquire(arg, arg2)
     local low = string.lower(arg or "")
     if low == "" then
         local mode = self:TargetMode()
         local desc = mode == "auto" and "auto (acquires nearest enemy)"
-            or mode == "assist" and ("assist (mirrors " .. ((AutoRotaDB and AutoRotaDB.assistTarget) or "?") .. ")")
+            or mode == "assist" and ("assist (mirrors " .. ((AegisDB and AegisDB.assistTarget) or "?") .. ")")
             or "manual (defers to you or an assist addon)"
-        msgOut("targeting mode is " .. desc .. ". Use /ar acquire on, off, or assist <name>.")
+        msgOut("targeting mode is " .. desc .. ". Use /sbr acquire on, off, or assist <name>.")
         return
     end
     if low == "on" or low == "self" or low == "auto" then
-        if AutoRotaDB then AutoRotaDB.targetMode = "auto" end
-        msgOut("targeting mode: auto. AutoRota acquires the nearest enemy when it has no target.")
+        if AegisDB then AegisDB.targetMode = "auto" end
+        msgOut("targeting mode: auto. Aegis acquires the nearest enemy when it has no target.")
     elseif low == "off" or low == "manual" or low == "defer" then
-        if AutoRotaDB then AutoRotaDB.targetMode = "manual" end
-        msgOut("targeting mode: manual. AutoRota leaves targeting to you or your assist addon.")
+        if AegisDB then AegisDB.targetMode = "manual" end
+        msgOut("targeting mode: manual. Aegis leaves targeting to you or your assist addon.")
     elseif low == "assist" then
         if not arg2 or arg2 == "" then
-            msgOut("usage: /ar acquire assist <party/raid member name>.", 1, 0.5, 0.3)
+            msgOut("usage: /sbr acquire assist <party/raid member name>.", 1, 0.5, 0.3)
             return
         end
-        if AutoRotaDB then
-            AutoRotaDB.targetMode = "assist"
-            AutoRotaDB.assistTarget = arg2
+        if AegisDB then
+            AegisDB.targetMode = "assist"
+            AegisDB.assistTarget = arg2
         end
         msgOut("targeting mode: assist. Mirroring " .. arg2 .. "'s target.")
     else
-        msgOut("usage: /ar acquire on or /ar acquire off or /ar acquire assist <name>.", 1, 0.5, 0.3)
+        msgOut("usage: /sbr acquire on or /sbr acquire off or /sbr acquire assist <name>.", 1, 0.5, 0.3)
     end
 end
 
 -- Resolve a party/raid member's unit id by exact (case-insensitive) name.
 -- Raid members are only enumerable while actually in a raid; a solo party
 -- falls back to partyN + the player.
-function AutoRota:FindGroupUnitByName(name)
+function Aegis_SBR:FindGroupUnitByName(name)
     if not name or name == "" then return nil end
     local want = string.lower(name)
     if GetNumRaidMembers() > 0 then
@@ -625,14 +626,14 @@ function AutoRota:FindGroupUnitByName(name)
     return nil
 end
 
--- Continuously mirror AutoRotaDB.assistTarget's current target, matched by
+-- Continuously mirror AegisDB.assistTarget's current target, matched by
 -- GUID only. Name-only matching cannot tell two different mobs with the same
 -- name apart (e.g. one tapped by a different nearby group), which in
 -- practice meant silently attacking the wrong group's mob without ever
 -- noticing - SuperWoW's GUID-aware UnitExists/TargetUnit avoids that
 -- entirely by re-resolving the assist target's live target every call.
-function AutoRota:RunAssist()
-    local name = AutoRotaDB and AutoRotaDB.assistTarget
+function Aegis_SBR:RunAssist()
+    local name = AegisDB and AegisDB.assistTarget
     if not name or name == "" then return end
     local unit = self:FindGroupUnitByName(name)
     if not unit then
@@ -655,19 +656,19 @@ function AutoRota:RunAssist()
     end
 end
 
-function AutoRota:RunRotation()
+function Aegis_SBR:RunRotation()
     if not self.active then self:Throttle("no module for your class yet."); return end
     local cfg = self:GetActiveProfile()
     if not cfg then
-        self:Throttle("no profile active. Open /ar ui or use /ar use <name>.")
+        self:Throttle("no profile active. Open /sbr ui or use /sbr use <name>.")
         return
     end
     -- Validity is cached per active profile, not recomputed every press: it only
     -- changes when a spell is learned (SPELLS_CHANGED clears it) or the active
     -- profile switches/saves (those paths clear it too).
-    if self.validCacheName ~= AutoRotaDB.active then
+    if self.validCacheName ~= AegisDB.active then
         local ok, missing = self:Validity(cfg)
-        self.validCacheName = AutoRotaDB.active
+        self.validCacheName = AegisDB.active
         self.validCacheOK = ok
         self.validCacheMissing = missing
     end
@@ -731,7 +732,7 @@ end
 -- ============================================================
 -- Command dispatch
 -- ============================================================
-function AutoRota:EvalCommand(msg)
+function Aegis_SBR:EvalCommand(msg)
     local t = self:Tokenize(msg)
     local cmd = string.lower(t[1] or "")
 
@@ -745,8 +746,8 @@ function AutoRota:EvalCommand(msg)
     if cmd == "reset" then self:CmdReset(); return end
     if cmd == "acquire" then self:CmdAcquire(t[2], t[3]); return end
     if cmd == "minimap" then
-        if AutoRotaMinimap and AutoRotaMinimap.ToggleShown then
-            local hidden = AutoRotaMinimap:ToggleShown()
+        if Aegis_SBR_Minimap and Aegis_SBR_Minimap.ToggleShown then
+            local hidden = Aegis_SBR_Minimap:ToggleShown()
             msgOut("minimap button " .. (hidden and "hidden" or "shown") .. ".")
         else
             msgOut("minimap button not available.", 1, 0.5, 0.3)
@@ -778,7 +779,16 @@ end
 -- ============================================================
 -- Class detection and load
 -- ============================================================
-function AutoRota:OnAddonLoaded()
+function Aegis_SBR:OnAddonLoaded()
+    -- Phase 0 rebrand migration: adopt the old AutoRotaDB once, BEFORE InitDB
+    -- can seed fresh templates over it. Both names stay listed in the .toc for
+    -- the transition, so the old data still loads from disk; sharing the same
+    -- table keeps the AutoRotaDB copy current as a rollback backup until the
+    -- old name is dropped from the .toc a few versions from now.
+    if (type(AegisDB) ~= "table" or not next(AegisDB)) and type(AutoRotaDB) == "table" then
+        AegisDB = AutoRotaDB
+        AegisDB._migratedFrom = "AutoRotaDB"
+    end
     local _, class = UnitClass("player")
     self.active = self.classes[class]
     self:InitDB()
@@ -786,7 +796,7 @@ end
 
 -- Printed once at PLAYER_LOGIN, when the chat frame is ready. ADDON_LOADED
 -- fires too early in the login for a banner to reliably show.
-function AutoRota:Banner()
+function Aegis_SBR:Banner()
     if self.Loaded then return end
     self.Loaded = true
     if not self.active then
@@ -794,20 +804,20 @@ function AutoRota:Banner()
         self.active = self.classes[class]
     end
     if self.active then
-        DEFAULT_CHAT_FRAME:AddMessage("AutoRota v" .. self.ver .. " loaded for " .. (self.active.uiTitle or "?")
-            .. ". Configure with /ar ui, run with a bare /ar macro.", 1, 0.8, 0.0)
+        DEFAULT_CHAT_FRAME:AddMessage("Aegis SBR v" .. self.ver .. " loaded for " .. (self.active.uiTitle or "?")
+            .. ". Configure with /sbr ui, run with a bare /sbr macro.", 1, 0.8, 0.0)
     else
-        DEFAULT_CHAT_FRAME:AddMessage("AutoRota v" .. self.ver .. " loaded, but there is no module for your class yet.", 1, 0.6, 0.3)
+        DEFAULT_CHAT_FRAME:AddMessage("Aegis SBR v" .. self.ver .. " loaded, but there is no module for your class yet.", 1, 0.6, 0.3)
     end
 end
 
--- Slash commands. /ar is primary, the paladin era names stay as aliases.
-SLASH_AUTOROTA1 = "/ar"
-SLASH_AUTOROTA2 = "/autorota"
-SLASH_AUTOROTA3 = "/paladinauto"
-SLASH_AUTOROTA4 = "/pa"
-SLASH_AUTOROTA5 = "/autopala"
-SlashCmdList["AUTOROTA"] = function(msg) AutoRota:EvalCommand(msg) end
+-- Slash commands. /sbr is primary, /aegis the long form; /ar stays as a
+-- legacy alias from the AutoRota era. ONE handler key, so a command is
+-- never double-processed (the paladin-era aliases are gone).
+SLASH_AEGIS_SBR1 = "/sbr"
+SLASH_AEGIS_SBR2 = "/aegis"
+SLASH_AEGIS_SBR3 = "/ar"
+SlashCmdList["AEGIS_SBR"] = function(msg) Aegis_SBR:EvalCommand(msg) end
 
 -- Event wiring. The swing tracker runs on the active module so its state
 -- stays with the class instance that reads it.
@@ -825,25 +835,25 @@ ev:RegisterEvent("PLAYER_REGEN_ENABLED")
 -- (no such event) simply never receive it.
 if SpellInfo then ev:RegisterEvent("UNIT_CASTEVENT") end
 ev:SetScript("OnEvent", function()
-    if event == "ADDON_LOADED" and arg1 == "AutoRota" then
-        AutoRota:OnAddonLoaded()
+    if event == "ADDON_LOADED" and arg1 == "Aegis_SBR" then
+        Aegis_SBR:OnAddonLoaded()
     elseif event == "PLAYER_LOGIN" then
-        AutoRota:Banner()
+        Aegis_SBR:Banner()
     elseif event == "SPELLS_CHANGED" then
         -- learning a spell or rank invalidates the spellbook index and any
         -- cached profile validity, both rebuilt lazily on the next use
-        AutoRota:InvalidateSpellIndex()
-        AutoRota.validCacheName = nil
+        Aegis_SBR:InvalidateSpellIndex()
+        Aegis_SBR.validCacheName = nil
     elseif event == "CHAT_MSG_COMBAT_SELF_HITS" or event == "CHAT_MSG_COMBAT_SELF_MISSES" then
-        if AutoRota.active then AutoRota.active:OnSwingMessage(arg1) end
+        if Aegis_SBR.active then Aegis_SBR.active:OnSwingMessage(arg1) end
     elseif event == "PLAYER_REGEN_ENABLED" then
-        if AutoRota.active then AutoRota.active.lastSwing = nil end
+        if Aegis_SBR.active then Aegis_SBR.active.lastSwing = nil end
     elseif event == "UNIT_CASTEVENT" then
         -- Only successful casts ("CAST"), and only if the active module wants them.
-        if arg3 == "CAST" and AutoRota.active and AutoRota.active.OnCastEvent then
+        if arg3 == "CAST" and Aegis_SBR.active and Aegis_SBR.active.OnCastEvent then
             local sname
             if arg4 and SpellInfo then sname = SpellInfo(arg4) end
-            if sname then AutoRota.active:OnCastEvent(arg1, arg2, sname) end
+            if sname then Aegis_SBR.active:OnCastEvent(arg1, arg2, sname) end
         end
     end
 end)
