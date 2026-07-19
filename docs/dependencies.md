@@ -84,13 +84,17 @@ still presence-gate every function on Turtle's bundled build before relying on i
   gated behind the rotation-audit sign-off): Enhancement Shaman imbue-uptime checks, Rogue
   poison-uptime awareness, Warrior/any-class stone/oil upkeep. See roadmap "Weapon-enchant
   awareness" item. Returns an ID (not a name) — Aegis would map known imbue/poison enchant IDs
-  to meaning, or just test presence/change.
+  to meaning, or just test presence/change. **On-client CONFIRMED 2026-07-19:**
+  `GetWeaponEnchantID("player")` exists and returns TWO values (`mh, oh`) — a small-integer
+  ID for a filled slot, `nil` for an empty one (test: `MH=29 OH=nil`).
 - **NOTE (feasibility research + Features wiki): the standard `GetWeaponEnchantInfo()` is
   usually the BETTER function for upkeep**, because it returns **time remaining (ms)** and
   charges, not just an ID — `hasMH, mhExpirationMs, mhCharges, mhEnchantID, hasOH, ohExpMs,
   ohCharges, ohEnchantID = GetWeaponEnchantInfo()` (the `*EnchantID` returns were 0 on older
   clients — confirm what Turtle's build returns; `has*` + `*Expiration` are what upkeep
-  needs). SuperWoW extends it: accepts a friendly player unit (e.g. `"party1"`) for the
+  needs). **On-client CONFIRMED 2026-07-19:** returned `has=1 ms=2112460 chg=0` for an
+  applied enchant — `has`/`ms` work, but **`charges` reads 0 for a time-based enchant**, so
+  gate upkeep on `has*` + `*Expiration`, never on charges. SuperWoW extends it: accepts a friendly player unit (e.g. `"party1"`) for the
   enchant *NAME* on that player's main/offhand, with "old functionality preserved for own
   player's enchant duration & stacks" (Features wiki, verified 2026-07-17; extension version
   not stated — presence-gate it). Refresh cached state on `UNIT_INVENTORY_CHANGED`. Use

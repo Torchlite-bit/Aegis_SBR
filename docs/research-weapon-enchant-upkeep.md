@@ -40,7 +40,9 @@ hasOffHandEnchant,  offHandExpiration,  offHandCharges,  offHandEnchantID = GetW
 - `mainHandExpiration` → **time remaining in MILLISECONDS** (this is what makes real upkeep
   possible — we can re-apply when it drops below a threshold, not just when it's already
   gone).
-- `mainHandCharges` → charges left (relevant for stone/oil-style enchants).
+- `mainHandCharges` → charges left. **CONFIRMED on client (2026-07-19): reads `0` for a
+  time-based enchant** (imbue/oil/stone), so it is NOT a reliable "present" signal — gate on
+  `has*` + `*Expiration`. Charges are only meaningful for charge-based enchants.
 - `mainHandEnchantID` → the enchant's spell ID (older clients returned this as 0; on 1.12 +
   SuperWoW confirm what it returns — but we mostly need `has*` + `*Expiration`).
 - Per the SuperWoW **Features** wiki: `GetWeaponEnchantInfo()` was extended so it "now can
@@ -50,13 +52,15 @@ hasOffHandEnchant,  offHandExpiration,  offHandCharges,  offHandEnchantID = GetW
 - Fires **`UNIT_INVENTORY_CHANGED`** when temporary enchants change → the engine can refresh
   its cached state on that event instead of polling every frame.
 
-### `GetWeaponEnchantID(unit)` — SuperWoW 2.1 (wiki-confirmed 2026-07-17)
-Returns just the main/off-hand temporary enchant **ID**. Strictly less useful than
-`GetWeaponEnchantInfo` for this feature (no duration), but handy if we need to know *which*
-imbue is up (e.g. "is it Windfury vs Rockbiter") to decide whether to overwrite. **Verify it
-exists on Turtle's bundled SuperWoW build** (`if GetWeaponEnchantID then …`); prefer
-`GetWeaponEnchantInfo` as the primary source and treat `GetWeaponEnchantID` as an optional
-enhancement for identity.
+### `GetWeaponEnchantID(unit)` — SuperWoW 2.1 (wiki-confirmed 2026-07-17; on-client CONFIRMED 2026-07-19)
+Returns **two values, `mh, oh`** — the main/off-hand temporary enchant **IDs**. On-client
+test (`GetWeaponEnchantID("player")`) returned **`MH=29 OH=nil`**: a small-integer ID for a
+filled slot, `nil` for an empty one. Strictly less useful than `GetWeaponEnchantInfo` for
+this feature (no duration), but handy if we need to know *which* imbue is up (e.g. "is it
+Windfury vs Rockbiter") to decide whether to overwrite. It exists on Turtle's bundled build,
+but still call it presence-gated (`if GetWeaponEnchantID then …`) so a client without it
+degrades; prefer `GetWeaponEnchantInfo` as the primary source and treat `GetWeaponEnchantID`
+as an optional enhancement for identity.
 
 **Bottom line on detection:** we can reliably answer "is an imbue/poison present, how long
 left, how many charges, and (probably) which one" — self-only, event-driven. Detection is
@@ -145,15 +149,24 @@ existing `Row` + `Dropdown` layout.
 ---
 
 ## What to verify in-game before building (dummy tests)
-1. **`GetWeaponEnchantInfo()` returns sane values on Turtle 1.12 + SuperWoW:** apply an
-   imbue/poison, run
-   `/run local h,e,c=GetWeaponEnchantInfo(); DEFAULT_CHAT_FRAME:AddMessage("has="..tostring(h).." ms="..tostring(e).." chg="..tostring(c))`
-   — expect `has=1`, `ms` counting down. Remove it → `has=nil`.
-2. **`GetWeaponEnchantID("player")`** exists and returns an ID (optional identity source).
-3. **Replace popup behavior:** apply an imbue over an existing one and see what `StaticPopup`
-   appears (and its index) — decides how/whether to auto-confirm.
-4. **Poison-in-combat:** confirm poisons truly can't be applied in combat on Turtle (expected),
-   which locks Rogue into the "warn / pre-pull" model.
+1. ✅ **CONFIRMED on client (2026-07-19).** `GetWeaponEnchantInfo()` returns sane values on
+   Turtle 1.12 + SuperWoW. With an enchant applied,
+   `/run local h,e,c=GetWeaponEnchantInfo(); ...` returned **`has=1 ms=2112460 chg=0`** —
+   `has` present, `ms` a live countdown (~35 min). **Caveat learned:** `charges` read **0**
+   for this (time-based) enchant, so **gate presence/upkeep on `has*` + `*Expiration`, NOT on
+   charges** — charges is only meaningful for charge-based enchants (some poisons). Still
+   worth confirming `has=nil` once the enchant is removed.
+2. ✅ **CONFIRMED on client (2026-07-19).** `GetWeaponEnchantID("player")` exists and returns
+   **two values** (`mh, oh`): the test returned **`MH=29 OH=nil`** — a small-integer ID for
+   the filled main-hand slot, `nil` for the empty off-hand. Usable as the optional identity
+   source. (Which enchant ID 29 maps to depends on what was applied; build an
+   ID→meaning table only for the imbues/poisons the feature actually offers.)
+3. ⬜ **STILL TO VERIFY — Replace popup behavior:** apply an imbue over an existing one and see
+   what `StaticPopup` appears (and its index) — decides how/whether to auto-confirm. **Until
+   this is done, the build keeps auto-apply to the no-existing-enchant case and WARNS on
+   overwrite (no auto-click).**
+4. ⬜ **STILL TO VERIFY — Poison-in-combat:** confirm poisons truly can't be applied in combat
+   on Turtle (expected), which locks Rogue into the "warn / pre-pull" model.
 
 ---
 
