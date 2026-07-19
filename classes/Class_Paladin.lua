@@ -609,12 +609,25 @@ end
 -- ============================================================
 
 -- Record an in-flight heal so the next press does not pile onto the same unit.
--- Also stamps their real HP at commit time (see PendingFor).
+-- Also stamps their real HP at commit time (see PendingFor) and our own
+-- expected cast completion (see StillCasting) - Holy Light's 2.5s cast is
+-- longer than the 1.5s global cooldown, so GcdReady() alone reports "ready"
+-- up to a full second before the cast actually finishes.
 function M:CommitHeal(unit, amount, castTime)
     self.healTarget = UnitName(unit)
     self.healAmount = amount or 0
     self.healUntil = GetTime() + (castTime or 0) + 1.0
     self.healBaseline = UnitHealth(unit)
+    self.castingUntil = GetTime() + (castTime or 0)
+end
+
+-- True while our own heal cast is still expected to be resolving, even after
+-- the shared GCD (1.5s) has already cleared - closes the gap for any heal
+-- whose cast time exceeds the GCD (Holy Light at 2.5s), where a spammed
+-- press could otherwise start a second heal before the first has landed,
+-- since the target's HP (and PendingFor's prediction) hasn't updated yet.
+function M:StillCasting()
+    return self.castingUntil and GetTime() < self.castingUntil
 end
 
 -- Predicted incoming heal for a unit from our own pending cast, else 0. Only
@@ -785,6 +798,11 @@ function M:DoHeal(cfg)
     -- predicting, so the attack rotation does not run and no false in-flight
     -- heal masks the target. The heal fires the instant the GCD frees.
     if not self:GcdReady() then return true end
+    -- Also yield while our own last heal is still expected to be casting,
+    -- even if the GCD itself has already cleared (Holy Light's 2.5s cast
+    -- outlasts the 1.5s GCD) - otherwise a spammed press in that gap can
+    -- start a second heal on a target whose HP hasn't caught up yet.
+    if self:StillCasting() then return true end
 
     local mana = UnitMana("player")
     local hp = (cfg.healPower and cfg.healPower > 0) and cfg.healPower or self:GearHealBonus()
@@ -893,6 +911,9 @@ function M:HealMeleeReady(cfg)
     if not (UnitExists("target") and not UnitIsDead("target") and UnitCanAttack("player", "target")) then return false end
     if not self:InMeleeRange() then return false end
     if not self:GcdReady() then return false end
+    -- A strike here would interrupt a still-resolving Holy Light cast (2.5s,
+    -- longer than the 1.5s GCD) - see StillCasting.
+    if self:StillCasting() then return false end
     return true
 end
 
