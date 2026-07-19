@@ -50,7 +50,12 @@ addon root as `logo.tga` and do a **full relog** to see it.
 
 All 9 class panels use a unified single-row config layout; all four healer specs have
 config panels; a Shaman totem system maintains totems across every spec via SuperWoW's
-`UNIT_CASTEVENT`. Current version: **0.14.0**.
+`UNIT_CASTEVENT`. **Phase 2 has begun (v0.15.0):** a shared weapon-enchant detection
+helper (`Aegis_SBR:WeaponEnchant`/`WeaponEnchantId`, `GetWeaponEnchantInfo`-based) plus the
+first gated behavior — Shaman main-hand imbue upkeep (out-of-combat auto-apply, in-combat
+opt-in, default OFF) and a Rogue poison pre-pull reminder (warn-only). Off-hand imbue,
+poison auto-apply, and the Shaman totem-destruction detection remain open Phase 2 items.
+Current version: **0.15.0**.
 
 ## Tech Stack / Hard Constraints (WHAT — read carefully, these bite)
 - **Language: Lua 5.0** (Turtle 1.12 client). Non-negotiable:

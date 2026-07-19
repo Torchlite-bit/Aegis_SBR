@@ -157,18 +157,35 @@ from the polish backlog if built.
   expiry timers.
 - **Heal-engine dedupe**: unify the four near-identical heal engines
   (Paladin/Priest/Druid/Shaman) into one shared module; class modules pass config in.
-- **Weapon-enchant awareness (SuperWoW 2.1 `GetWeaponEnchantID(unit)`, wiki-confirmed
-  2026-07-17; see also `GetWeaponEnchantInfo(unit)` which per the Features wiki reports
-  enchant NAMES — details in `docs/dependencies.md`)**: add a shared helper
-  that reports whether a temporary main-hand/off-hand enchant is active, so the engine can
-  react to imbue/poison/oil/stone uptime. Primary targets: **Enhancement Shaman** (Windfury/
-  Rockbiter/Flametongue/Frostbrand imbue upkeep), **Rogue** (poison-as-enchant uptime),
-  **Warrior/any** (sharpening-stone / mana-oil upkeep). Build the *detection helper* and its
-  enchant-ID → meaning mapping in this phase (non-rotation plumbing, no gate). **Actually
-  wiring it into any class's ability priority is a ROTATION change → goes through the Phase 1
-  audit-and-report sign-off first.** Guard behind `if GetWeaponEnchantID then ...` so clients
-  on older SuperWoW degrade cleanly; confirm the function exists on the live Turtle build
-  before relying on it (see `docs/dependencies.md`).
+- **Weapon-enchant awareness / poison + imbue upkeep** (Rogue + Shaman; per-class UI toggle):
+  detect and optionally maintain weapon imbues (Shaman) and poisons (Rogue). **Full feasibility
+  study in `docs/research-weapon-enchant-upkeep.md` — read it first.**
+  > **STATUS: first cut SHIPPED in v0.15.0** — shared detection helper
+  > (`Aegis_SBR:WeaponEnchant`/`WeaponEnchantId`), Shaman main-hand imbue upkeep
+  > (out-of-combat auto-apply + in-combat opt-in, default OFF), Rogue poison pre-pull
+  > reminder (warn-only). **Still open:** off-hand imbue; Rogue poison auto-apply (needs the
+  > replace-popup + in-combat-application dummy tests, items 3 & 4 in the research doc); and
+  > topping-up an imbue that's present-but-low via overwrite (blocked on the popup test —
+  > currently warn-only).
+
+  Key findings:
+  - **Primary API is `GetWeaponEnchantInfo()`** (returns `has*`, **`*Expiration` in ms**,
+    charges, id) — better than the 2.1 `GetWeaponEnchantID` (wiki-confirmed 2026-07-17)
+    because it gives *time remaining*. `GetWeaponEnchantID(unit)` is an optional identity
+    source (which imbue is up). Refresh on `UNIT_INVENTORY_CHANGED`. Guard behind
+    `if GetWeaponEnchantInfo then ...`.
+  - **Detection + out-of-combat re-apply are feasible.** **In-combat re-apply is the blocker:**
+    poisons generally can't be applied in combat at all (→ Rogue is realistically a *pre-pull
+    reminder/warning*, not mid-fight upkeep); Shaman imbues can be recast in combat but cost a
+    GCD and are awkward to auto-fire, so default to out-of-combat/lull only.
+  - Build order: (A) shared detection helper = ungated plumbing; (B) the per-class toggle
+    behavior = a ROTATION change → **audit-and-report sign-off first**; (C) per-class UI toggle
+    + imbue dropdown + threshold slider. Handle the enchant-replace `StaticPopup` defensively
+    (don't hard-code `StaticPopup1Button1`) or restrict auto-apply to the no-existing-enchant
+    case and only warn on overwrite.
+  - Verify on live client before building (see the research doc's dummy-test list):
+    `GetWeaponEnchantInfo()` values, whether `GetWeaponEnchantID` exists, popup behavior, and
+    that poisons can't be applied in combat on Turtle.
 
 **Benchmark:** one shared heal engine passes all four healers' tests; a killed totem
 triggers a re-drop within one frame; the weapon-enchant helper correctly reports imbue

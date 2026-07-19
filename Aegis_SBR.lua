@@ -16,7 +16,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "0.14.1",
+    ver = "0.15.0",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -312,6 +312,33 @@ function Aegis_SBR:TargetHPPct()
     local mx = UnitHealthMax("target")
     if mx and mx > 0 then return UnitHealth("target") / mx * 100 end
     return 100
+end
+
+-- ============================================================
+-- Temporary weapon-enchant detection (SuperWoW / vanilla).
+-- GetWeaponEnchantInfo returns, per hand: present flag, time remaining in
+-- MILLISECONDS, charges, enchant id. slot is "main" or "off". Returns
+-- has, msRemaining, charges (all nil/false when no SuperWoW or no enchant).
+-- Read live every call on purpose: msRemaining is a running countdown, so a
+-- cached-until-UNIT_INVENTORY_CHANGED value would report stale time-left.
+-- Confirmed on Turtle 1.12 (2026-07-19): has=1, ms counts down, charges=0 for
+-- a time-based enchant -- so gate upkeep on has/ms, NOT on charges.
+-- ============================================================
+function Aegis_SBR:WeaponEnchant(slot)
+    if not GetWeaponEnchantInfo then return false, nil, nil end
+    local hasMH, mhMs, mhCh, _, hasOH, ohMs, ohCh = GetWeaponEnchantInfo()
+    if slot == "off" then return (hasOH and true or false), ohMs, ohCh end
+    return (hasMH and true or false), mhMs, mhCh
+end
+
+-- Optional identity: the enchant ID on a hand ("main"/"off"), or nil. Gated
+-- separately on GetWeaponEnchantID (SuperWoW 2.1), which returns mh, oh.
+-- Confirmed on Turtle 1.12 (2026-07-19): returns a small integer / nil.
+function Aegis_SBR:WeaponEnchantId(slot)
+    if not GetWeaponEnchantID then return nil end
+    local mh, oh = GetWeaponEnchantID("player")
+    if slot == "off" then return oh end
+    return mh
 end
 
 -- The Attack action's bar slot is cached: one IsAttackAction call verifies it

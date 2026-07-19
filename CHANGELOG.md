@@ -4,6 +4,42 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v0.15.0 — Phase 2: weapon-enchant detection + Shaman imbue upkeep + Rogue poison reminder
+
+**Feature (gated, conservative, default OFF).** The first Phase 2 batch: a shared
+weapon-enchant detection helper and two per-class upkeep features built on it. Detection is
+ungated plumbing; the class behaviors were implemented against an explicit sign-off for
+exactly the conservative design in `docs/research-weapon-enchant-upkeep.md` — nothing fires
+unless you turn it on.
+
+- **Shared detection helper (core).** `Aegis_SBR:WeaponEnchant(slot)` returns
+  `has, msRemaining, charges` from `GetWeaponEnchantInfo()` (read live each call, because
+  `msRemaining` is a running countdown); `Aegis_SBR:WeaponEnchantId(slot)` returns the
+  enchant id via `GetWeaponEnchantID`. Both presence-gated, so a client without SuperWoW's
+  enchant API degrades cleanly. Confirmed on Turtle 1.12 (charges reads 0 for a time-based
+  enchant, so upkeep gates on `has`/`ms`, never charges).
+- **Shaman — main-hand weapon-imbue upkeep** (config: *Weapon imbue* section, default OFF).
+  Pick an imbue (Rockbiter / Flametongue / Frostbrand / Windfury). When the main hand is
+  **bare**, it auto-casts the imbue **out of combat** (or on approach); **in combat** it only
+  re-imbues with the *Apply in combat* opt-in (a GCD cost), otherwise it just reminds you.
+  When an imbue is present but under the *Warn under* minute threshold, it **warns rather
+  than overwriting** (the replace popup is untested and re-imbuing costs a GCD). Pre-pull
+  upkeep runs even with no target selected, and never auto-acquires a mob. **Which ability
+  fires in the actual combat rotation, and in what order, is unchanged** — this is a
+  lowest-priority self-buff step above the Lightning Bolt filler. Main-hand only; off-hand
+  imbue is deferred (a fragile weapon-click flow).
+- **Rogue — poison pre-pull reminder** (config: *Poisons* section, default OFF). Because
+  poisons can't be applied in combat, this never auto-applies: on entering combat, if a
+  weapon poison is missing it prints a warning (off-hand only when an off-hand weapon is
+  equipped). No rotation change.
+- Imbue/poison spell names are best-effort and `KnowsSpell`-gated — confirm with `/sbr debug`
+  if an imbue isn't recognized.
+
+Still open in Phase 2: off-hand imbue, Rogue poison auto-apply (needs the replace-popup and
+in-combat-application tests), and Shaman totem-destruction detection.
+
+---
+
 ## v0.14.1 — Phase 1 rotation audit report + Hunter sting-detection fix
 
 **Audit + one pre-authorized fix.** The Phase 1 rotation-correctness audit is complete:

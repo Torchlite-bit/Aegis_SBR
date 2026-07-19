@@ -33,6 +33,9 @@ function M:BuildBody(ui, parent)
     self.cdRow = L:Row{ key = "popCDs", label = "Pop cooldowns", onToggle = set("popCDs") }
     self.cdEliteRow = L:Row{ key = "autoCDElite", label = "Auto on elite", onToggle = set("autoCDElite") }
 
+    L:Header("Poisons")
+    self.poisonRow = L:Row{ key = "poisonReminder", label = "Poison reminder", onToggle = set("poisonReminder") }
+
     L:Finish()
 
     ui:Tip(self.builderDD, "Builder", "The combo point builder. Auto picks Noxious Assault if known, else Sinister Strike.")
@@ -44,6 +47,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.cpRow.slider, "Finisher combo points", "Eviscerate is used once combo points reach this number.")
     ui:Tip(self.cdRow.cb, "Pop cooldowns", "Use Adrenaline Rush and Blade Flurry every press (off the global cooldown).")
     ui:Tip(self.cdEliteRow.cb, "Auto on elite", "Pop the cooldowns only against elite and boss targets.")
+    ui:Tip(self.poisonRow.cb, "Poison reminder", "Warn when a weapon poison is missing as you enter combat. Poisons can't be applied in combat, so this is a pre-pull reminder only - it never auto-applies.")
 end
 
 -- ============================================================
@@ -68,6 +72,7 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.saRow, buf.useSurpriseAttack)
     ui:BindCheck(self.cdRow, buf.popCDs)
     ui:BindCheck(self.cdEliteRow, buf.autoCDElite)
+    ui:BindCheck(self.poisonRow, buf.poisonReminder)
 
     local cpv = buf.cpFinish or 4
     self.cpRow.slider:SetValue(cpv)

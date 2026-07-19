@@ -84,12 +84,24 @@ still presence-gate every function on Turtle's bundled build before relying on i
   gated behind the rotation-audit sign-off): Enhancement Shaman imbue-uptime checks, Rogue
   poison-uptime awareness, Warrior/any-class stone/oil upkeep. See roadmap "Weapon-enchant
   awareness" item. Returns an ID (not a name) — Aegis would map known imbue/poison enchant IDs
-  to meaning, or just test presence/change.
-- **Related, from the Features wiki (SuperWoW version not stated — confirm on client):
-  `GetWeaponEnchantInfo()` accepts a friendly player unit argument** (e.g. `"party1"`) and
-  reports the temporary enchant on that player's main/offhand — per the wiki it surfaces the
-  enchant **NAME**, which would spare Aegis the ID→meaning mapping entirely. Verify the exact
-  return values in-game before building the Phase 2 helper on it.
+  to meaning, or just test presence/change. **On-client CONFIRMED 2026-07-19:**
+  `GetWeaponEnchantID("player")` exists and returns TWO values (`mh, oh`) — a small-integer
+  ID for a filled slot, `nil` for an empty one (test: `MH=29 OH=nil`).
+- **NOTE (feasibility research + Features wiki): the standard `GetWeaponEnchantInfo()` is
+  usually the BETTER function for upkeep**, because it returns **time remaining (ms)** and
+  charges, not just an ID — `hasMH, mhExpirationMs, mhCharges, mhEnchantID, hasOH, ohExpMs,
+  ohCharges, ohEnchantID = GetWeaponEnchantInfo()` (the `*EnchantID` returns were 0 on older
+  clients — confirm what Turtle's build returns; `has*` + `*Expiration` are what upkeep
+  needs). **On-client CONFIRMED 2026-07-19:** returned `has=1 ms=2112460 chg=0` for an
+  applied enchant — `has`/`ms` work, but **`charges` reads 0 for a time-based enchant**, so
+  gate upkeep on `has*` + `*Expiration`, never on charges. SuperWoW extends it: accepts a friendly player unit (e.g. `"party1"`) for the
+  enchant *NAME* on that player's main/offhand, with "old functionality preserved for own
+  player's enchant duration & stacks" (Features wiki, verified 2026-07-17; extension version
+  not stated — presence-gate it). Refresh cached state on `UNIT_INVENTORY_CHANGED`. Use
+  `GetWeaponEnchantInfo` as the primary detection source and `GetWeaponEnchantID` as
+  optional identity. Full study: `docs/research-weapon-enchant-upkeep.md`. **In-combat
+  re-apply is a hard limitation** (poisons can't be applied in combat; imbues cost a GCD) —
+  the feature is out-of-combat / pre-pull-reminder shaped, not seamless mid-fight upkeep.
 - `GetSendMailItemLink()`, `GetInboxItemLink(itemIndex)` — mail item hyperlinks. (Not
   combat-relevant.)
 - `GetQuestID(questIndex)`, `GetQuestLink(questID)` — questlog ID + hyperlink (fills client

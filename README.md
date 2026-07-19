@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation ⚔️ (v0.14.1)
+# Aegis: Single Button Rotation ⚔️ (v0.15.0)
 
 **Smart, Modular Combat Automation for Turtle WoW (1.18.1)**
 
@@ -49,6 +49,7 @@ A refined evolution of the *ExAutoRogue* logic focused on efficient combo point 
 - **Finisher Hysteresis Engine:** Dynamically tracks *Slice and Dice* and *Envenom* buffs. It will auto-refresh them efficiently at exactly 1 Combo Point if they are about to expire, otherwise saving points to dump into maximum-damage *Eviscerates*.
 - **Reactionary Counters:** Instantaneous out-of-GCD execution for abilities like *Riposte* during active parry windows.
 - **Cooldown Automation:** Integrates *Adrenaline Rush* and *Blade Flurry* seamlessly, prioritizing them against Elite or Boss targets.
+- **Poison Reminder (opt-in):** Because weapon poisons can't be applied in combat, the *Poisons* toggle gives you a **pre-pull nudge** instead — a chat warning as you enter combat if a weapon poison is missing (off-hand only when you have an off-hand weapon). It never auto-applies. Off by default.
 
 ### ⚔️ Warrior `(Beta)`
 A roleless, toggle-driven engine covering Arms, Fury, and Protection from early leveling through endgame raiding. Rather than locking to a spec, you enable the abilities you have and the priority degrades gracefully as you learn them:
@@ -116,6 +117,7 @@ Enhancement, Elemental, Tank, and now **Restoration** (group healer) in one mode
 * **Works from Level 1:** A fresh shaman only has *Lightning Bolt* and melee, so the Lightning Bolt filler carries the early levels and everything else — shocks, shields, Stormstrike, Lightning Strike, totems — switches itself on through `KnowsSpell` as it's trained.
 * **Talent Automation:** *Stormstrike* and *Lightning Strike* are talent abilities that appear in the spellbook when talented, so they're auto-included when learned (Stormstrike's Nature self-buff is followed by a shock to consume it). *Elemental Focus* grants **no spell** — it's a passive crit proc (Clearcasting, 60% cheaper next spell) — so Aegis reads the **talent tree** to detect it and surface the proc, the same approach used for the Warlock's Nightfall.
 * **Shield & Shock:** Keeps your chosen shield up (*Lightning* for damage/threat, *Water* for mana) and casts one shock on the shared cooldown — *Flame Shock* maintained as a DoT, *Earth/Frost* on cooldown. Switch with `/sbr shield` and `/sbr shock`.
+* **Weapon Imbue Upkeep (opt-in):** The *Weapon imbue* section keeps a **main-hand** imbue up (*Rockbiter / Flametongue / Frostbrand / Windfury*). When the weapon is bare it auto-casts the imbue **out of combat** (or on approach); **in combat** it only re-imbues with the *Apply in combat* opt-in (that's a global cooldown), otherwise it just reminds you. If the imbue is present but running low (the *Warn under* minutes slider) it warns rather than overwriting. Off by default; main-hand only for now. *(Detection uses SuperWoW's `GetWeaponEnchantInfo`; imbue names are `KnowsSpell`-gated — confirm with `/sbr debug` if one isn't recognized.)*
 * **Totems (every spec) & Cooldowns:** A shared **Totems** section maintains a full four-element set — Water, Earth, Fire, Air pickers, each with sensible per-spec defaults (Enhancement: Windfury / Searing / Strength / Mana Spring; Elemental: Grace of Air / Searing / Mana Spring; Tank: Stoneskin / Grounding / Mana Spring) — during a lull in **every** mode, not just Restoration. Re-drop timing is confirmed from your actual casts via SuperWoW's `UNIT_CASTEVENT` rather than a blind clock, so a manual re-drop or a Mana Tide bump resets the right element's timer. *Elemental Mastery* and self-*Bloodlust* round out the cooldowns.
 
 > **Verification note:** Buff/proc names are best-effort — confirm the **Clearcasting** proc, the **Stormstrike** self-buff, and the **Searing Totem** / **Earthshaker Slam** spell names in-game with `/sbr talents` and `/sbr debug` if anything isn't firing; the talent name sits in one constant in `Class_Shaman.lua`. For **Restoration**, the same applies to the **Nature's Swiftness-equivalent** (tries `Nature's Swiftness`, then `Ancestral Swiftness`), **Mana Tide Totem**, and the **totem names** in the picker tables — and the heal rank values are vanilla baselines, with the totem re-drop intervals (55s water / 110s others) likely wanting a tune to Turtle's durations.

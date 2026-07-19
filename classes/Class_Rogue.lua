@@ -77,6 +77,10 @@ function M:NormalizeProfile(c)
     if c.cpFinish == nil then c.cpFinish = 4 end
     if c.popCDs == nil then c.popCDs = false end
     if c.autoCDElite == nil then c.autoCDElite = false end
+    -- Poison reminder: warn (only) when a weapon poison is missing on entering
+    -- combat. Poisons can't be applied in combat, so this is a pre-pull nudge,
+    -- never an auto-apply. Default OFF. See docs/research-weapon-enchant-upkeep.md.
+    if c.poisonReminder == nil then c.poisonReminder = false end
     -- old keys from any earlier format are dropped silently
     return c
 end
@@ -262,16 +266,43 @@ function M:HandleCommand(cmd, t)
 end
 
 -- ============================================================
--- Parry window tracker for Riposte. Owned by the module, stays inert
--- while Riposte is not learned or the option is off.
+-- Poison reminder (warn only). Poisons are item-applied and cannot be put on
+-- in combat, so the honest feature is a pre-pull nudge: on entering combat,
+-- if the active profile opts in and a weapon poison is missing, print a
+-- warning. Detection via the core WeaponEnchant helper (GetWeaponEnchantInfo);
+-- the off-hand is only nagged about when an off-hand weapon is actually
+-- equipped. No auto-apply. See docs/research-weapon-enchant-upkeep.md.
+-- ============================================================
+function M:PoisonCheck()
+    local cfg = Aegis_SBR:GetActiveProfile()
+    if not cfg or not cfg.poisonReminder then return end
+    if not GetWeaponEnchantInfo then return end   -- no detection API: degrade
+    local missing = {}
+    if not Aegis_SBR:WeaponEnchant("main") then table.insert(missing, "main-hand") end
+    if not Aegis_SBR:WeaponEnchant("off")
+        and GetInventoryItemLink and GetInventoryItemLink("player", 17) then
+        table.insert(missing, "off-hand")
+    end
+    if table.getn(missing) > 0 then
+        Aegis_SBR:Msg("poison missing on your " .. table.concat(missing, " and ")
+            .. " - apply before pulling.", 1, 0.5, 0.3)
+    end
+end
+
+-- ============================================================
+-- Parry window tracker for Riposte + the poison reminder on combat enter.
+-- Owned by the module, stays inert while both options are off.
 -- ============================================================
 local riposteFrame = CreateFrame("Frame")
 riposteFrame:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES")
+riposteFrame:RegisterEvent("PLAYER_REGEN_DISABLED")   -- entered combat (the pull)
 riposteFrame:SetScript("OnEvent", function()
     if event == "CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES" then
         if arg1 and string.find(string.lower(arg1), "parry") then
             M.riposteExpiry = GetTime() + 5.5
         end
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        M:PoisonCheck()
     end
 end)
 

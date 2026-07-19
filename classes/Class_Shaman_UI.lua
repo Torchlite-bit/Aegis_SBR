@@ -50,6 +50,15 @@ function M:BuildBody(ui, parent)
     self.blRow = L:Row{ key = "useBloodlust", label = "Bloodlust", spell = "Bloodlust", onToggle = set("useBloodlust") }
     self.tauntRow = L:Row{ key = "useTaunt", label = "Earthshaker taunt", spell = "Earthshaker Slam", onToggle = set("useTaunt") }
 
+    -- Weapon imbue upkeep (melee specs). Main-hand only; auto-applies out of
+    -- combat, reminds in combat unless "Apply in combat" is on.
+    self.imbueSection = L:Header("Weapon imbue", { enhancement = true, tank = true })
+    self.imbueRow = L:Row{ key = "maintainImbue", label = "Maintain imbue", onToggle = set("maintainImbue") }
+    self.imbueDD = L:Dropdown("imbueMain", "Imbue", 160, set("imbueMain"))
+    self.imbueThreshRow = L:Row{ label = "Warn under",
+        slider = { key = "imbueThresholdMin", min = 0, max = 10, step = 1, suffix = " min", onChange = set("imbueThresholdMin") } }
+    self.imbueCombatRow = L:Row{ key = "imbueInCombat", label = "Apply in combat", onToggle = set("imbueInCombat") }
+
     self.restoSection = L:Header("Restoration (Heal)", "restoration")
     self.htRow = L:Row{ label = "Heal below",
         slider = { key = "healThreshold", min = 50, max = 100, step = 5, suffix = "%", onChange = set("healThreshold") } }
@@ -93,6 +102,10 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.earthDD, "Earth totem", "Which earth totem to keep down (or none).")
     ui:Tip(self.fireDD, "Fire totem", "Which fire totem to keep down (or none).")
     ui:Tip(self.airDD, "Air totem", "Which air totem to keep down (or none).")
+    ui:Tip(self.imbueRow.cb, "Maintain imbue", "Keep a main-hand weapon imbue up. Auto-applies only when the weapon is bare and you're out of combat (or on approach); in combat it reminds you unless 'Apply in combat' is on.", "Off-hand imbue isn't handled yet.")
+    ui:Tip(self.imbueDD, "Imbue", "Which main-hand imbue to keep up (Rockbiter / Flametongue / Frostbrand / Windfury).")
+    ui:Tip(self.imbueThreshRow.slider, "Warn under", "Warn when the imbue has fewer than this many minutes left. 0 = only act/warn once it is fully gone.")
+    ui:Tip(self.imbueCombatRow.cb, "Apply in combat", "Allow re-imbuing during combat (costs a global cooldown). Off by default - imbues are best refreshed between pulls.")
 end
 
 -- ============================================================
@@ -134,6 +147,35 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.emRow, buf.useElementalMastery)
     ui:BindCheck(self.blRow, buf.useBloodlust)
     ui:BindCheck(self.tauntRow, buf.useTaunt)
+
+    -- Weapon imbue: master toggle, then the picker / threshold / in-combat opt-in
+    -- follow it (inert while the master is off).
+    ui:BindCheck(self.imbueRow, buf.maintainImbue)
+    ui:BindCheck(self.imbueCombatRow, buf.imbueInCombat)
+    local imbueOpts = {
+        { label = "Rockbiter Weapon",   value = "rockbiter" },
+        { label = "Flametongue Weapon", value = "flametongue" },
+        { label = "Frostbrand Weapon",  value = "frostbrand" },
+        { label = "Windfury Weapon",    value = "windfury" },
+        { label = "(none)",             value = "none" },
+    }
+    local imcur = buf.imbueMain or "windfury"
+    local imLabel = "(none)"
+    for i = 1, table.getn(imbueOpts) do if imbueOpts[i].value == imcur then imLabel = imbueOpts[i].label end end
+    local imShown, imCol = imLabel, ui.COL.white
+    local imSpell = self.IMBUES[imcur]
+    if imcur ~= "none" and imSpell and imSpell ~= "" and not self:KnowsSpell(imSpell) then
+        imShown, imCol = imLabel .. " (not learned)", ui.COL.red
+    end
+    ui:SetDropdown(self.imbueDD, imbueOpts, imcur, imShown, imCol)
+    local imthr = buf.imbueThresholdMin or 0
+    self.imbueThreshRow.slider:SetValue(imthr)
+    if self.imbueThreshRow.slider.valText then self.imbueThreshRow.slider.valText:SetText(imthr .. " min") end
+    -- picker / threshold / in-combat only interactive while imbue upkeep is on
+    local imbueOn = buf.maintainImbue and true or false
+    if imbueOn then self.imbueDD:Enable() else self.imbueDD:Disable() end
+    if imbueOn then self.imbueCombatRow.cb:Enable() else self.imbueCombatRow.cb:Disable() end
+    ui:SliderEnable(self.imbueThreshRow.slider, imbueOn)
     -- Restoration (Heal) block: toggles mirror the rotation's defaults; sliders and
     -- totem pickers are live only on-spec (and, where it applies, with the spell known).
     local isResto = buf.mode == "restoration"
