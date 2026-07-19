@@ -63,6 +63,16 @@ M.dotTex = {
 M.SHOCKS  = { earth = "Earth Shock", frost = "Frost Shock", flame = "Flame Shock", none = "" }
 M.SHIELDS = { lightning = "Lightning Shield", water = "Water Shield", earth = "Earth Shield", none = "" }
 
+-- Weapon imbues: self-cast spells that enchant the MAIN-HAND weapon (key -> spell).
+-- Confirm exact Turtle names with /sbr debug. Main-hand only in this version;
+-- off-hand imbue application is a fragile weapon-click flow and is deferred.
+M.IMBUES = { rockbiter = "Rockbiter Weapon", flametongue = "Flametongue Weapon",
+             frostbrand = "Frostbrand Weapon", windfury = "Windfury Weapon", none = "" }
+M.imbueAlias = { rockbiter = "rockbiter", rb = "rockbiter",
+                 flametongue = "flametongue", ft = "flametongue",
+                 frostbrand = "frostbrand", fb = "frostbrand",
+                 windfury = "windfury", wf = "windfury", none = "none", off = "none" }
+
 -- Restoration totem picks (key -> spell), resolved per element. Names are
 -- vanilla baselines - confirm against Turtle's spellbook with /sbr debug.
 M.WATER_TOTEMS = { manaspring = "Mana Spring Totem", healingstream = "Healing Stream Totem", none = "" }
@@ -116,6 +126,8 @@ M.templates = {
         -- shocks/strikes), Mana Spring for sustain.
         useTotems = true, totemWater = "manaspring",
         totemEarth = "stoneskin", totemFire = "none", totemAir = "grounding",
+        -- Rockbiter is the threat imbue if the tank turns imbue upkeep on (off by default).
+        imbueMain = "rockbiter",
     },
     restoration = {  -- Restoration: group healer, downranked HW / LHW + Chain Heal
         mode = "restoration", shield = "water", shock = "none",
@@ -156,6 +168,13 @@ function M:NormalizeProfile(c)
     if c.healPower == nil then c.healPower = 0 end
     if c.weaveDamage == nil then c.weaveDamage = false end
     if c.weaveManaFloor == nil then c.weaveManaFloor = 40 end
+    -- Weapon imbue upkeep (main-hand). Default OFF; out-of-combat only unless
+    -- imbueInCombat is opted in. imbueThresholdMin re-applies when the enchant
+    -- has under that many minutes left (0 = only when it is missing entirely).
+    if c.maintainImbue == nil then c.maintainImbue = false end
+    if c.imbueMain == nil then c.imbueMain = "windfury" end
+    if c.imbueThresholdMin == nil then c.imbueThresholdMin = 0 end
+    if c.imbueInCombat == nil then c.imbueInCombat = false end
     return c
 end
 
@@ -253,8 +272,65 @@ end
 -- Turtle 1.18.1; the downrank decision only needs the ranks ordered roughly
 -- right, so approximate values still pick a sane rank.
 -- ============================================================
+-- ------------------------------------------------------------
+-- Weapon imbue upkeep (main-hand). Detection via the core's WeaponEnchant
+-- helper (GetWeaponEnchantInfo). Conservative by design: AUTO-CAST only when
+-- the main hand is bare (no replace popup, no GCD waste); when an imbue is
+-- present but under the threshold, WARN instead of overwriting (the replace
+-- popup is untested, and re-imbuing mid-fight costs a GCD). Out of combat the
+-- upkeep runs freely; in combat it only acts with the imbueInCombat opt-in.
+-- Main-hand only this version (off-hand imbue is a fragile weapon-click flow).
+-- ------------------------------------------------------------
+function M:ImbueSpell(cfg)
+    return self.IMBUES[cfg.imbueMain or "none"] or ""
+end
+
+-- "apply" = main hand bare, safe to cast; "warn" = present but under threshold
+-- (overwrite needed, warn only); nil = upkeep off / healthy / imbue unknown /
+-- no SuperWoW enchant API.
+function M:ImbueState(cfg)
+    if not cfg.maintainImbue then return nil end
+    local spell = self:ImbueSpell(cfg)
+    if spell == "" or not self:KnowsSpell(spell) then return nil end
+    local has, ms = Aegis_SBR:WeaponEnchant("main")
+    if has == nil then return nil end   -- no enchant API (non-SuperWoW): degrade
+    if not has then return "apply" end
+    local thr = (cfg.imbueThresholdMin or 0) * 60000   -- minutes -> ms
+    if thr > 0 and ms and ms < thr then return "warn" end
+    return nil
+end
+
+M.imbueWarnT = 0
+function M:ImbueWarn(text)
+    local now = GetTime()
+    if (now - (self.imbueWarnT or 0)) < 8 then return end   -- own throttle
+    self.imbueWarnT = now
+    Aegis_SBR:Msg(text, 1, 0.6, 0.2)
+end
+
+-- Returns true if an imbue cast was issued this press.
+function M:MaintainImbue(cfg)
+    local state = self:ImbueState(cfg)
+    if not state then return false end
+    local spell = self:ImbueSpell(cfg)
+    if state == "warn" then
+        self:ImbueWarn(spell .. " is running low - re-imbue between pulls.")
+        return false
+    end
+    -- state == "apply": bare main hand. Cast out of combat always; in combat
+    -- only with the opt-in (else just a throttled reminder).
+    if UnitAffectingCombat("player") and not cfg.imbueInCombat then
+        self:ImbueWarn(spell .. " is missing.")
+        return false
+    end
+    return self:Cast(spell)
+end
+
 function M:RunsWithoutTarget(cfg)
-    return cfg.mode == "restoration"   -- a healer runs with no enemy targeted
+    if cfg.mode == "restoration" then return true end   -- a healer runs with no enemy targeted
+    -- Pre-pull imbue upkeep is a self-buff and must run with no target selected.
+    if self:ImbueState(cfg) then return true end
+    return false
 end
 
 function M:ManaPct()
@@ -534,12 +610,22 @@ end
 -- Rotation entry: dispatch by mode.
 -- ============================================================
 function M:Rotate(cfg)
+    if cfg.mode == "restoration" then self:RotateRestoration(cfg); return end
+
+    -- Non-heal specs: with no attackable target the only thing to do is pre-pull
+    -- weapon-imbue upkeep (a self-buff). RunsWithoutTarget only lets the core
+    -- reach here targetless when that upkeep is actually due, so the melee/caster
+    -- rotations below never run without an enemy.
+    local hasEnemy = UnitExists("target") and not UnitIsDead("target") and UnitCanAttack("player", "target")
+    if not hasEnemy then
+        self:MaintainImbue(cfg)
+        return
+    end
+
     if cfg.mode == "elemental" then
         self:RotateElemental(cfg)
     elseif cfg.mode == "tank" then
         self:RotateTank(cfg)
-    elseif cfg.mode == "restoration" then
-        self:RotateRestoration(cfg)
     else
         self:RotateEnhancement(cfg)
     end
@@ -601,6 +687,10 @@ function M:RotateEnhancement(cfg)
 
     -- P6 Totem upkeep (all four elements, timer/cast-event gated, low priority)
     if self:MaintainAllTotems(cfg) then return end
+
+    -- Pn weapon imbue: lowest-priority upkeep above the filler. Self-gated in
+    -- MaintainImbue (in combat it acts only with the imbueInCombat opt-in).
+    if self:MaintainImbue(cfg) then return end
 
     -- P7 Lightning Bolt filler / weave. Also the level 1 damage source.
     if cfg.lbFiller and self:KnowsSpell("Lightning Bolt") then
@@ -699,6 +789,10 @@ function M:RotateTank(cfg)
 
     -- P6 Totem upkeep (all four elements)
     if self:MaintainAllTotems(cfg) then return end
+
+    -- Pn weapon imbue: lowest-priority upkeep above the filler. Self-gated in
+    -- MaintainImbue (in combat it acts only with the imbueInCombat opt-in).
+    if self:MaintainImbue(cfg) then return end
 
     -- P7 optional Lightning Bolt filler (off by default for tanks)
     if cfg.lbFiller and self:KnowsSpell("Lightning Bolt") then
