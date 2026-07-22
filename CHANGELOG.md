@@ -4,6 +4,25 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v0.15.1 — Hunter dual mana-aspect thresholds + minimap button clickable under pfUI
+
+**Tuning + fix.**
+
+- **Hunter: two mana-aspect sliders.** The single "swap to the mana aspect below X%" (with a
+  fixed +15% swap-back) is now **two independent thresholds**: *Viper below* (drop to Aspect
+  of the Viper when mana falls under this) and *Back to combat at* (swap back to Aspect of
+  the Hawk/Wolf once mana recovers to this). Set them wherever you like — e.g. Viper at 20%,
+  back at 70%. Existing profiles keep their old behavior exactly (the back mark defaults to
+  the previous low + 15%); a guard keeps the back mark above the low mark so the aspect never
+  flaps. Which abilities fire is unchanged — only *when* the mana-regen aspect is worn.
+- **Minimap button: clickable under pfUI.** The button was placed at a fixed radius from the
+  minimap centre, so pfUI's smaller/reshaped minimap left it floating over pfUI's border
+  where only a sliver was clickable. The radius is now derived from the minimap's actual
+  size (so it hugs whatever minimap is present) and the button's frame level is raised above
+  the minimap cluster so clicks aren't intercepted. It also stays draggable.
+
+---
+
 ## v0.15.0 — Phase 2: weapon-enchant detection + Shaman imbue upkeep + Rogue poison reminder
 
 **Feature (gated, conservative, default OFF).** The first Phase 2 batch: a shared
