@@ -4,12 +4,35 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
-## v0.15.4 — Warrior UI: Sunder stacks slider folded into the Sunder Armor toggle
+## v0.15.5 — Warrior UI: Sunder stacks slider folded into the Sunder Armor toggle
 
 **UI polish.** The Warrior *Sunder stacks* slider is now part of the *Sunder Armor* toggle
 row (a combined toggle+slider, matching the Hunter Mend Pet / Shaman Mana Tide rows) instead
 of sitting as a separate slider at the bottom of the Threat/AoE section. The slider follows
 the toggle (greyed when off) and hides when Sunder Armor isn't learned. No behavior change.
+
+---
+
+## v0.15.4 — BuffUp integration (buff monitor + rogue poison Quick Bar), Rogue execute, Paladin double-heal fix
+
+**Feature + fixes.** Folds the standalone **BuffUp** addon into Aegis as an optional upkeep monitor, adds a rogue execute finisher, and fixes a Paladin double-heal. If you ran standalone BuffUp, you can now retire it — Aegis covers the same ground.
+
+### ✨ BuffUp integration (new `Aegis_SBR_BuffUp.lua`)
+Two **independent** features, each toggled in the minimap right-click panel (new "Upkeep monitors" section), so one can run without the other:
+- **Buff monitor** (all classes): watch chosen self-buffs; when one is missing, a clickable rebuff button appears on screen to recast it. Its own config window (class-coloured frame) opens from the minimap panel's **Configure** button — scan your current buffs and click to watch, click a watched entry to remove. Buff detection is name-based (rank/locale proof) with an icon-texture fallback; a `SPELLS_CHANGED` rescan keeps a newly-learned rank matched.
+- **Poison control** (rogue): a movable **Quick Bar** of up to 4 poison presets — left-click a preset for mainhand, right-click for offhand — plus optional rebuff buttons when a poison falls off. Presets are configured in the **Rogue class panel** (Poisons section): enter just the poison *type* (e.g. "Instant Poison", **no rank**) and whatever rank is in your bags is found and applied automatically. Each Quick Bar button shows charge and remaining-time bars (mainhand left, offhand right), captured on first apply. Applying a poison needs a real click, so it is always button-driven, never cast from the rotation macro. The bar auto-sizes to the number of configured presets, and preset labels abbreviate elegantly (drop the redundant "Poison", keep the rank).
+- Poison presets / buff watch list are stored per character (`AegisDB.buffup`), shared across profiles.
+- New shared UI primitive `Aegis_SBR_Layout:Button` (a clickable label+value row) backs the preset editors.
+- **Not ported from standalone BuffUp:** OG-Twink interop (dropped). Shaman weapon imbues are already covered by the class panel's Weapon-imbue upkeep (auto-cast, superior to a manual button), so they were intentionally left there.
+
+### ✨ Added
+- **Rogue — Execute low-HP targets** (opt-in, default OFF; Finishers section). Below a configurable health threshold (default 10%), Eviscerate fires with whatever combo points are on hand instead of waiting for the normal threshold, so points aren't wasted on a kill. Ruthlessness guarantees at least one combo point after any finisher, so this is rarely blocked. Adds an `exec=` field to `/sbr trace`.
+
+### 🔧 Changed
+- **Rogue — pre-pull poison reminder retired.** The chat warning is superseded by the poison Quick Bar / rebuff buttons, which surface a missing poison on screen. (Poisons *can* be applied in combat via those buttons; the old reminder's "pre-pull only" assumption is gone.)
+
+### 🐛 Fixed
+- **Paladin — double heal on a topped-off target.** Two causes: (1) `StillCasting` now reads the client's real cast bar (`CastingBarFrame`) instead of a cast-time estimate, so a spammed press during a Holy Light cast (2.5s, longer than the 1.5s GCD) can't start a second heal before the first lands — this also correctly accounts for Nampower's queue starting the cast slightly later than the call. (2) The in-flight-heal prediction no longer discards itself when an actively-tanked target dips below its commit-time health during the post-cast latency window; the prediction is additive and capped, so it self-corrects for real new damage without re-healing a target the first heal already covered.
 
 ---
 

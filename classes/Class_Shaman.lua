@@ -377,10 +377,14 @@ function M:GroupUnits()
     return t
 end
 
--- Heal range proxy: ~28yd (the largest CheckInteractDistance band). Heals reach
--- 40yd, so this is conservative, but it keeps the picker off units it can't hit.
+-- Uses IsSpellInRange against the longest-range known heal for an exact
+-- answer instead of the old ~28yd CheckInteractDistance proxy (shaman heals
+-- reach 40yd, so the proxy was under-filtering by 12yd). Falls back to the
+-- proxy only if neither heal is learned yet (very early leveling).
 function M:Reachable(u)
     if u == "player" then return true end
+    if self:KnowsSpell("Healing Wave") then return IsSpellInRange("Healing Wave", u) == 1
+    elseif self:KnowsSpell("Lesser Healing Wave") then return IsSpellInRange("Lesser Healing Wave", u) == 1 end
     return CheckInteractDistance(u, 4) and true or false
 end
 

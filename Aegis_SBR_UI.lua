@@ -832,6 +832,37 @@ function Aegis_SBR_Layout:Row(o)
     return item
 end
 
+-- A full-width clickable row: a left label plus an optional right-aligned
+-- value column (e.g. the current setting), the whole row acting as a button.
+-- Used for free-text settings that open a dialog on click (poison presets).
+-- Returns the button; caller reads btn.label / btn.value to update text.
+function Aegis_SBR_Layout:Button(o)
+    self:_sep()
+    local hl = self:_hl(LAY.VROW_H)
+    local P = self.host or self.p
+    local btn = CreateFrame("Button", nil, P)
+    btn:SetPoint("TOPLEFT", P, "TOPLEFT", 10, self.y - 4)
+    btn:SetPoint("TOPRIGHT", P, "TOPRIGHT", -10, self.y - 4)
+    btn:SetHeight(LAY.VROW_H - 6)
+    local lab = FS(btn, "GameFontNormalSmall", o.label or "")
+    SetFontSafe(lab, false, 12)
+    lab:SetPoint("LEFT", btn, "LEFT", 2, 0)
+    lab:SetTextColor(PAL.ink[1], PAL.ink[2], PAL.ink[3])
+    lab:SetJustifyH("LEFT")
+    local val = FS(btn, "GameFontNormalSmall", "")
+    SetFontSafe(val, false, 11)
+    val:SetPoint("RIGHT", btn, "RIGHT", -2, 0)
+    val:SetWidth(150); val:SetJustifyH("RIGHT")
+    val:SetTextColor(PAL.mute[1], PAL.mute[2], PAL.mute[3])
+    btn.label = lab
+    btn.value = val
+    if o.onClick then btn:SetScript("OnClick", o.onClick) end
+    wireHover(btn, hl)
+    self:_rec(btn, true); self:_rec(lab, false); self:_rec(val, false)
+    self.y = self.y - LAY.VROW_H
+    return btn
+end
+
 -- Close the last section and stack everything; returns the content height.
 function Aegis_SBR_Layout:Finish()
     self:_closeSection()

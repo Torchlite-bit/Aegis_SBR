@@ -161,7 +161,7 @@ M.templates = {
         hpManage = false, hpLow = 30, hpHigh = 70,
         strikeStyle = "autodps",
         spells = { holyStrike = false, crusaderStrike = false, holyShield = false, hammerOfWrath = false, repentance = false },
-        healMode = true, healThreshold = 90, useHolyShock = true, holyShockPct = 50, healPower = 0,
+        healMode = true, healThreshold = 75, useHolyShock = true, holyShockPct = 50, healPower = 0,
         healWeaveManaFloor = 40, healReloadCS = true, healSplashHS = true,
         healManaSelf = true, healManaJudge = false,
     },
@@ -251,7 +251,7 @@ function M:NormalizeProfile(c)
     -- Coerce to a strict boolean. This also repairs any profile corrupted by the
     -- old tab bug, which could store the string "damage" (truthy) into healMode.
     c.healMode = (c.healMode == true)
-    if c.healThreshold == nil then c.healThreshold = 90 end
+    if c.healThreshold == nil then c.healThreshold = 75 end
     if c.useHolyShock == nil then c.useHolyShock = true end
     if c.holyShockPct == nil then c.holyShockPct = 50 end
     -- Split the old single heal-weave toggle into two independent behaviours
@@ -591,8 +591,13 @@ end
 -- Rotation. Strict single-cast priority with early returns, so exactly
 -- one spell is chosen per press. Casting more than one CastSpellByName
 -- per frame is unreliable in 1.12 (a later call overrides an earlier
--- one), which would invert the priority. The strike queues on the next
--- swing even out of range, so the swing start stays smooth.
+-- one), which would invert the priority. The strike (Holy Strike/Crusader
+-- Strike) is a plain GCD-consuming instant cast, same as Judgement below it -
+-- confirmed in-game (audit P2); it does NOT queue on the next swing the way
+-- an off-GCD ability would. Strike still leads Judgement in this priority
+-- deliberately: threat generation on the first Holy Strike matters for
+-- tanking, and Holy Might/Zeal buff upkeep matters for Retribution - both
+-- outweigh a Judgement/debuff briefly waiting one extra press.
 -- Priority: 0 pre-cast seal while running in, 1 strike, 2 Holy Shield,
 -- 2b Consecration (when AoE-toggled on), 3 seals/judgement, 4 Hammer,
 -- 5 Repentance, 6 Exorcism (undead/demon). Exorcism stays low so it never
@@ -604,13 +609,51 @@ end
 -- ============================================================
 
 -- Record an in-flight heal so the next press does not pile onto the same unit.
+-- Also stamps our own expected cast completion (see StillCasting) - Holy
+-- Light's 2.5s cast is longer than the 1.5s global cooldown, so GcdReady()
+-- alone reports "ready" up to a full second before the cast actually finishes.
 function M:CommitHeal(unit, amount, castTime)
     self.healTarget = UnitName(unit)
     self.healAmount = amount or 0
     self.healUntil = GetTime() + (castTime or 0) + 1.0
+    self.castingUntil = GetTime() + (castTime or 0)
 end
 
--- Predicted incoming heal for a unit from our own pending cast, else 0.
+-- True while our own heal cast is still expected to be resolving, even after
+-- the shared GCD (1.5s) has already cleared - closes the gap for any heal
+-- whose cast time exceeds the GCD (Holy Light at 2.5s), where a spammed
+-- press could otherwise start a second heal before the first has landed,
+-- since the target's HP (and PendingFor's prediction) hasn't updated yet.
+-- Checks the client's OWN cast-bar state first (CastingBarFrame.casting),
+-- which reflects the real, server-confirmed cast regardless of exactly when
+-- Nampower's queue actually started it - Nampower queues a press that lands
+-- during an active cast/GCD and fires it the instant that cast completes, a
+-- behavior that applies to plain CastSpellByName too, not just calls that
+-- explicitly use QueueSpellByName (see docs/dependencies.md). A castTime-based
+-- guess (castingUntil) assumes the cast started the instant CastSpellByName
+-- was called, which is not guaranteed once Nampower's queue is involved -
+-- the real cast bar sidesteps that assumption entirely. castingUntil stays
+-- as a fallback for the rare case CastingBarFrame is unavailable.
+function M:StillCasting()
+    if CastingBarFrame and (CastingBarFrame.casting or CastingBarFrame.channeling) then
+        return true
+    end
+    return self.castingUntil and GetTime() < self.castingUntil
+end
+
+-- Predicted incoming heal for a unit from our own pending cast, else 0. The
+-- caller (WorstHurt) ADDS this to the unit's real current HP and clamps to
+-- max, so the prediction can never over-claim: it self-corrects for new
+-- damage. A tank that keeps taking hits while the heal is in flight simply
+-- has a lower real HP, and real + pending lands wherever it actually will;
+-- only a hit big enough that even the incoming heal won't cover it leaves the
+-- unit below the threshold and eligible for another heal. This is why there
+-- is no "discard if HP dropped below commit-time baseline" guard here - that
+-- guard re-healed any actively-tanked target during the post-cast latency
+-- window (real HP already below commit time, but the landed heal's HP update
+-- not yet arrived from the server), causing the exact overheal it was meant
+-- to avoid. The window is bounded by healUntil (castTime + 1s of latency
+-- slack) so a resisted/failed cast self-corrects quickly.
 function M:PendingFor(unit)
     if self.healTarget and GetTime() < self.healUntil and UnitName(unit) == self.healTarget then
         return self.healAmount
@@ -632,9 +675,15 @@ function M:GroupUnits()
     return units
 end
 
--- Self is always reachable; others must be within heal range.
+-- Self is always reachable; others must be within heal range. Uses
+-- IsSpellInRange against the longest-range known heal (Flash of Light/Holy
+-- Light, both 40yd) for an exact answer instead of CheckInteractDistance's
+-- ~28yd proxy, which under-filtered by 12yd. Falls back to the proxy only if
+-- neither heal is learned yet (very early leveling).
 function M:Reachable(u)
     if UnitIsUnit(u, "player") then return true end
+    if self:KnowsSpell("Flash of Light") then return IsSpellInRange("Flash of Light", u) == 1
+    elseif self:KnowsSpell("Holy Light") then return IsSpellInRange("Holy Light", u) == 1 end
     return CheckInteractDistance(u, 4)
 end
 
@@ -664,7 +713,7 @@ end
 -- and keeps a Seal of Wisdom judgement from stealing the global cooldown.
 function M:HealDemand(cfg)
     if self.healUntil and GetTime() < self.healUntil then return true end
-    local ratio = (cfg.healThreshold or 90) / 100
+    local ratio = (cfg.healThreshold or 75) / 100
     local units = self:GroupUnits()
     for i = 1, table.getn(units) do
         local u = units[i]
@@ -757,7 +806,7 @@ end
 -- target is below the emergency line, where Flash of Light's faster cast
 -- stays the safer bet even if it cannot fully cover the deficit.
 function M:DoHeal(cfg)
-    local ratio = (cfg.healThreshold or 90) / 100
+    local ratio = (cfg.healThreshold or 75) / 100
     local unit, deficit, pct = self:WorstHurt(ratio)
     if not unit then return false end
 
@@ -765,6 +814,11 @@ function M:DoHeal(cfg)
     -- predicting, so the attack rotation does not run and no false in-flight
     -- heal masks the target. The heal fires the instant the GCD frees.
     if not self:GcdReady() then return true end
+    -- Also yield while our own last heal is still expected to be casting,
+    -- even if the GCD itself has already cleared (Holy Light's 2.5s cast
+    -- outlasts the 1.5s GCD) - otherwise a spammed press in that gap can
+    -- start a second heal on a target whose HP hasn't caught up yet.
+    if self:StillCasting() then return true end
 
     local mana = UnitMana("player")
     local hp = (cfg.healPower and cfg.healPower > 0) and cfg.healPower or self:GearHealBonus()
@@ -782,10 +836,23 @@ function M:DoHeal(cfg)
     local rankDeficit = (hdb < 1) and (deficit / hdb) or deficit
 
     -- Holy Shock: instant, for an emergency or a hurt unit out of melee range.
+    -- Holy Shock's own range (20yd) is shorter than Flash of Light/Holy
+    -- Light's (40yd); IsSpellInRange gives an exact answer (the same API the
+    -- default action bar and hotbar addons use to red-tint an out-of-range
+    -- icon), so it gates the actual cast precisely - a target between 20 and
+    -- 40yd now correctly falls straight through to Flash of Light/Holy Light
+    -- below instead of wasting the press on a Holy Shock that would have
+    -- failed to reach (this was the bug: previously nothing was cast at all
+    -- for a hurt unit sitting in that 20-40yd gap).
     if cfg.useHolyShock and self:KnowsSpell("Holy Shock") and self:OwnCDReady("Holy Shock")
-        and (pct <= (cfg.holyShockPct or 50) / 100 or not CheckInteractDistance(unit, 3)) then
+        and (pct <= (cfg.holyShockPct or 50) / 100 or not CheckInteractDistance(unit, 3))
+        and IsSpellInRange("Holy Shock", unit) == 1 then
         local hs, amt = self:PickRank("Holy Shock", hsEff, self.HS_MANA, rankDeficit, mana)
-        if hs then self:CommitHeal(unit, amt * hdb, 0); self:CastOn(hs, unit); return true end
+        if hs then
+            self:CommitHeal(unit, amt * hdb, 0)
+            self:CastOn(hs, unit)
+            return true
+        end
     end
 
     -- Cast-time compensation: the target keeps losing health while the cast
@@ -860,6 +927,9 @@ function M:HealMeleeReady(cfg)
     if not (UnitExists("target") and not UnitIsDead("target") and UnitCanAttack("player", "target")) then return false end
     if not self:InMeleeRange() then return false end
     if not self:GcdReady() then return false end
+    -- A strike here would interrupt a still-resolving Holy Light cast (2.5s,
+    -- longer than the 1.5s GCD) - see StillCasting.
+    if self:StillCasting() then return false end
     return true
 end
 
@@ -882,7 +952,7 @@ function M:HealStrikeEngine(cfg)
     if not self:BlessedReloadUsable() then return false end
     if self:OwnCDReady("Holy Shock") then return false end          -- already loaded
     if not self:IsReady("Crusader Strike") then return false end
-    local _, _, pct = self:WorstHurt((cfg.healThreshold or 90) / 100)
+    local _, _, pct = self:WorstHurt((cfg.healThreshold or 75) / 100)
     if pct and pct <= (cfg.holyShockPct or 50) / 100 then return false end
     if not self:HealMeleeReady(cfg) then return false end
     return self:CastStrike("Crusader Strike", cfg)
@@ -895,6 +965,11 @@ end
 function M:HealWeaveStrike(cfg)
     if not cfg.healSplashHS then return false end
     if not self:HealMeleeReady(cfg) then return false end
+    -- Only worth the GCD if someone actually has a scratch to top off - by the
+    -- time this runs, HealStrikeEngine/DoHeal/HealDemand have already ruled out
+    -- anyone below the priority threshold, but a fully-topped group (everyone at
+    -- 100%) would otherwise still eat a splash cast for pure overheal.
+    if not self:WorstHurt(1.0) then return false end
     local maxm = UnitManaMax("player")
     if not maxm or maxm == 0 then return false end
     if UnitMana("player") / maxm * 100 < (cfg.healWeaveManaFloor or 40) then return false end

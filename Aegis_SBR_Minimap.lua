@@ -178,7 +178,7 @@ end
 -- ============================================================
 local function buildPanel()
     local p = CreateFrame("Frame", "Aegis_SBR_MinimapPanel", UIParent)
-    p:SetWidth(232); p:SetHeight(214)
+    p:SetWidth(232); p:SetHeight(276)
     p:SetFrameStrata("DIALOG")
     p:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -281,6 +281,40 @@ local function buildPanel()
     hint:SetJustifyH("LEFT")
     hint:SetText("Assist mirrors that player's target by GUID, not by name - a same-named mob from another group is never mistaken for theirs.")
 
+    -- Upkeep monitors: two INDEPENDENT toggles (Aegis_SBR_BuffUp). Buff monitor
+    -- watches self-buffs and shows rebuff buttons; poison control drives the
+    -- rogue poison Quick Bar. Each writes only its own flag, so one can run
+    -- without the other.
+    local monLabel = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    monLabel:SetPoint("TOPLEFT", 12, -156)
+    monLabel:SetText("Upkeep monitors")
+
+    local function makeCheck(yOff, text, onClick)
+        local c = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
+        c:SetWidth(16); c:SetHeight(16)
+        c:SetPoint("TOPLEFT", 14, yOff)
+        local lbl = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        lbl:SetPoint("LEFT", c, "RIGHT", 4, 0)
+        lbl:SetText(text)
+        c:SetScript("OnClick", function() onClick(this:GetChecked() and true or false) end)
+        return c
+    end
+
+    p.buffMonCheck = makeCheck(-176, "Buff monitor", function(on)
+        if Aegis_SBR_BuffUp then Aegis_SBR_BuffUp:SetBuffMonitor(on) end
+    end)
+    -- Opens the buff monitor's own config window (watch list + buff scan).
+    local buffCfgBtn = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    buffCfgBtn:SetWidth(74); buffCfgBtn:SetHeight(18)
+    buffCfgBtn:SetPoint("TOPRIGHT", p, "TOPRIGHT", -12, -175)
+    buffCfgBtn:SetText("Configure")
+    buffCfgBtn:SetScript("OnClick", function()
+        if Aegis_SBR_BuffUp then Aegis_SBR_BuffUp:ToggleConfigWindow() end
+    end)
+    p.poisonCheck = makeCheck(-196, "Poison control (rogue)", function(on)
+        if Aegis_SBR_BuffUp then Aegis_SBR_BuffUp:SetPoisonControl(on) end
+    end)
+
     local cfg = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
     cfg:SetWidth(208); cfg:SetHeight(22)
     cfg:SetPoint("BOTTOM", 0, 12)
@@ -302,6 +336,10 @@ function AM:RefreshPanel()
     p.manualRadio:SetChecked(mode == "manual")
     p.assistRadio:SetChecked(mode == "assist")
     p.assistEdit:SetText((AegisDB and AegisDB.assistTarget) or "")
+    if p.buffMonCheck and Aegis_SBR_BuffUp then
+        p.buffMonCheck:SetChecked(Aegis_SBR_BuffUp:BuffMonitorEnabled())
+        p.poisonCheck:SetChecked(Aegis_SBR_BuffUp:PoisonControlEnabled())
+    end
 end
 
 function AM:TogglePanel()

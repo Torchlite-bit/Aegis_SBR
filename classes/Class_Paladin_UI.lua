@@ -229,7 +229,7 @@ function M:RefreshBody(ui, buf)
     self.hpHighRow.slider:SetValue(buf.hpHigh or 0); self.hpHighRow.slider.valText:SetText((buf.hpHigh or 0) .. "%")
 
     -- Healing section
-    self.healAtRow.slider:SetValue(buf.healThreshold or 90); self.healAtRow.slider.valText:SetText((buf.healThreshold or 90) .. "%")
+    self.healAtRow.slider:SetValue(buf.healThreshold or 75); self.healAtRow.slider.valText:SetText((buf.healThreshold or 75) .. "%")
     -- Holy Shock emergencies. The stored preference defaults on so it just works
     -- the moment Holy Shock is trained; but while the spell is not learned the
     -- toggle is shown OFF (not a misleading lit "on") and greyed. The saved value

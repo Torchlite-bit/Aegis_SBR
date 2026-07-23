@@ -56,11 +56,27 @@ intentionally removed.
 ### Retribution (raid/dungeon DPS) `[T]`
 Keep a Seal up at ALL times → Judgement on CD (respect swing timer; never white-swing
 seal-less) → **Holy Strike on CD** (mana-free; returns mana via Judgement of Wisdom) → ramp
-**Crusader Strike to 5 stacks of Zeal** → Consecration if mana allows.
+**Crusader Strike to 3 stacks of Zeal** (corrected — audit P1, resolved: in-game spell
+description confirms the Zeal buff caps at 3, not 5 as originally recorded here; matches
+Aegis_SBR's existing `ZEAL_STACKS = 3`, so no code change needed) → Consecration if mana
+allows.
 - Seal choice: **Seal of Righteousness preferred** in most cases (can trigger Windfury /
   Crusader enchants); Seal of Command for slow-weapon burst.
+- **Judgement vs. strike order (audit P2), decided — no code change.** Confirmed in-game:
+  both the strike and Judgement are plain GCD-consuming instants (the strike does not queue
+  on the next swing free of the GCD, correcting a stale code comment that assumed
+  otherwise). This makes the research's "Judgement on CD" ahead of the strike a real,
+  actionable order question, not a moot one - but the decision is to keep the strike ahead
+  of Judgement as Aegis_SBR already does: threat generation on the first Holy Strike matters
+  for Protection, and Holy Might/Zeal buff upkeep matters for Retribution, both outweighing
+  a Judgement/debuff refresh occasionally waiting one extra press.
 - Because CS + Holy Strike share the 6s CD, the practical loop is "one strike / 6s +
   Judgement + reseal."
+- **`sealTwist` default off, decided (audit P8) — no change.** The toggle (hold the damage
+  seal's Judgement until <0.4s before the next white swing, so the swing never lands
+  seal-less) is explicitly experimental and latency-sensitive - built as a trial with no
+  guarantee it actually lands correctly on a given connection, so it stays opt-in rather than
+  a safe default.
 
 ### Holy (raid/dungeon heal) `[T]` — melee-capable healer
 At range: Flash of Light spam (tank), Holy Light (big heals), Holy Shock (instant,
@@ -71,12 +87,49 @@ capstone: crit-heal leaves a 12s +20% healing-taken / +5% max-HP buff. Manage Ha
 
 ### Protection (tank/dungeon) `[T]`
 Blessing of Sanctuary → Holy Strike (free, mana return) → judge Seal of Wisdom, reseal →
-high-rank Consecration → Holy Shield on Redoubt proc → Bulwark of the Righteous (row-7
-capstone: Holy damage + 40% DR, 3-min CD).
+high-rank Consecration → Holy Shield kept up on cooldown. **Bulwark of the Righteous is
+deliberately NOT part of the automated loop** (see note below).
+- **Consecration as a single-target filler, decided (audit P4) — no code change.** Stays
+  AoE-only, manual toggle. A tank wants it held in reserve for adds appearing suddenly
+  rather than burning it as steady single-target chip damage; the damage-to-mana ratio
+  against one target doesn't justify auto-casting it there anyway.
+- **Holy Shield trigger, resolved (audit P5) — no code change.** The "Holy Shield on Redoubt
+  proc" phrasing above is corrected: in-game tooltips (135 mana, instant, 10s cooldown,
+  +45% block chance **for 10 sec** - Redoubt is a separate, independent 5-rank passive with
+  its own proc chance) show Holy Shield's own duration exactly matches its cooldown, i.e. it
+  is designed for continuous uptime, not a proc-timed hold. It is also self-sufficient
+  regardless of Redoubt: each block it grants deals 35 Holy damage with **+50% extra
+  threat**, valuable on its own merits. Aegis_SBR's existing behavior (recast on cooldown
+  whenever ready) is correct; this was the audit's highest-risk item and needed real
+  evidence before touching a tank defensive - now settled.
+- **Bulwark of the Righteous, resolved (audit P6) — no code change, deliberately not
+  automated.** In-game tooltip corrects the numbers above: 200 mana, instant, 5yd, **5 min
+  cooldown** (not 3), 274-301 Holy damage, **30% damage reduction for 12 sec** (not 40%).
+  Requires 31 Protection points (a true row-7/8 capstone, comparable depth to Noxious
+  Assault's 31 Assassination points). Decided to leave it out of the automated rotation
+  entirely: a 5-minute emergency defensive is meant for situational manual use during a
+  spike of incoming damage, a judgment call the player should make, not the rotation - the
+  same reasoning that already keeps Divine Shield/Lay on Hands/Hand of Protection manual-only
+  below.
+- **Prot seal-of-choice template default, decided (audit P7) — no template change.** Seal of
+  Wisdom (the research's suggested "core loop" seal, for group-wide mana return) isn't even
+  available before level 18, so defaulting a fresh `prot` profile to it would leave a
+  leveling tank with no seal at all until they manually switch - the current Seal of the
+  Crusader/Righteousness default works immediately at any level. On top of that, with
+  multiple paladins in a group, Seal of Wisdom coverage needs coordinating (a second paladin
+  typically runs Seal of Judgement instead of doubling up), so there is no single "correct"
+  default anyway - this is left as the already-supported manual/situational choice it is.
 
 ### Leveling `[T]`
-Seal of Command R1 + Holy Strike (free) + Judgement between autos; finish with Judgement of
-Command. Proc weapons prized.
+Seal of Command R1 + Judgement between autos; finish with Judgement of Command. Proc weapons
+prized.
+- **Pre-talent strike lean, resolved (audit P11) — no code change.** The "Holy Strike (free)"
+  leveling lean above is corrected: Zeal (via Crusader Strike) works from level 1 with zero
+  talent investment, while Holy Might (via Holy Strike) does not exist as a buff until the
+  Vengeful Strikes talent is taken - there is nothing to gain by leaning on Holy Strike before
+  that talent, since its payoff buff isn't there yet. Aegis_SBR's existing behavior (lean
+  Crusader Strike pre-talent, only start tracking Holy Might once the talent is confirmed
+  known) is correct as-is.
 
 ### PvP/defensive (Phase 4, note only)
 Divine Shield, Lay on Hands, Hand of Protection/Freedom, Repentance.
@@ -125,14 +178,55 @@ CHANGELOG v0.14.1 and audit item H1).
 ### Combat (raid/dungeon DPS — only endgame-viable spec) `[T]`
 Sinister Strike (Improved SS baseline; Swift Strikes adds attack speed) to build combo
 points → **Slice and Dice uptime = top priority** → Rupture / Eviscerate finishers.
-- **Surprise Attack** (Combat 5th-row capstone): 120% weapon dmg, 10 energy, usable after
-  target dodges, can't be dodged/parried/blocked.
+- **Surprise Attack** (Combat capstone, 20 Combat points — Rank 1/1, in-game tooltip
+  confirmed; supersedes the earlier "120% weapon dmg" estimate below): 10 energy, instant,
+  25% of Attack Power as damage, guaranteed to land (can't be blocked/dodged/parried),
+  1 combo point. Usable only after the TARGET dodges your attack. Implemented in Aegis_SBR
+  as a reactive window mirroring Riposte's parry tracker, but on
+  `CHAT_MSG_COMBAT_SELF_MISSES` filtered for "dodge" instead of
+  `CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES` filtered for "parry" (audit R1, implemented —
+  window length carried over from Riposte's 5.5s as a placeholder, **unverified for
+  Surprise Attack specifically**; tune via `/sbr trace`'s `sa=` field if it proves too
+  short/long in practice).
 - Blade Flurry + Adrenaline Rush burst. Blade Rush scales energy-tick regen with agility.
 - Combo points no longer vanish on target switch (reset fresh). Rogues can use 1H axes.
+- **Noxious Assault does not apply here** (see Assassination below) — it requires 31
+  Assassination points, which a Combat build never has, so Aegis_SBR's auto-builder
+  preference for it over Sinister Strike is a non-issue for Combat in practice (audit R3).
+- **Slice and Dice 1-CP cheap-refresh model, resolved (audit R2)**: Aegis_SBR only refreshes
+  SnD immediately when combo points happen to be exactly 1 (otherwise it dumps into
+  Eviscerate first and catches the refresh on a later pass) — cheap on combo points, but in
+  theory risks a brief SnD downtime gap while waiting to cycle back to 1cp. **Ruthlessness**
+  (Assassination, 6-8 points, 3/3 = 100% chance, in-game tooltip confirmed: "finishing moves
+  have a 100% chance to add a combo point to your target") closes that gap in practice: every
+  finisher (Eviscerate included) immediately regenerates to exactly 1 combo point, so the
+  cheap-refresh window recurs on the very next press after every single finisher, not after
+  several builder hits. Since Ruthlessness is an early, low-cost pick that most serious
+  Combat/hybrid builds take regardless of final spec, the existing model needs no change for
+  the practical case. A hypothetical 0-Assassination-point Combat rogue (rare, generally
+  suboptimal) would still see the original gap — noted, not acted on.
 
 ### Assassination `[T]` (weaker)
 Poison-focused; not endgame-competitive (Combat is the only viable PvE spec to late
 AQ40/Naxx).
+- **Noxious Assault** (Assassination end talent, 31 points — Rank 1/1, in-game tooltip
+  confirmed): 45 energy, instant, 5yd, strikes with **both** weapons for 30 + 30% AP and
+  **guarantees** poison application from both weapons; 1 combo point. Compare **Sinister
+  Strike** R6 (lvl 46, tooltip confirmed): 40 energy, instant, main-hand only, +33 flat on
+  top of melee damage, normal (non-guaranteed) poison proc chance; 1 combo point.
+  Despite costing 5 more energy, Noxious Assault wins on total value whenever poisons are
+  applied — a full second weapon hit plus two guaranteed procs (vs. one chance-based proc)
+  outweighs the energy premium. Confirms Aegis_SBR's auto-builder (prefers Noxious Assault
+  whenever known, else Sinister Strike) is correct; the 31-point requirement means this only
+  ever applies to a deep/pure Assassination build, matching the module's own "Assassination
+  flavoured" design intent (audit R3, resolved — no code change).
+- **Envenom** (Assassination talent, ~21 points deep — Rank 1/1, in-game tooltip confirmed):
+  20 energy, instant, **finisher** (consumes combo points, not a builder). Self-buff: +30%
+  poison effectiveness and +30% poison application chance on the rogue. Duration scales by
+  combo points spent at cast: 1cp=12s, 2cp=16s, 3cp=20s, 4cp=24s, 5cp=28s — matches
+  Aegis_SBR's `ENV_DUR = {12, 16, 20, 24, 28}` exactly. Confirms the code's model (self-buff
+  refreshed cheaply at 1 combo point, dumped into Eviscerate above that, mirroring the
+  Slice-and-Dice upkeep pattern) is correct (audit R4, resolved — no code change).
 
 ### Subtlety (dungeon support) `[T]` (niche)
 Ambush/Backstab; Honor Among Thieves (party crits → 5 energy); Cloaked in Shadows party
@@ -141,6 +235,21 @@ damage bubble via low-CD Vanish (Elusiveness); Serrated Blades garrote.
 ### Leveling `[T]`
 Combat (swords or daggers). Dagger: Ambush → Gouge → pool energy → Backstab →
 Eviscerate/Rupture; kite with Crippling Poison + Rupture.
+
+### ⏸ Deferred (audit R5): no stealth opener `[?]`
+Aegis_SBR's rotation never checks for Stealth — it starts straight at the normal builder
+even when opening from stealth, so an Ambush-type opener is left on the table. Confirmed
+**not worth adding for the two specs the addon actually targets**: Assassination (dagger)
+already out-damages a stealth opener with Noxious Assault + its guaranteed double poison
+proc (audit R3), and Combat (sword/axe) can't cast Ambush at all (dagger-only requirement).
+The remaining case — a Subtlety or dagger-leveling player who wants a proper stealth-opener
+weave (Ambush, optionally Gouge → energy-pool → Backstab per the Leveling line above) —
+is real but **deliberately deferred**: neither maintainer currently plays Combat or
+Subtlety, so a design (energy pooling? which opener?) can't be validated in-game right now.
+Sketch discussed and available if someone picks this up: a toggle gated on a Stealth-buff
+check (mirrors the existing `SelfBuffUp` helper), Ambush as priority 0 before Riposte, no
+pooling logic initially. **Not implemented — pick this back up only with someone able to
+test a Combat or Subtlety build.**
 
 ### PvP/defensive (Phase 4, note only)
 Vanish, Blind, Evasion, Cloak, Kidney Shot, Improved Gouge.

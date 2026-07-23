@@ -346,8 +346,15 @@ function M:GroupUnits()
     return units
 end
 
+-- Uses IsSpellInRange against the longest-range known heal for an exact
+-- answer instead of CheckInteractDistance's ~28yd proxy (priest heals reach
+-- 40yd, so the proxy was under-filtering by 12yd). Falls back to the proxy
+-- only if none of the probed heals are learned yet (very early leveling).
 function M:Reachable(u)
     if UnitIsUnit(u, "player") then return true end
+    if self:KnowsSpell("Heal") then return IsSpellInRange("Heal", u) == 1
+    elseif self:KnowsSpell("Flash Heal") then return IsSpellInRange("Flash Heal", u) == 1
+    elseif self:KnowsSpell("Renew") then return IsSpellInRange("Renew", u) == 1 end
     return CheckInteractDistance(u, 4)
 end
 
