@@ -60,11 +60,15 @@ function M:BuildBody(ui, parent)
     L:Header("Threat / AoE")
     row("aoeMode", "AoE mode")
     row("useSweeping", "Sweeping Strikes")
-    row("useSunder", "Sunder Armor")
+    -- Sunder Armor toggle carries its stack-count slider on the same row (like the
+    -- other classes' toggle+slider rows), instead of a separate slider at the foot
+    -- of the section. Registered into self.cb so the RefreshBody bind loop and
+    -- the "(not learned)" handling treat it like any other toggle.
+    self.sunderRow = L:Row{ key = "useSunder", label = "Sunder Armor", spell = "Sunder Armor", onToggle = set("useSunder"),
+        slider = { key = "sunderStacks", min = 1, max = 5, step = 1, suffix = "", onChange = set("sunderStacks") } }
+    self.cb.useSunder = self.sunderRow
     row("useThunderClap", "Thunder Clap")
     row("useCleave", "Cleave (AoE)")
-    self.sunderRow = L:Row{ label = "Sunder stacks",
-        slider = { key = "sunderStacks", min = 1, max = 5, step = 1, suffix = "", onChange = set("sunderStacks") } }
 
     L:Header("Shouts")
     row("useBattleShout", "Battle Shout")
@@ -103,7 +107,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.stanceDD,              "Home stance",   "The stance the rotation returns to when dancing. Berserker for most DPS, Defensive for tanking.")
     ui:Tip(self.cb.aoeMode.cb,         "AoE mode",      "Switches the rage dump to Cleave and uses Whirlwind on cooldown. Flip mid-fight with /sbr aoe.")
     ui:Tip(self.cb.useSweeping.cb,     "Sweeping Strikes", "Fired on cooldown while AoE mode is on (off the global cooldown).")
-    ui:Tip(self.cb.useSunder.cb,       "Sunder Armor",  "Applied as a filler up to the stack count below, then left to ride.")
+    ui:Tip(self.cb.useSunder.cb,       "Sunder Armor",  "Applied as a filler up to the stack count beside it, then left to ride.")
     ui:Tip(self.cb.useThunderClap.cb,  "Thunder Clap",  "AoE filler. Battle stance in 1.12, so a Defensive tank will not auto-cast it.")
     ui:Tip(self.cb.useCleave.cb,       "Cleave in AoE", "When AoE mode is on, dump rage with Cleave instead of Heroic Strike.")
     ui:Tip(self.sunderRow.slider,          "Sunder stacks", "Apply Sunder Armor until the target carries this many stacks.")
@@ -144,6 +148,8 @@ function M:RefreshBody(ui, buf)
     local ss = buf.sunderStacks or 5
     self.sunderRow.slider:SetValue(ss)
     if self.sunderRow.slider.valText then self.sunderRow.slider.valText:SetText(tostring(ss)) end
+    -- the stacks slider follows the Sunder Armor toggle (greyed when off)
+    ui:SliderEnable(self.sunderRow.slider, buf.useSunder and true or false)
 
     local dr = buf.dumpRage or 60
     self.dumpRow.slider:SetValue(dr)

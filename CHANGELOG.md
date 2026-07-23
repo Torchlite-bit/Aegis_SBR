@@ -4,7 +4,16 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
-## v0.16.0 — BuffUp integration (buff monitor + rogue poison Quick Bar), Rogue execute, Paladin double-heal fix
+## v0.15.5 — Warrior UI: Sunder stacks slider folded into the Sunder Armor toggle
+
+**UI polish.** The Warrior *Sunder stacks* slider is now part of the *Sunder Armor* toggle
+row (a combined toggle+slider, matching the Hunter Mend Pet / Shaman Mana Tide rows) instead
+of sitting as a separate slider at the bottom of the Threat/AoE section. The slider follows
+the toggle (greyed when off) and hides when Sunder Armor isn't learned. No behavior change.
+
+---
+
+## v0.15.4 — BuffUp integration (buff monitor + rogue poison Quick Bar), Rogue execute, Paladin double-heal fix
 
 **Feature + fixes.** Folds the standalone **BuffUp** addon into Aegis as an optional upkeep monitor, adds a rogue execute finisher, and fixes a Paladin double-heal. If you ran standalone BuffUp, you can now retire it — Aegis covers the same ground.
 
