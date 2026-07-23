@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation ⚔️ (v0.15.3)
+# Aegis: Single Button Rotation ⚔️ (v0.15.4)
 
 **Smart, Modular Combat Automation for Turtle WoW (1.18.1)**
 

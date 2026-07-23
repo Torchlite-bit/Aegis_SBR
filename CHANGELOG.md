@@ -4,6 +4,15 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v0.15.4 — Warrior UI: Sunder stacks slider folded into the Sunder Armor toggle
+
+**UI polish.** The Warrior *Sunder stacks* slider is now part of the *Sunder Armor* toggle
+row (a combined toggle+slider, matching the Hunter Mend Pet / Shaman Mana Tide rows) instead
+of sitting as a separate slider at the bottom of the Threat/AoE section. The slider follows
+the toggle (greyed when off) and hides when Sunder Armor isn't learned. No behavior change.
+
+---
+
 ## v0.15.3 — Warrior shout upkeep: Battle Shout + Demoralizing Shout (audit W1 + W4)
 
 **Feature (rotation, user-approved).** Implements the two shout gaps the Phase 1 audit
