@@ -41,6 +41,9 @@ local STANCE_CD = 1.0
 -- Light throttle so a rapid press burst does not re-issue the queued
 -- on-next-swing ability several times in the same swing.
 local DUMP_THROTTLE = 0.3
+-- Refresh Battle Shout when it is missing or has under this many seconds left.
+-- It lasts ~2 min, so this refreshes it roughly once per two minutes.
+local BSHOUT_RENEW = 30
 
 -- Stance key -> spell name. Used by the home-stance setting and switching.
 M.STANCES = {
@@ -66,6 +69,8 @@ local RAGE = {
     ["Thunder Clap"]  = 20,
     ["Charge"]        = 0,    -- generates rage; free to attempt
     ["Rend"]          = 10,
+    ["Battle Shout"]        = 10,
+    ["Demoralizing Shout"]  = 10,
 }
 
 -- Stances an ability may be used from (vanilla 1.12). nil = any stance.
@@ -106,6 +111,8 @@ M.spellAlias = {
     shieldblock = "useShieldBlock", sb = "useShieldBlock",
     charge = "useCharge",
     rend = "useRend",
+    battleshout = "useBattleShout", bshout = "useBattleShout",
+    demoshout = "useDemoShout", demo = "useDemoShout",
 }
 
 -- Templates: starting presets, copied into the char's saved profiles once.
@@ -179,6 +186,9 @@ function M:NormalizeProfile(c)
         useDeathWish = false, useRecklessness = false, useBerserkerRage = false,
         useBloodrage = true, bloodrageRage = 30, useShieldBlock = false,
         useCharge = false, useRend = false,
+        -- Battle Shout on by default (near-universal AP buff); Demoralizing Shout
+        -- off by default (opt-in mitigation debuff, mainly for tanking).
+        useBattleShout = true, useDemoShout = false,
     }
     for k, v in pairs(b) do
         if c[k] == nil then c[k] = v end
@@ -412,6 +422,29 @@ function M:Rotate(cfg)
     if cfg.useShieldSlam   and self:Try("Shield Slam")   then return end
     if cfg.useBloodthirst  and self:Try("Bloodthirst")   then return end
     if cfg.useMortalStrike and self:Try("Mortal Strike") then return end
+
+    -- 1d1. Battle Shout upkeep (party attack-power buff). Refreshed only when it
+    --      is missing or about to expire, and BELOW the strikes so it never
+    --      delays one - it costs a GCD only ~once every couple of minutes. Any
+    --      stance; skipped in the execute phase so rage funnels to Execute. The
+    --      time-left read is guarded so an unknown (0) duration never spams it.
+    if cfg.useBattleShout and not inExecute
+        and self:CanCast("Battle Shout", RAGE["Battle Shout"], nil) then
+        local up = self:HasBuff("Battle Shout")
+        local bt = self:BuffTime("Battle Shout")
+        if not up or (bt > 0 and bt < BSHOUT_RENEW) then
+            if self:Cast("Battle Shout") then return end
+        end
+    end
+
+    -- 1d1b. Demoralizing Shout upkeep (opt-in; AoE attack-power reduction on the
+    --       target for mitigation). Debuff-tracked like Rend, re-applied only
+    --       when it is not on the target. Any stance; skipped during execute.
+    if cfg.useDemoShout and not inExecute
+        and self:CanCast("Demoralizing Shout", RAGE["Demoralizing Shout"], nil)
+        and not Aegis_SBR:TargetDebuffUp("Demoralizing Shout", "Ability_Warrior_WarCry") then
+        if self:Cast("Demoralizing Shout") then return end
+    end
 
     -- 1d2. Rend bleed upkeep (toggle; a leveling tool, off by default). Battle
     --      or Defensive stance, applied only when the bleed is not already on

@@ -20,6 +20,7 @@ local SPELL_OF = {
     useSweeping = "Sweeping Strikes", useDeathWish = "Death Wish",
     useRecklessness = "Recklessness", useBerserkerRage = "Berserker Rage",
     useBloodrage = "Bloodrage", useShieldBlock = "Shield Block",
+    useBattleShout = "Battle Shout", useDemoShout = "Demoralizing Shout",
     stanceDance = nil, aoeMode = nil, popCDs = nil, autoCDElite = nil,
 }
 
@@ -65,6 +66,10 @@ function M:BuildBody(ui, parent)
     self.sunderRow = L:Row{ label = "Sunder stacks",
         slider = { key = "sunderStacks", min = 1, max = 5, step = 1, suffix = "", onChange = set("sunderStacks") } }
 
+    L:Header("Shouts")
+    row("useBattleShout", "Battle Shout")
+    row("useDemoShout", "Demoralizing Shout")
+
     L:Header("Rage dump")
     row("useHeroicStrike", "Heroic Strike")
     self.dumpRow = L:Row{ label = "Dump above rage",
@@ -102,6 +107,8 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.cb.useThunderClap.cb,  "Thunder Clap",  "AoE filler. Battle stance in 1.12, so a Defensive tank will not auto-cast it.")
     ui:Tip(self.cb.useCleave.cb,       "Cleave in AoE", "When AoE mode is on, dump rage with Cleave instead of Heroic Strike.")
     ui:Tip(self.sunderRow.slider,          "Sunder stacks", "Apply Sunder Armor until the target carries this many stacks.")
+    ui:Tip(self.cb.useBattleShout.cb,  "Battle Shout",  "Keeps the party attack-power buff up. Refreshed only when it is missing or about to expire, and below your strikes so it never delays one.", "Skipped during Execute so rage feeds Execute. On by default.")
+    ui:Tip(self.cb.useDemoShout.cb,    "Demoralizing Shout", "Keeps the enemy attack-power reduction on your target, for mitigation (tanking). Re-applied only when it falls off the target. Off by default.", "Uses a debuff slot - mind the raid debuff cap.")
     ui:Tip(self.cb.useHeroicStrike.cb, "Rage dump",     "Queue Heroic Strike (or Cleave in AoE) on the next swing when rage is above the value below.")
     ui:Tip(self.dumpRow.slider,            "Dump above rage", "Only queue the rage dump when rage is at least this high, so you never starve your strikes.")
     ui:Tip(self.wwRow.slider,              "Whirlwind above rage", "Single-target only: also fire Whirlwind when rage is at least this high, to bleed off excess.")

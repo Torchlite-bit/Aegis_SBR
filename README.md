@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation ⚔️ (v0.15.1)
+# Aegis: Single Button Rotation ⚔️ (v0.15.3)
 
 **Smart, Modular Combat Automation for Turtle WoW (1.18.1)**
 
@@ -60,6 +60,7 @@ A roleless, toggle-driven engine covering Arms, Fury, and Protection from early 
 - **Smart Rage Dump:** Queues *Heroic Strike* (or *Cleave* in AoE mode) onto your next swing only above a configurable rage floor, and suppresses it during the *Execute* phase so surplus rage funnels into *Execute*.
 - **Cooldown Automation:** *Death Wish*, *Recklessness*, and *Berserker Rage* fire on cooldown, only on Elite/Boss targets, or fully manually — the same three-state model as the other classes — while *Bloodrage* tops up rage on demand, even before the pull.
 - **Threat Toolkit:** Maintains *Sunder Armor* up to a chosen stack count and weaves *Shield Slam*, *Revenge*, and *Shield Block* upkeep for Protection tanking.
+- **Shout Upkeep:** *Battle Shout* (on by default) is kept up as the party attack-power buff — refreshed only when it's missing or about to expire and placed **below your strikes**, so it costs a global cooldown only about once every two minutes and never delays a strike. *Demoralizing Shout* (off by default) keeps the enemy attack-power reduction on your target for tanking, re-applied only when it drops. Both yield during *Execute* and are rage-gated.
 - **Leveling Toggles (off by default):** *Charge* opens a pull from range in Battle Stance — self-limiting, since the client blocks it once you're in combat, so it only ever fires on the initial gap-close. *Rend* keeps its bleed up in Battle or Defensive Stance and yields during *Execute* so rage funnels there instead. Neither toggle is meant for endgame play.
 - **Reliable Auto-Attack:** If *Attack* isn't placed on an action bar, the addon falls back to starting the swing directly, so melee always engages without a manual `/startattack`.
 
@@ -301,6 +302,7 @@ When using the /sbr spell command, you can use short aliases:
   * `dw` / `deathwish` → `Death Wish`, `reck` / `recklessness` → `Recklessness`, `br` / `berserkerrage` → `Berserker Rage`
   * `bld` / `bloodrage` → `Bloodrage`, `sb` / `shieldblock` → `Shield Block`
   * `charge` → `Charge` (leveling opener), `rend` → `Rend` (leveling bleed)
+  * `battleshout` / `bshout` → `Battle Shout`, `demoshout` / `demo` → `Demoralizing Shout`
 
 ## Hunter Combat Toggles:
 

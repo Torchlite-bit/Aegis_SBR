@@ -319,10 +319,12 @@ end
 local function buildButton()
     local b = CreateFrame("Button", "Aegis_SBR_MinimapButton", Minimap)
     b:SetWidth(31); b:SetHeight(31)
-    b:SetFrameStrata("MEDIUM")
-    -- Sit clearly above the minimap and any frames another addon layers over it
-    -- (pfUI's minimap border/buttons), so clicks land on the whole button rather
-    -- than being intercepted except for a sliver at the edge.
+    -- pfUI layers its minimap border/click-catcher on a HIGHER STRATA than the
+    -- minimap, so a raised frame LEVEL (which only orders frames within the same
+    -- strata) wasn't enough - the overlay still ate the clicks. Put the button on
+    -- a strata above that overlay so the whole button is clickable, with a high
+    -- level so it also sits above any same-strata siblings.
+    b:SetFrameStrata("HIGH")
     b:SetFrameLevel((Minimap:GetFrameLevel() or 4) + 10)
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     b:RegisterForDrag("LeftButton")

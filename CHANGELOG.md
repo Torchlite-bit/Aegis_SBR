@@ -4,6 +4,39 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v0.15.3 — Warrior shout upkeep: Battle Shout + Demoralizing Shout (audit W1 + W4)
+
+**Feature (rotation, user-approved).** Implements the two shout gaps the Phase 1 audit
+flagged — Battle Shout was missing from the Warrior module entirely despite being the first
+line of the Arms/Fury rotation. Each is its own toggle.
+
+- **Battle Shout** (*Shouts* section, **default ON**): keeps the party attack-power buff up.
+  Refreshed only when it's **missing or under ~30s left**, and placed **below your strikes**
+  so it never delays one — it costs a global cooldown only about once every two minutes.
+  Any stance, rage-gated, and skipped during the Execute phase so rage feeds Execute. The
+  time-left read is guarded so an unreadable duration can't spam it. Because Battle Shout
+  now defaults on, existing warrior profiles will start maintaining it after you update
+  (toggle it off in the panel if you don't want it).
+- **Demoralizing Shout** (*Shouts* section, **default OFF**): keeps the enemy attack-power
+  reduction on your target for mitigation (tanking). Debuff-maintained exactly like Rend —
+  re-applied only when it falls off the target. Any stance, rage-gated, skipped in Execute.
+  Opt-in, since it spends a debuff slot (mind the raid debuff cap).
+- Also adds `/sbr spell` aliases: `battleshout`/`bshout`, `demoshout`/`demo`.
+
+---
+
+## v0.15.2 — Minimap button click fix, take 2 (strata, for pfUI)
+
+**Fix.** Follow-up to the 0.15.1 minimap fix, which wasn't enough. pfUI layers its minimap
+border / click-catcher on a **higher frame strata** than the minimap, and the 0.15.1 change
+only raised the button's frame *level* — which orders frames within the same strata, so
+pfUI's overlay still intercepted the clicks. The button is now on a higher strata than that
+overlay, so the whole button is clickable (the adaptive edge-hugging radius from 0.15.1 is
+kept). If it's still finicky under a specific pfUI config, that points to click-vs-drag or
+button collection rather than layering — report back and it can be tuned further.
+
+---
+
 ## v0.15.1 — Hunter dual mana-aspect thresholds + minimap button clickable under pfUI
 
 **Tuning + fix.**
