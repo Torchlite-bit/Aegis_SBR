@@ -89,6 +89,8 @@ function M:BuildBody(ui, parent)
         slider = { key = "healThreshold", min = 0, max = 100, step = 5, suffix = "%", onChange = set("healThreshold") } }
     self.holyShockRow = L:Row{ key = "useHolyShock", label = "Holy Shock emergencies", spell = "Holy Shock", onToggle = set("useHolyShock"),
         slider = { key = "holyShockPct", min = 0, max = 100, step = 5, suffix = "%", onChange = set("holyShockPct") } }
+    self.holyLightRow = L:Row{ label = "Holy Light only below",
+        slider = { key = "holyLightPct", min = 0, max = 100, step = 5, suffix = "%", onChange = set("holyLightPct") } }
     self.healReloadRow = L:Row{ key = "healReloadCS", label = "Reload Holy Shock (CS)", onToggle = set("healReloadCS") }
     self.healSplashRow = L:Row{ key = "healSplashHS", label = "Holy Strike filler", onToggle = set("healSplashHS"),
         slider = { key = "healWeaveManaFloor", min = 0, max = 90, step = 5, suffix = "%", onChange = set("healWeaveManaFloor") } }
@@ -123,6 +125,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.holyShockRow.cb, "Holy Shock emergencies", "Use the instant Holy Shock for an emergency or a hurt unit out of melee range.")
     ui:Tip(self.holyShockRow.cb, "Holy Shock emergencies", "In heal mode Holy Shock is used ONLY as an instant heal, never for damage.", "Fires for an emergency or a hurt unit out of melee range, below the health value on the right.")
     ui:Tip(self.holyShockRow.slider, "Holy Shock below", "Health under which Holy Shock is used as an instant emergency heal.", "Below this same line, Flash of Light is also kept over Holy Light even for a big deficit - faster beats fuller when it's this close. Also /sbr hsat <1-100>. +healing auto-reads from gear; override with /sbr healpower <n>.")
+    ui:Tip(self.holyLightRow.slider, "Holy Light only below", "Reserve Holy Light for targets under this health percent. Above it, Flash of Light is used no matter how big the deficit is. 0 switches the restriction off.", "Off by default, because the heal choice is already made on efficiency: the smallest rank of each that covers the deficit is compared by what actually lands, and Flash of Light wins ties unless Holy Light wastes at least 10% less. That decides from the SIZE of the deficit though, so a high-health tank missing a lot in absolute terms can pull a Holy Light while still at a comfortable percentage. Set this if you would rather spam the cheap fast heal until someone is genuinely low.")
     ui:Tip(self.healReloadRow.cb, "Reload Holy Shock (CS)", "When Holy Shock is on cooldown, use Crusader Strike to reset it (Blessed Strikes, auto-detected), keeping the emergency instant loaded.", "Uses a GCD, but never fires while anyone is below the Holy Shock line - the heal comes first. Not limited by the filler mana floor.")
     ui:Tip(self.healSplashRow.cb, "Holy Strike filler", "In downtime with nobody to heal, use Holy Strike so its splash tops the melee group.", "Uses a GCD, and only above the mana value on the right, so filler never starves a heal.")
     ui:Tip(self.healSplashRow.slider, "Filler mana floor", "Holy Strike filler only fires while your mana is above this.")
@@ -237,6 +240,12 @@ function M:RefreshBody(ui, buf)
     local hsKnown = self:KnowsSpell("Holy Shock")
     ui:BindCheck(self.holyShockRow, buf.useHolyShock and hsKnown, "Holy Shock")
     self.holyShockRow.slider:SetValue(buf.holyShockPct or 50); self.holyShockRow.slider.valText:SetText((buf.holyShockPct or 50) .. "%")
+    -- 0 means "no restriction" and must survive: an `or` fallback would turn a
+    -- deliberate 0 into whatever default sat on the right of it.
+    local hlp = buf.holyLightPct
+    if hlp == nil then hlp = 0 end
+    self.holyLightRow.slider:SetValue(hlp)
+    self.holyLightRow.slider.valText:SetText(hlp == 0 and "off" or (hlp .. "%"))
     -- The heal controls live in the heal-only "Healing" card, which the tab rail
     -- hides entirely on the Damage tab, so no mode gating is needed here.
     if not hsKnown then

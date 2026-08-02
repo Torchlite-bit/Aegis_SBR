@@ -161,7 +161,7 @@ M.templates = {
         hpManage = false, hpLow = 30, hpHigh = 70,
         strikeStyle = "autodps",
         spells = { holyStrike = false, crusaderStrike = false, holyShield = false, hammerOfWrath = false, repentance = false },
-        healMode = true, healThreshold = 75, useHolyShock = true, holyShockPct = 50, healPower = 0,
+        healMode = true, healThreshold = 75, useHolyShock = true, holyShockPct = 50, holyLightPct = 0, healPower = 0,
         healWeaveManaFloor = 40, healReloadCS = true, healSplashHS = true,
         healManaSelf = true, healManaJudge = false,
     },
@@ -252,6 +252,12 @@ function M:NormalizeProfile(c)
     -- old tab bug, which could store the string "damage" (truthy) into healMode.
     c.healMode = (c.healMode == true)
     if c.healThreshold == nil then c.healThreshold = 75 end
+    -- Reserve Holy Light for targets below this health percent (0 = off, the
+    -- efficiency comparison in DoHeal decides on its own). Community request:
+    -- Flash of Light is the mana-efficient workhorse, so some players want the
+    -- big heal held back for people who are genuinely low rather than picked
+    -- whenever the raw deficit happens to be large.
+    if c.holyLightPct == nil then c.holyLightPct = 0 end
     if c.useHolyShock == nil then c.useHolyShock = true end
     if c.holyShockPct == nil then c.holyShockPct = 50 end
     -- Split the old single heal-weave toggle into two independent behaviours
@@ -886,6 +892,20 @@ function M:DoHeal(cfg)
     -- Flash of Light instead of flip-flopping to a slower cast for pennies.
     local fol, folRaw = self:PickRank("Flash of Light", folEff, self.FOL_MANA, folDeficit, mana)
     local hl,  hlRaw  = self:PickRank("Holy Light", hlEff, self.HL_MANA, hlDeficit, mana)
+
+    -- Optional hard reservation of Holy Light for targets that are actually
+    -- low (holyLightPct, 0 = off). The comparison below already prefers Flash
+    -- of Light on efficiency, but it decides from the SIZE OF THE DEFICIT, not
+    -- from how hurt the unit is - so a big-health tank missing a lot in
+    -- absolute terms can pull a Holy Light while still sitting at a
+    -- comfortable percentage. This gate expresses the other intent directly:
+    -- above the threshold, spam the cheap fast heal regardless of deficit.
+    -- Only ever applied when Flash of Light is actually castable, so the gate
+    -- can never leave the unit with no heal at all.
+    if hl and fol and (cfg.holyLightPct or 0) > 0 and pct > (cfg.holyLightPct / 100) then
+        hl = nil
+    end
+
     local folLanded = fol and (folRaw * hdb) or nil
     local hlLanded  = hl  and (hlRaw  * hdb) or nil
     local folCovers = folLanded and folLanded >= deficit
