@@ -927,9 +927,22 @@ function M:DoHeal(cfg)
     local folCovers = folLanded and folLanded >= deficit
     local hlCovers  = hlLanded  and hlLanded  >= deficit
 
+    -- Both cover the deficit, so both overheal and the one that lands less
+    -- wastes less. Holy Light has to beat Flash of Light by this margin to be
+    -- worth its slower cast.
+    --
+    -- The margin widens in melee range, because there a 2.5s cast costs more
+    -- than time: it costs weapon swings, and with Seal of Wisdom up those
+    -- swings are mana coming back. Reported from play - a paladin that stops
+    -- chaining Holy Lights keeps the seal running, melees far more often and
+    -- regains noticeably more mana, so the cast time compounds. At range, on a
+    -- raid boss, there are no swings to lose and the plain overheal comparison
+    -- is the honest one. InMeleeRange doubles as the dungeon/raid tell here,
+    -- which is why no explicit mode toggle is needed for it.
+    local hlMargin = self:InMeleeRange() and 0.75 or 0.9
     local pick, amt, castTime
     if folCovers and hlCovers then
-        if hlLanded <= folLanded * 0.9 then pick, amt, castTime = hl, hlLanded, 2.5
+        if hlLanded <= folLanded * hlMargin then pick, amt, castTime = hl, hlLanded, 2.5
         else pick, amt, castTime = fol, folLanded, 1.5 end
     elseif folCovers then pick, amt, castTime = fol, folLanded, 1.5
     elseif hlCovers then pick, amt, castTime = hl, hlLanded, 2.5

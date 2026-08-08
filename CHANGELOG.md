@@ -4,6 +4,152 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.1.7 — Shaman totem + imbue overhaul, per-context buff lists, Paladin melee heal margin
+
+**Two player reports, and what they uncovered.** A shaman reported that a lapsed **Rockbiter**
+gave no warning, unlike a rogue's poison; another that **totem upkeep did not work properly**,
+to the point of using a macro instead. Both were real, both had a single concrete cause, and
+chasing them turned up three further gaps in the same area.
+
+### 🐛 Fixed — a lapsed weapon imbue was invisible
+
+Standalone BuffUp watched the weapon slots in two modes, `item` (rogue poisons) and `spell`
+(shaman imbues) — the same slot check, differing only in how you put it back. **Only the item
+half was ported**, and the watch sat behind a hard rogue gate, so no shaman ever saw a prompt.
+The generic buff monitor cannot substitute: it scans `UnitBuff`, and a weapon enchant is not a
+player buff, so the imbue could not simply be added to the watch list instead.
+
+There is now a **"Rebuff button (manual)"** toggle in the Shaman panel's *Weapon imbue*
+section. It shows the same on-screen prompt rogues get for a lapsed poison and casts whichever
+imbue is selected above it. Its own setting rather than a reuse of the poison flags, because
+those are only reachable from the Rogue panel and hang off a switch labelled "(rogue)".
+
+Worth stating plainly: the previous integration note claimed the class panel's auto-apply was
+*"superior to a manual button"*. It is not a substitute — `maintainImbue` is **off by default**
+and, unless *Apply in combat* is opted in, stands down in combat entirely. An imbue lapsing
+mid-fight was covered by neither mechanism. **Chat warnings are suppressed while the button is
+on**: several players reported simply not noticing that line in a fight, which is the whole
+reason the button exists; printing both would only add noise. With the button off, the chat
+warning remains as the fallback.
+
+### 🔧 Weapon imbue: automatic and manual are now clearly two routes
+
+The section read as one feature with confusing extras. It is now two named alternatives —
+**"Maintain imbue (automatic)"** and **"Rebuff button (manual)"** — either of which works on
+its own, which the tooltips now say outright.
+
+**The "Warn under X minutes" slider is gone.** It only ever printed a chat line, never acted,
+and it was interactive *only while the automation was on* — precisely when nobody needs a
+warning, since the rotation is already handling it. Its threshold logic (`imbueThresholdMin`
+and the `"warn"` state) is removed from the rotation with it.
+
+The same trap was found one field higher: the **imbue picker** was also gated on the
+automation, so anyone who wanted only the manual button could not choose which imbue that
+button casts. It is now live whenever *either* route is enabled. *Apply in combat* stays tied
+to the automation, since it genuinely only qualifies that one.
+
+### ✨ Weapon imbues available to every Shaman spec
+
+The *Weapon imbue* section was gated to Enhancement and Tank. It is now shown for all four —
+an Elemental or Restoration shaman still melees between casts, and Rockbiter's threat matters
+to a healer holding aggro.
+
+Removing the gate exposed that the upkeep behind it was **not uniform**: Restoration never ran
+it at all (the dispatcher returns to the heal rotation before reaching the imbue branch), and
+Elemental only pre-pull, never once a fight was under way. Both now match the melee specs.
+*(Approved rotation change.)* Placement is deliberately lowest-priority — in Restoration it
+sits below every heal and totem, so an imbue can never take a global cooldown away from a
+heal, but above the optional damage weave, since a bare weapon degrades every later swing
+while a single filler nuke leaves nothing behind.
+
+Defaults are unchanged, so nobody who does not switch it on notices anything.
+
+### 🐛 Fixed — totem upkeep re-dropped on a clock that could not see reality
+
+Reported from play as totem upkeep simply "not working properly", to the point of using a
+macro instead. Two separate faults, and the second is the interesting one.
+
+**The clock was wrong.** Redrop came from two blanket constants — 55s water, **110s everything
+else** — while durations vary far more *within* an element slot than between slots:
+
+| Totem | Duration | Redropped after | Gap |
+|---|---|---|---|
+| Magma Totem | 20s | 110s | **90s with no totem** |
+| Grounding Totem | 45s | 110s | 65s |
+| Searing Totem | 60s | 110s | 50s |
+| Windfury / Stoneskin / … | 120s | 110s | fine |
+
+The 120-second totems the constant was sized for worked, which is why this read as an
+intermittent, personal problem.
+
+**But a clock is the wrong instrument regardless.** A totem stays where it was dropped. The
+group moves on, walks out of its radius, and the aura is gone while the timer happily counts
+down — the same for a totem destroyed, or recalled for mana. None of that is visible to a
+timer.
+
+So where a totem grants an aura, **the aura is now what is read**, and it answers expiry,
+destruction, recall and range in a single check. Totems that grant no aura — *Searing*,
+*Magma*, *Fire Nova*, *Grounding* — have nothing to read and keep the timer, which is exactly
+why the per-totem durations above still matter: those are the short-lived ones.
+
+A wrong aura name would otherwise be the worst possible failure, reading as permanently
+missing and re-dropping forever, so a name is only trusted **once it has actually been seen**
+after a cast. If a totem is dropped and its aura never appears, that name is written off for
+the session and the totem falls back to the timer — degrading to the old behaviour instead of
+spamming. The names are vanilla baselines and worth confirming on Turtle with `/sbr debug`.
+
+**Restoration also carried its own duplicated copy of the four totem calls** instead of the
+shared helper, so anything added centrally would have skipped that spec entirely. All four
+specs now go through one path.
+
+### ✨ AoE fire pair: Fire Nova on cooldown, Magma between
+
+Requested for lasher farming, where the pull is a cluster of low-health mobs and the fire slot
+*is* the damage plan. New **"AoE fire pair (Nova + Magma)"** toggle, which takes over the fire
+slot and greys out the single-totem picker.
+
+Deliberately not another entry in that picker: the point is to **alternate** the two, not
+choose one. Fire Nova is not upkeep at all — it detonates after a few seconds and then waits on
+a cooldown, behaving like a cooldown ability, while Magma is the sustained tick that fills the
+gap. Since both occupy the one fire totem slot in game, Magma is held back while a Nova is
+still standing, rather than replacing the detonation it was just cast for.
+
+Off by default.
+
+### ✨ Buff watch lists are now per context (Solo / Party / Raid)
+
+The buff monitor's config window gained three tabs. What you keep up alone is not what you keep
+up in a raid, and that was the one BuffUp setting with a genuine context need — presets, weapon
+watches and the Quick Bar are the same everywhere and stay global.
+
+Party and Raid carry a **"use Solo list"** tick, on by default. An explicit flag rather than
+"empty means inherit", so deliberately watching *nothing* in a raid stays expressible. While a
+tab inherits, its list is shown read-only and the add-a-buff list is hidden, so a click cannot
+quietly edit another tab's contents. The tab you are currently in is marked in class colour
+even when a different one is open, so it is always clear which list is in force.
+
+**Existing watch lists are migrated into the Solo slot** and inherited by the other two, so a
+setup made before this keeps working untouched. Nothing switches at runtime; the monitor simply
+reads a different table.
+
+### 🔧 Paladin — Flash of Light margin widens in melee
+
+When both heals cover the deficit, Holy Light had to overheal 10% less than Flash of Light to
+be chosen. In **melee range** that margin is now 25%; at range it stays 10%.
+
+Reported from play while testing the downrank-penalty fix: once the rotation stopped chaining
+Holy Lights, the paladin kept Seal of Wisdom running, meleed far more often and regained
+noticeably more mana. A 2.5s cast in melee costs more than time — it costs swings, and with
+Seal of Wisdom up those swings are mana coming back. At range, on a raid boss, there are no
+swings to lose, so the plain overheal comparison stands; `InMeleeRange` doubles as the
+dungeon/raid tell, needing no mode toggle of its own.
+
+Narrow in effect by design: this branch only runs when **both** heals cover the deficit, which
+is the rarer case — Flash of Light usually cannot cover it and Holy Light wins without any
+comparison. Edge-case tuning, not the lever against Holy Light dominance.
+
+---
+
 ## v1.1.6 — Hunter's Mark leads the rotation; readable toggle messages
 
 **Approved priority change (Hunter) + command polish.**

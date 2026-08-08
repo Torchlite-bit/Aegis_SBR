@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation (v1.1.6)
+# Aegis: Single Button Rotation (v1.1.7)
 
 **One button. Your whole rotation.**
 
@@ -77,7 +77,12 @@ draggable minimap button with its own options panel.
 
 **Upkeep monitors (opt-in).** Two independent helpers, toggled from the minimap right-click
 panel. A **buff monitor** watches the self-buffs you choose and pops a clickable rebuff
-button when one drops. A rogue **poison Quick Bar** puts up to four poison presets on a
+button when one drops — its watch list is kept **per context (Solo / Party / Raid)**, since
+what you keep up alone is not what you keep up in a raid; Party and Raid follow the Solo list
+until you give them their own. Weapon slots are watched too: a shaman gets the same prompt
+when a **weapon imbue** lapses, which the class panel's auto-apply cannot cover on its own
+(that stands down in combat unless you opt in). A rogue **poison Quick Bar** puts up to four
+poison presets on a
 movable bar — left-click for main hand, right-click for off hand, with charge and
 time-remaining bars — and applies whatever rank is in your bags. (Poisons need a real click,
 so they're always button-driven, never fired from the rotation macro.)
@@ -254,6 +259,12 @@ Reworked for Turtle WoW 1.18.1's hunter changes, with **Auto**, **Ranged**, and 
 <details>
 <summary><b>⚡ Shaman</b> — Enhancement / Elemental / Tank / Restoration, with totem upkeep</summary>
 
+* **Weapon imbue (all four specs):** Two independent routes to keep a main-hand imbue up —
+  let the rotation apply it automatically out of combat, or take a **click-to-cast rebuff
+  button** when it drops and decide yourself. The button is the only one that covers an imbue
+  lapsing *mid-fight*. Available to Elemental and Restoration too, not just the melee specs.
+  Main hand only — off-hand application is a fragile weapon-click flow.
+
 Enhancement, Elemental, Tank, and **Restoration** (group healer) in one mode-adaptive engine — working from level 1:
 
 * **Mode-Adaptive Rotation:** Pick **Enhancement** (melee: auto-attack, Stormstrike, Lightning Strike, a shock, with a Lightning Bolt weave), **Elemental** (caster: Flame Shock + Lightning Bolt building Electrify), **Tank** (Earth Shock threat, Stormstrike, Lightning Strike, optional Earthshaker Slam taunt), or **Restoration** (group healer — see below) — panel dropdown or `/sbr mode enhancement|elemental|tank|resto`.
@@ -261,10 +272,10 @@ Enhancement, Elemental, Tank, and **Restoration** (group healer) in one mode-ada
 * **Works from Level 1:** A fresh shaman only has *Lightning Bolt* and melee, so the Lightning Bolt filler carries the early levels and everything else — shocks, shields, Stormstrike, Lightning Strike, totems — switches itself on through `KnowsSpell` as it's trained.
 * **Talent Automation:** *Stormstrike* and *Lightning Strike* are talent abilities that appear in the spellbook when talented, so they're auto-included when learned (Stormstrike's Nature self-buff is followed by a shock to consume it). *Elemental Focus* grants **no spell** — it's a passive crit proc (Clearcasting, 60% cheaper next spell) — so Aegis reads the **talent tree** to detect it and surface the proc, the same approach used for the Warlock's Nightfall.
 * **Shield & Shock:** Keeps your chosen shield up (*Lightning* for damage/threat, *Water* for mana) and casts one shock on the shared cooldown — *Flame Shock* maintained as a DoT, *Earth/Frost* on cooldown. Switch with `/sbr shield` and `/sbr shock`.
-* **Weapon Imbue Upkeep (opt-in):** The *Weapon imbue* section keeps a **main-hand** imbue up (*Rockbiter / Flametongue / Frostbrand / Windfury*). When the weapon is bare it auto-casts the imbue **out of combat** (or on approach); **in combat** it only re-imbues with the *Apply in combat* opt-in (that's a global cooldown), otherwise it just reminds you. If the imbue is present but running low (the *Warn under* minutes slider) it warns rather than overwriting. Off by default; main-hand only for now.
-* **Totems (every spec) & Cooldowns:** A shared **Totems** section maintains a full four-element set — Water, Earth, Fire, Air pickers, each with sensible per-spec defaults (Enhancement: Windfury / Searing / Strength / Mana Spring; Elemental: Grace of Air / Searing / Mana Spring; Tank: Stoneskin / Grounding / Mana Spring) — during a lull in **every** mode, not just Restoration. Re-drop timing is confirmed from your actual casts via SuperWoW's `UNIT_CASTEVENT` rather than a blind clock, so a manual re-drop or a Mana Tide bump resets the right element's timer. *Elemental Mastery* and self-*Bloodlust* round out the cooldowns.
+* **Weapon Imbue Upkeep (opt-in, all four specs):** The *Weapon imbue* section keeps a **main-hand** imbue up (*Rockbiter / Flametongue / Frostbrand / Windfury*), and offers two independent routes — use either, or both. **Maintain imbue (automatic)** lets the rotation cast it for you: only when the weapon is bare and you are **out of combat** (or on approach); **in combat** it holds off unless *Apply in combat* is on (that costs a global cooldown), otherwise it just reminds you. **Rebuff button (manual)** puts a click-to-cast button on screen the moment the imbue is gone — nothing fires without your click, and it is the only route that covers an imbue lapsing *mid-fight*. While the button is on, the chat reminder is suppressed. Not restricted to the melee specs: an Elemental or Restoration shaman still swings between casts, and Rockbiter's threat matters to a healer holding aggro. Off by default; main-hand only for now.
+* **Totems (every spec) & Cooldowns:** A shared **Totems** section maintains a full four-element set — Water, Earth, Fire, Air pickers, each with sensible per-spec defaults (Enhancement: Windfury / Searing / Strength / Mana Spring; Elemental: Grace of Air / Searing / Mana Spring; Tank: Stoneskin / Grounding / Mana Spring) — during a lull in **every** mode, not just Restoration. Where a totem grants an aura, **that aura is what's watched**, not a clock: a totem stays where you dropped it, so walking out of its radius silently ends the benefit long before the duration does — and the same read also catches a totem destroyed or recalled for mana. Totems that grant no aura (*Searing*, *Magma*, *Fire Nova*, *Grounding*) keep a timer, one **per totem** rather than a blanket number, since the fire slot alone spans 20s to 120s. An optional **AoE fire pair** takes over the fire slot for pull-clearing: *Fire Nova Totem* every time its cooldown is up, *Magma Totem* in between — they share one slot in game, so Magma is held back while a Nova is still standing. *Elemental Mastery* and self-*Bloodlust* round out the cooldowns.
 
-> **Verification note:** Buff/proc names are best-effort — confirm the **Clearcasting** proc, the **Stormstrike** self-buff, and the **Searing Totem** / **Earthshaker Slam** spell names in-game with `/sbr talents` and `/sbr debug` if anything isn't firing. For **Restoration**, the same applies to the **Nature's Swiftness-equivalent** (tries `Nature's Swiftness`, then `Ancestral Swiftness`), **Mana Tide Totem**, and the **totem names** in the picker tables — and the heal rank values are vanilla baselines, with the totem re-drop intervals (55s water / 110s others) likely wanting a tune to Turtle's durations.
+> **Verification note:** Buff/proc names are best-effort — confirm the **Clearcasting** proc, the **Stormstrike** self-buff, and the **Searing Totem** / **Earthshaker Slam** spell names in-game with `/sbr talents` and `/sbr debug` if anything isn't firing. For **Restoration**, the same applies to the **Nature's Swiftness-equivalent** (tries `Nature's Swiftness`, then `Ancestral Swiftness`), **Mana Tide Totem**, and the **totem names** in the picker tables — and the heal rank values are vanilla baselines. The **totem aura names** are vanilla baselines too: a wrong one is self-correcting (the totem falls back to its timer rather than being re-dropped forever), but it does cost you the range/destruction detection for that totem, so it is worth checking with `/sbr debug`.
 </details>
 
 <details>

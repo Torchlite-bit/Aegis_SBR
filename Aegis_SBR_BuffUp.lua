@@ -91,10 +91,34 @@ function ABU:EnsureDB()
     if type(db) ~= "table" then db = {}; AegisDB.buffup = db end
     if db.buffMonitor == nil then db.buffMonitor = false end
     if db.poisonControl == nil then db.poisonControl = false end
+    -- Watch lists are per context (solo / party / raid). MIGRATION: before this
+    -- there was one flat db.watchList; it becomes the solo list, which is also
+    -- the one the other two inherit by default - so an existing setup keeps
+    -- working unchanged and nobody loses their list. The old key is left in
+    -- place as a rollback copy rather than deleted.
+    if type(db.watchLists) ~= "table" then
+        db.watchLists = { solo = {}, party = {}, raid = {} }
+        if type(db.watchList) == "table" and table.getn(db.watchList) > 0 then
+            db.watchLists.solo = db.watchList
+        end
+    end
+    for _, ctx in ipairs({ "solo", "party", "raid" }) do
+        if type(db.watchLists[ctx]) ~= "table" then db.watchLists[ctx] = {} end
+    end
+    -- Party and raid follow the solo list until explicitly given their own.
+    -- An explicit flag rather than "empty means inherit", so that deliberately
+    -- watching NOTHING in a raid stays expressible.
+    if type(db.watchInherit) ~= "table" then db.watchInherit = {} end
+    if db.watchInherit.party == nil then db.watchInherit.party = true end
+    if db.watchInherit.raid  == nil then db.watchInherit.raid  = true end
     if type(db.watchList) ~= "table" then db.watchList = {} end
     if type(db.presets) ~= "table" then db.presets = {} end
     if db.watchPoisonMH == nil then db.watchPoisonMH = false end
     if db.watchPoisonOH == nil then db.watchPoisonOH = false end
+    -- Shaman weapon-imbue prompt. Its own flag rather than reusing the poison
+    -- ones: different class, different config panel, and it must not be
+    -- entangled with the rogue's "(rogue)"-labelled master switch.
+    if db.watchImbueMH == nil then db.watchImbueMH = false end
     if db.quickBarEnabled == nil then db.quickBarEnabled = true end
     if db.quickBarPos == nil then db.quickBarPos = nil end
     if type(db.poisonStats) ~= "table" then db.poisonStats = {} end
@@ -119,9 +143,11 @@ function ABU:SetPoisonControl(on) self:EnsureDB().poisonControl = (on == true); 
 -- Poison-control sub-settings, edited from the Rogue class panel.
 function ABU:WatchPoisonMH() return self:EnsureDB().watchPoisonMH == true end
 function ABU:WatchPoisonOH() return self:EnsureDB().watchPoisonOH == true end
+function ABU:WatchImbueMH() return self:EnsureDB().watchImbueMH == true end
 function ABU:QuickBarEnabled() return self:EnsureDB().quickBarEnabled == true end
 function ABU:SetWatchPoisonMH(on) self:EnsureDB().watchPoisonMH = (on == true); self:Refresh() end
 function ABU:SetWatchPoisonOH(on) self:EnsureDB().watchPoisonOH = (on == true); self:Refresh() end
+function ABU:SetWatchImbueMH(on) self:EnsureDB().watchImbueMH = (on == true); self:Refresh() end
 function ABU:SetQuickBarEnabled(on) self:EnsureDB().quickBarEnabled = (on == true); self:Refresh() end
 
 -- Preset accessors for the Rogue config panel.
@@ -170,6 +196,42 @@ end
 local function IsPoisonClass()
     local _, class = UnitClass("player")
     return class == "ROGUE"
+end
+
+-- The weapon slots carry two different things depending on class, but the
+-- SLOT itself is watched the same way for both - GetWeaponEnchantInfo reports
+-- a shaman's Rockbiter exactly as it reports a rogue's Instant Poison. Only
+-- the way you put it back differs: use an item from the bags, or cast a spell.
+-- Standalone BuffUp expressed this as WeaponMode = "item" | "spell"; the
+-- integration only ported the item half, which is why a shaman never got a
+-- prompt for a lapsed imbue.
+--
+-- Note the generic buff monitor cannot cover this gap: it scans UnitBuff, and
+-- a weapon enchant is not a player buff, so a shaman cannot simply add
+-- Rockbiter to the watch list instead.
+local function IsImbueClass()
+    local _, class = UnitClass("player")
+    return class == "SHAMAN"
+end
+
+-- The imbue the shaman module is configured to keep up, as a castable spell
+-- name, or nil. Read from the active profile so the prompt always offers the
+-- same imbue the rotation would apply itself, rather than a second setting
+-- that could drift away from it.
+-- The imbue the shaman panel is set to, as a castable spell name, or nil.
+-- Deliberately independent of maintainImbue: the button is the MANUAL
+-- alternative to that automation, so gating it on the automation would leave
+-- exactly the player who wants no automation with nothing at all.
+local function ConfiguredImbue()
+    if not IsImbueClass() then return nil end
+    local mod = Aegis_SBR and Aegis_SBR.classes and Aegis_SBR.classes.SHAMAN
+    if not mod or not mod.IMBUES then return nil end
+    local cfg = Aegis_SBR:GetActiveProfile()
+    if not cfg then return nil end
+    local spell = mod.IMBUES[cfg.imbueMain or ""]
+    if not spell or spell == "" then return nil end
+    if not Aegis_SBR:KnowsSpell(spell) then return nil end
+    return spell
 end
 
 -- Snap a captured remaining time to the nearest full tier; isFresh true when
@@ -560,16 +622,18 @@ local function ScanPlayerBuffs()
     return out
 end
 
--- Watch-list mutators (used by the config window).
-function ABU:AddWatch(entry)
-    local db = self:EnsureDB()
+-- Watch-list mutators (used by the config window). `ctx` is the tab being
+-- edited - always the tab's OWN list, never the inherited one, so ticking a tab
+-- over to its own list and adding a buff cannot end up editing solo's.
+function ABU:AddWatch(entry, ctx)
+    local list = self:WatchListFor(ctx or "solo")
     -- Skip duplicates by spell name (or texture when unnamed).
-    for i = 1, table.getn(db.watchList) do
-        local w = db.watchList[i]
+    for i = 1, table.getn(list) do
+        local w = list[i]
         if entry.spellName ~= "" and w.spellName == entry.spellName then return end
         if entry.spellName == "" and w.texture == entry.texture then return end
     end
-    table.insert(db.watchList, {
+    table.insert(list, {
         texture = entry.texture, id = entry.id,
         spellName = entry.spellName or "",
         label = (entry.spellName ~= "" and entry.spellName) or "Buff",
@@ -577,23 +641,73 @@ function ABU:AddWatch(entry)
     self:Refresh()
 end
 
-function ABU:RemoveWatch(index)
-    local db = self:EnsureDB()
-    table.remove(db.watchList, index)
+function ABU:RemoveWatch(index, ctx)
+    table.remove(self:WatchListFor(ctx or "solo"), index)
     self:Refresh()
 end
 
-function ABU:WatchList() return self:EnsureDB().watchList end
+-- Which context the player is in right now. Only three, deliberately: a party
+-- inside a dungeon is still a party, and splitting "instance" out again would
+-- reintroduce a distinction nobody asked for.
+function ABU:CurrentContext()
+    if (GetNumRaidMembers and GetNumRaidMembers() or 0) > 0 then return "raid" end
+    if (GetNumPartyMembers and GetNumPartyMembers() or 0) > 0 then return "party" end
+    return "solo"
+end
+
+-- The context a given tab actually reads from, following the inherit flag.
+-- Solo is always itself, so it is the root every other tab can fall back to.
+function ABU:EffectiveContext(ctx)
+    local db = self:EnsureDB()
+    if ctx == "solo" then return "solo" end
+    if db.watchInherit[ctx] then return "solo" end
+    return ctx
+end
+
+-- The list to EDIT for a tab: the tab's own storage, regardless of inheriting.
+-- Kept separate from WatchList() so switching a tab to its own list does not
+-- silently start editing the solo one.
+function ABU:WatchListFor(ctx)
+    local db = self:EnsureDB()
+    return db.watchLists[ctx or "solo"] or db.watchLists.solo
+end
+
+function ABU:WatchInherits(ctx)
+    if ctx == "solo" then return false end
+    return self:EnsureDB().watchInherit[ctx] == true
+end
+
+function ABU:SetWatchInherits(ctx, on)
+    if ctx == "solo" then return end
+    self:EnsureDB().watchInherit[ctx] = (on == true)
+    self:Refresh()
+end
+
+-- The list the MONITOR reads: resolved through the inherit flag for wherever
+-- the player currently is. Nothing is switched or copied - the monitor simply
+-- looks at a different table.
+function ABU:WatchList()
+    return self:WatchListFor(self:EffectiveContext(self:CurrentContext()))
+end
 function ABU:ScanBuffs() return ScanPlayerBuffs() end
 
 -- On SPELLS_CHANGED, refresh stored ids / names for watched buffs so a newly
 -- learned rank stays matched.
 function ABU:RescanBuffList()
     local db = self:EnsureDB()
-    if table.getn(db.watchList) == 0 then return end
     local cur = ScanPlayerBuffs()
-    for i = 1, table.getn(db.watchList) do
-        local w = db.watchList[i]
+    -- Every context's list, not just the active one: a rank learned while solo
+    -- must stay matched in the raid list too, and that list is not being read
+    -- right now to notice on its own.
+    for _, ctx in ipairs({ "solo", "party", "raid" }) do
+        self:RescanOneList(db.watchLists[ctx], cur)
+    end
+end
+
+function ABU:RescanOneList(list, cur)
+    if not list or table.getn(list) == 0 then return end
+    for i = 1, table.getn(list) do
+        local w = list[i]
         for j = 1, table.getn(cur) do
             local c = cur[j]
             if w.texture and c.texture and string.find(c.texture, w.texture) then
@@ -667,6 +781,24 @@ local function UpdateButtons()
 
     local missing = {}
 
+    -- Weapon-imbue rebuff prompt (shaman). Same slot watch as the poisons
+    -- below, different way of putting it back: a cast, not a bag item. Only
+    -- the main hand - off-hand imbue application is a fragile weapon-click
+    -- flow, deferred in the shaman module for the same reason.
+    --
+    -- Worth having even though the shaman module can re-apply the imbue by
+    -- itself: that upkeep is default OFF and, unless imbueInCombat is opted
+    -- in, stands down in combat entirely. An imbue lapsing mid-fight is
+    -- therefore exactly the case the rotation does NOT cover.
+    if IsImbueClass() and db.watchImbueMH then
+        local hasMH = GetWeaponEnchantInfo()
+        local spell = ConfiguredImbue()
+        if spell and not hasMH then
+            table.insert(missing, { label = "|cffdd99ffImbue: " .. spell .. "|r", style = "poison",
+                action = function() CastSpellByName(spell) end })
+        end
+    end
+
     -- Poison rebuff prompts (rogue, poison control on).
     if db.poisonControl and IsPoisonClass() then
         local hasMH, _, _, hasOH = GetWeaponEnchantInfo()
@@ -688,8 +820,11 @@ local function UpdateButtons()
 
     -- Watched-buff rebuff prompts (all classes, buff monitor on).
     if db.buffMonitor then
-        for i = 1, table.getn(db.watchList) do
-            local w = db.watchList[i]
+        -- ABU, not self: UpdateButtons is a plain local function, so there is
+        -- no self here to resolve the method against.
+        local watched = ABU:WatchList()
+        for i = 1, table.getn(watched) do
+            local w = watched[i]
             if not PlayerHasBuff(w.texture, w.id, w.spellName) then
                 local sp = w.spellName
                 if sp and sp ~= "" then
@@ -748,7 +883,8 @@ function ABU:CreateConfigWindow()
     if self.cfgWin then return self.cfgWin end
     local w = CreateFrame("Frame", "Aegis_SBR_BuffUpConfig", UIParent)
     w:SetWidth(300)
-    w:SetHeight(30 + 20 + CFG_WATCH_MAX * CFG_ROW_H + 28 + CFG_SCAN_MAX * CFG_ROW_H + 16)
+    -- +20 for the context tab row inserted under the title bar.
+    w:SetHeight(30 + 20 + 20 + CFG_WATCH_MAX * CFG_ROW_H + 28 + CFG_SCAN_MAX * CFG_ROW_H + 16)
     w:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
     w:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -787,12 +923,52 @@ function ABU:CreateConfigWindow()
     close:SetPoint("TOPRIGHT", 2, 2)
     close:SetScript("OnClick", function() w:Hide() end)
 
+    -- Context tabs. The list is per context (solo / party / raid) because that
+    -- is the one BuffUp setting with a genuine context need - what you keep up
+    -- alone differs from a raid. Everything else (presets, quick bar, weapon
+    -- watches) is the same everywhere and stays global, which is why this is
+    -- three tabs rather than a second profile system alongside the rotation's.
+    w.ctxTabs = {}
+    local TAB_W = 62
+    for i, ctx in ipairs({ "solo", "party", "raid" }) do
+        local tb = CreateFrame("Button", nil, w)
+        tb:SetWidth(TAB_W); tb:SetHeight(18)
+        tb:SetPoint("TOPLEFT", 10 + (i - 1) * (TAB_W + 2), -28)
+        local fs = tb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetAllPoints(tb)
+        fs:SetText(string.upper(string.sub(ctx, 1, 1)) .. string.sub(ctx, 2))
+        local ul = tb:CreateTexture(nil, "ARTWORK")
+        ul:SetHeight(2); ul:SetPoint("BOTTOMLEFT", 4, 0); ul:SetPoint("BOTTOMRIGHT", -4, 0)
+        ul:SetTexture(cc[1], cc[2], cc[3], 0.9)
+        tb.fs, tb.ul, tb.ctx = fs, ul, ctx
+        tb:SetScript("OnClick", function()
+            ABU.cfgCtx = this.ctx
+            ABU:RefreshConfigWindow()
+        end)
+        w.ctxTabs[i] = tb
+    end
+
+    -- Only shown on party/raid: while ticked that tab simply reads Solo's list.
+    -- An explicit flag, not "empty means inherit", so watching NOTHING in a
+    -- raid stays expressible.
+    w.inheritBtn = CreateFrame("CheckButton", "AegisBUInherit", w, "UICheckButtonTemplate")
+    w.inheritBtn:SetWidth(18); w.inheritBtn:SetHeight(18)
+    w.inheritBtn:SetPoint("TOPRIGHT", -12, -28)
+    w.inheritLbl = w:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    w.inheritLbl:SetPoint("RIGHT", w.inheritBtn, "LEFT", -2, 0)
+    w.inheritLbl:SetText("use Solo list")
+    w.inheritBtn:SetScript("OnClick", function()
+        ABU:SetWatchInherits(ABU.cfgCtx or "solo", this:GetChecked() and true or false)
+        ABU:RefreshConfigWindow()
+    end)
+
     local watchLbl = w:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    watchLbl:SetPoint("TOPLEFT", 12, -30)
+    watchLbl:SetPoint("TOPLEFT", 12, -50)
     watchLbl:SetText("|cffaaccffWatched buffs|r (click to remove)")
+    w.watchLbl = watchLbl
 
     w.watchRows = {}
-    local y = -48
+    local y = -68
     for i = 1, CFG_WATCH_MAX do
         w.watchRows[i] = cfgRow(w, y)
         y = y - CFG_ROW_H
@@ -824,38 +1000,86 @@ function ABU:RefreshConfigWindow()
     if not w then return end
     local db = self:EnsureDB()
 
-    -- Watched list (click to remove).
+    -- Which tab is open. Defaults to wherever the player actually is, so the
+    -- window opens showing the list that is currently in force.
+    local ctx = self.cfgCtx
+    if ctx ~= "solo" and ctx ~= "party" and ctx ~= "raid" then
+        ctx = self:CurrentContext()
+        self.cfgCtx = ctx
+    end
+    for i = 1, table.getn(w.ctxTabs) do
+        local tb = w.ctxTabs[i]
+        local active = (tb.ctx == ctx)
+        if active then tb.ul:Show() else tb.ul:Hide() end
+        if active then
+            tb.fs:SetTextColor(PAL.ink[1], PAL.ink[2], PAL.ink[3])
+        elseif tb.ctx == self:CurrentContext() then
+            -- Not open, but this is where the player is: keep it recognisable
+            -- so it is obvious which list is actually being enforced.
+            local cc2 = classColor()
+            tb.fs:SetTextColor(cc2[1], cc2[2], cc2[3])
+        else
+            tb.fs:SetTextColor(PAL.mute[1], PAL.mute[2], PAL.mute[3])
+        end
+    end
+
+    -- Inherit toggle: party/raid only, and it disables editing while ticked.
+    local inherits = self:WatchInherits(ctx)
+    if ctx == "solo" then
+        w.inheritBtn:Hide(); w.inheritLbl:Hide()
+    else
+        w.inheritBtn:Show(); w.inheritLbl:Show()
+        w.inheritBtn:SetChecked(inherits)
+    end
+
+    -- Editing always targets the tab's OWN list; while inheriting, the solo
+    -- list is shown read-only so it is clear what is in force without letting
+    -- a click quietly edit another tab's contents.
+    local shownList = inherits and self:WatchListFor("solo") or self:WatchListFor(ctx)
+    local editable = not inherits
+    w.watchLbl:SetText(editable and "|cffaaccffWatched buffs|r (click to remove)"
+        or "|cffaaccffWatched buffs|r (from Solo - untick to edit)")
+
     for i = 1, CFG_WATCH_MAX do
         local row = w.watchRows[i]
-        local entry = db.watchList[i]
+        local entry = shownList[i]
         if entry then
-            row.text:SetText("|cffff8888x|r  " .. (entry.label or entry.spellName or "Buff"))
+            row.text:SetText((editable and "|cffff8888x|r  " or "|cff888888-|r  ")
+                .. (entry.label or entry.spellName or "Buff"))
             row.idx = i
-            row:SetScript("OnClick", function() ABU:RemoveWatch(this.idx); ABU:RefreshConfigWindow() end)
+            if editable then
+                row:SetScript("OnClick", function() ABU:RemoveWatch(this.idx, ctx); ABU:RefreshConfigWindow() end)
+            else
+                row:SetScript("OnClick", nil)
+            end
             row:Show()
         else
             row:Hide()
         end
     end
 
-    -- Current buffs (click to add), skipping ones already watched.
-    local cur = ScanPlayerBuffs()
+    -- Current buffs (click to add), skipping ones already watched. Hidden
+    -- entirely while the tab inherits: there is nothing to add to, and offering
+    -- it would silently write into the solo list from a raid tab.
     local shown = 0
-    for i = 1, table.getn(cur) do
-        local c = cur[i]
-        local already = false
-        for j = 1, table.getn(db.watchList) do
-            local wtc = db.watchList[j]
-            if (c.spellName ~= "" and wtc.spellName == c.spellName)
-                or (c.spellName == "" and wtc.texture == c.texture) then already = true; break end
-        end
-        if not already and shown < CFG_SCAN_MAX then
-            shown = shown + 1
-            local row = w.scanRows[shown]
-            row.text:SetText("|cff88ff88+|r  " .. ((c.spellName ~= "" and c.spellName) or "(unnamed icon)"))
-            row.entry = c
-            row:SetScript("OnClick", function() ABU:AddWatch(this.entry); ABU:RefreshConfigWindow() end)
-            row:Show()
+    if editable then
+        local cur = ScanPlayerBuffs()
+        for i = 1, table.getn(cur) do
+            local c = cur[i]
+            local already = false
+            for j = 1, table.getn(shownList) do
+                local wtc = shownList[j]
+                if (c.spellName ~= "" and wtc.spellName == c.spellName)
+                    or (c.spellName == "" and wtc.texture == c.texture) then already = true; break end
+            end
+            if not already and shown < CFG_SCAN_MAX then
+                shown = shown + 1
+                local row = w.scanRows[shown]
+                row.text:SetText("|cff88ff88+|r  " .. ((c.spellName ~= "" and c.spellName) or "(unnamed icon)"))
+                row.entry = c
+                row:SetScript("OnClick", function() ABU:AddWatch(this.entry, ctx); ABU:RefreshConfigWindow() end)
+                row:Show()
+            end
         end
     end
     for i = shown + 1, CFG_SCAN_MAX do w.scanRows[i]:Hide() end

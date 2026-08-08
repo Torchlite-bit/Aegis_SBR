@@ -16,7 +16,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.1.6",
+    ver = "1.1.7",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,

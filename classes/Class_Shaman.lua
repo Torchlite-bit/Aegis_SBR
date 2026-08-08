@@ -52,8 +52,63 @@ local FLAMESHOCK_DUR = 12
 -- totem blind-redrop intervals. Confirm names/durations via /sbr talents and /sbr debug.
 local TALENT_HEALBONUS   = "Purification"
 local MANATIDE_SPELL     = "Mana Tide Totem"
-local WATER_TOTEM_REDROP = 55
-local OTHER_TOTEM_REDROP = 110
+-- Per-totem redrop interval. Two blanket constants (55 water / 110 everything
+-- else) used to cover this, which quietly broke every totem that does not last
+-- ~120s: Searing (60s) stood idle for 50s of each cycle, Magma (20s) for 90s,
+-- Grounding (45s) for 65s. Reported from play as "totem upkeep doesn't work".
+--
+-- Values are the vanilla durations, re-dropped a few seconds early so the totem
+-- is replaced rather than briefly missing. Anything not listed falls back to
+-- TOTEM_REDROP_DEFAULT, which is safe for the 120s totems that make up most of
+-- the earth and air slots. Fire Nova is deliberately absent: it detonates after
+-- ~5s rather than persisting, so it is a cooldown ability, not upkeep (see
+-- MaintainFireTotems).
+-- Where a totem grants the player an aura, that aura - not a clock - is the
+-- truth. It disappears when the totem expires, when it is destroyed, when it is
+-- recalled for mana, AND when the group walks out of its range, which is the
+-- normal case in a moving dungeon and which no timer can see. Spell name ->
+-- aura name; the two differ for most of them.
+--
+-- NOT every totem has one: Searing, Magma and Fire Nova only attack, Grounding
+-- only absorbs. Those are absent here on purpose and fall back to the timer
+-- below, which is also why the per-totem durations still matter - they are
+-- exactly the short-lived ones.
+--
+-- Names are vanilla baselines and want confirming on Turtle with /sbr debug.
+-- A wrong name is self-correcting rather than harmful: see TotemBuffUsable.
+M.TOTEM_BUFF = {
+    ["Strength of Earth Totem"] = "Strength of Earth",
+    ["Stoneskin Totem"]         = "Stoneskin",
+    ["Windfury Totem"]          = "Windfury Totem",
+    ["Grace of Air Totem"]      = "Grace of Air",
+    ["Nature Resistance Totem"] = "Nature Resistance",
+    ["Windwall Totem"]          = "Windwall",
+    ["Flametongue Totem"]       = "Flametongue Totem",
+    ["Mana Spring Totem"]       = "Mana Spring",
+    ["Healing Stream Totem"]    = "Healing Stream",
+}
+
+-- Seconds allowed for a freshly dropped totem's aura to register before its
+-- absence is believed. Without this the rotation would re-drop every press
+-- during the gap between the cast landing and the buff appearing.
+local TOTEM_APPLY_GRACE = 3
+
+local TOTEM_REDROP_DEFAULT = 110
+local TOTEM_REDROP = {
+    ["Searing Totem"]           = 55,
+    ["Magma Totem"]             = 18,
+    ["Flametongue Totem"]       = 110,
+    ["Mana Spring Totem"]       = 55,
+    ["Healing Stream Totem"]    = 55,
+    ["Grounding Totem"]         = 40,
+    ["Windfury Totem"]          = 110,
+    ["Grace of Air Totem"]      = 110,
+    ["Nature Resistance Totem"] = 110,
+    ["Windwall Totem"]          = 110,
+    ["Strength of Earth Totem"] = 110,
+    ["Stoneskin Totem"]         = 110,
+    ["Tremor Totem"]            = 110,
+}
 
 -- Shock debuff texture on the TARGET (fragment match), for Flame Shock upkeep.
 M.dotTex = {
@@ -161,6 +216,9 @@ function M:NormalizeProfile(c)
     if c.useChainHeal == nil then c.useChainHeal = true end
     if c.chainHealCount == nil then c.chainHealCount = 3 end
     if c.useTotems == nil then c.useTotems = true end
+    -- AoE fire pair (Fire Nova on cooldown + Magma between). Off by default:
+    -- it takes over the fire slot from the single-totem picker.
+    if c.aoeFireTotems == nil then c.aoeFireTotems = false end
     if c.totemWater == nil then c.totemWater = "manaspring" end
     if c.totemEarth == nil then c.totemEarth = "none" end
     if c.totemFire == nil then c.totemFire = "none" end
@@ -169,11 +227,12 @@ function M:NormalizeProfile(c)
     if c.weaveDamage == nil then c.weaveDamage = false end
     if c.weaveManaFloor == nil then c.weaveManaFloor = 40 end
     -- Weapon imbue upkeep (main-hand). Default OFF; out-of-combat only unless
-    -- imbueInCombat is opted in. imbueThresholdMin re-applies when the enchant
+    -- imbueInCombat is opted in. (There is no "warn under X minutes" threshold:
+    -- it could only be edited while the automation was on, which is exactly
+    -- when nobody needs it, and it never did anything but print a chat line.)
     -- has under that many minutes left (0 = only when it is missing entirely).
     if c.maintainImbue == nil then c.maintainImbue = false end
     if c.imbueMain == nil then c.imbueMain = "windfury" end
-    if c.imbueThresholdMin == nil then c.imbueThresholdMin = 0 end
     if c.imbueInCombat == nil then c.imbueInCombat = false end
     return c
 end
@@ -285,7 +344,9 @@ function M:ImbueSpell(cfg)
     return self.IMBUES[cfg.imbueMain or "none"] or ""
 end
 
--- "apply" = main hand bare, safe to cast; "warn" = present but under threshold
+-- "apply" = main hand bare, so there is something to do. A still-present imbue
+-- is never flagged: overwriting one that still works spends a global cooldown
+-- for nothing, and that judgement belongs to the player, not the rotation.
 -- (overwrite needed, warn only); nil = upkeep off / healthy / imbue unknown /
 -- no SuperWoW enchant API.
 function M:ImbueState(cfg)
@@ -295,13 +356,16 @@ function M:ImbueState(cfg)
     local has, ms = Aegis_SBR:WeaponEnchant("main")
     if has == nil then return nil end   -- no enchant API (non-SuperWoW): degrade
     if not has then return "apply" end
-    local thr = (cfg.imbueThresholdMin or 0) * 60000   -- minutes -> ms
-    if thr > 0 and ms and ms < thr then return "warn" end
     return nil
 end
 
 M.imbueWarnT = 0
+-- Chat warning, used only as the FALLBACK when the on-screen rebuff button is
+-- switched off. Several players reported simply not noticing a chat line in a
+-- fight, which is why the button exists; printing both would just be noise, and
+-- the button already says the same thing where it cannot be missed.
 function M:ImbueWarn(text)
+    if Aegis_SBR_BuffUp and Aegis_SBR_BuffUp:WatchImbueMH() then return end
     local now = GetTime()
     if (now - (self.imbueWarnT or 0)) < 8 then return end   -- own throttle
     self.imbueWarnT = now
@@ -313,10 +377,6 @@ function M:MaintainImbue(cfg)
     local state = self:ImbueState(cfg)
     if not state then return false end
     local spell = self:ImbueSpell(cfg)
-    if state == "warn" then
-        self:ImbueWarn(spell .. " is running low - re-imbue between pulls.")
-        return false
-    end
     -- state == "apply": bare main hand. Cast out of combat always; in combat
     -- only with the opt-in (else just a throttled reminder).
     if UnitAffectingCombat("player") and not cfg.imbueInCombat then
@@ -515,10 +575,54 @@ function M:OnCastEvent(caster, target, spellName)
     if slot then self.totemT[slot] = GetTime() end
 end
 
+-- Is this totem's aura name trustworthy on this client? A wrong entry in
+-- TOTEM_BUFF would otherwise be the worst possible failure: the aura would read
+-- as permanently missing and the rotation would re-drop the totem every few
+-- seconds forever. So a name is only believed once it has actually been SEEN
+-- after a cast; if a totem is dropped and its aura never shows up within the
+-- grace window, the name is written off for the session and that totem falls
+-- back to the timer - i.e. degrades to the old behaviour instead of spamming.
+function M:TotemBuffUsable(spell)
+    if not self.totemBuffBad then self.totemBuffBad = {} end
+    if not self.totemBuffSeen then self.totemBuffSeen = {} end
+    local buff = self.TOTEM_BUFF[spell]
+    if not buff or self.totemBuffBad[spell] then return nil end
+    return buff
+end
+
+-- Decides whether a totem needs (re)dropping. Two very different questions
+-- depending on the totem, which is why the aura is checked first:
+--   * Aura totems: the buff answers expiry, destruction, Totemic Recall and
+--     walking out of range in one read. A clock answers none of those.
+--   * Damage/utility totems (Searing, Magma, Fire Nova, Grounding) grant no
+--     aura at all, so the per-totem interval is the only signal available -
+--     and it must be per totem, since the fire slot alone spans 20s (Magma)
+--     to 120s (Flametongue).
 function M:MaintainTotem(key, spell, interval)
     if spell == "" or not self:KnowsSpell(spell) then return false end
     local now = GetTime()
-    if (now - (self.totemT[key] or 0)) < interval then return false end
+    local cast = self.totemT[key] or 0
+    local buff = self:TotemBuffUsable(spell)
+
+    if buff then
+        if self:HasBuff(buff) then
+            self.totemBuffSeen[spell] = true   -- name proven on this client
+            return false
+        end
+        if cast > 0 and (now - cast) < TOTEM_APPLY_GRACE then
+            return false                        -- just dropped, let it register
+        end
+        if cast > 0 and not self.totemBuffSeen[spell] then
+            -- Dropped it, waited, never saw the aura: the name is wrong here.
+            self.totemBuffBad[spell] = true
+            return false                        -- timer takes over next press
+        end
+        if self:Queue(spell) then self.totemT[key] = now; return true end
+        return false
+    end
+
+    if not interval then interval = TOTEM_REDROP[spell] or TOTEM_REDROP_DEFAULT end
+    if (now - cast) < interval then return false end
     if self:Queue(spell) then self.totemT[key] = now; return true end
     return false
 end
@@ -527,12 +631,53 @@ end
 -- the four element slots during a lull, one per press. Damage specs default
 -- their fire slot to Searing (see templates), so this fully replaces the old
 -- standalone Searing upkeep with no loss - and adds water/earth/air on top.
+-- AoE fire slot: Fire Nova on cooldown, Magma to cover the gaps.
+--
+-- These two cannot both live in the fire dropdown, because the point is to
+-- ALTERNATE them, not to choose one. Fire Nova is not upkeep at all - it
+-- detonates after ~5s and then sits on a cooldown - so it behaves like a
+-- cooldown ability, while Magma is the sustained tick that fills the wait.
+-- They share the one fire totem slot in game, so dropping either replaces the
+-- other; that is exactly why Magma must not be re-dropped while Fire Nova is
+-- still standing, and why the Magma timer is reset when Fire Nova goes down.
+--
+-- Requested for lasher farming, where the pull is a cluster of low-health mobs
+-- and the fire slot is the whole damage plan.
+function M:MaintainFireTotems(cfg)
+    if not cfg.aoeFireTotems then return false end
+    local nova, magma = "Fire Nova Totem", "Magma Totem"
+    local haveNova, haveMagma = self:KnowsSpell(nova), self:KnowsSpell(magma)
+    if not haveNova and not haveMagma then return false end
+
+    if haveNova and self:OwnCDReady(nova) then
+        if self:Queue(nova) then
+            self.totemT["fire"] = GetTime()
+            -- Nova occupies the slot only briefly; letting Magma follow as soon
+            -- as it has detonated is the point of the pairing.
+            self.novaUntil = GetTime() + 5
+            return true
+        end
+    end
+    -- Hold Magma back while a Nova is still standing - re-dropping would
+    -- replace it and waste the detonation it was cast for.
+    if haveMagma and GetTime() >= (self.novaUntil or 0) then
+        if self:MaintainTotem("fire", magma) then return true end
+    end
+    return false
+end
+
 function M:MaintainAllTotems(cfg)
     if cfg.useTotems == false then return false end
-    if self:MaintainTotem("water", self.WATER_TOTEMS[cfg.totemWater or "none"] or "", WATER_TOTEM_REDROP) then return true end
-    if self:MaintainTotem("earth", self.EARTH_TOTEMS[cfg.totemEarth or "none"] or "", OTHER_TOTEM_REDROP) then return true end
-    if self:MaintainTotem("fire",  self.FIRE_TOTEMS[cfg.totemFire or "none"] or "", OTHER_TOTEM_REDROP) then return true end
-    if self:MaintainTotem("air",   self.AIR_TOTEMS[cfg.totemAir or "none"] or "", OTHER_TOTEM_REDROP) then return true end
+    if self:MaintainTotem("water", self.WATER_TOTEMS[cfg.totemWater or "none"] or "") then return true end
+    if self:MaintainTotem("earth", self.EARTH_TOTEMS[cfg.totemEarth or "none"] or "") then return true end
+    -- The AoE pair owns the fire slot when enabled, so the single-totem picker
+    -- is skipped rather than fighting it for the same slot.
+    if cfg.aoeFireTotems then
+        if self:MaintainFireTotems(cfg) then return true end
+    elseif self:MaintainTotem("fire", self.FIRE_TOTEMS[cfg.totemFire or "none"] or "") then
+        return true
+    end
+    if self:MaintainTotem("air",   self.AIR_TOTEMS[cfg.totemAir or "none"] or "") then return true end
     return false
 end
 
@@ -596,11 +741,22 @@ function M:RotateRestoration(cfg)
     -- Nothing urgent: keep the shield and totems up during the lull.
     if self:MaintainShield(cfg) then return end
     if cfg.useTotems ~= false then
-        if self:MaintainTotem("water", self.WATER_TOTEMS[cfg.totemWater or "manaspring"] or "", WATER_TOTEM_REDROP) then return end
-        if self:MaintainTotem("earth", self.EARTH_TOTEMS[cfg.totemEarth or "none"] or "", OTHER_TOTEM_REDROP) then return end
-        if self:MaintainTotem("fire",  self.FIRE_TOTEMS[cfg.totemFire or "none"] or "", OTHER_TOTEM_REDROP) then return end
-        if self:MaintainTotem("air",   self.AIR_TOTEMS[cfg.totemAir or "none"] or "", OTHER_TOTEM_REDROP) then return end
+        -- Shared helper rather than four copies of the same calls: Restoration
+        -- had its own duplicate set, so anything added centrally (the AoE fire
+        -- pair, the per-totem intervals) silently skipped this spec.
+        if self:MaintainAllTotems(cfg) then return end
     end
+    -- Weapon imbue upkeep: below every heal and totem, above the optional
+    -- damage weave. Restoration reaches this only when nothing needs healing,
+    -- so an imbue can never take the global cooldown away from a heal - but a
+    -- bare weapon is worth fixing before spending that spare cast on a filler
+    -- nuke, since it improves every later swing. Turtle's
+    -- resto shaman does melee (and Rockbiter's threat matters when holding
+    -- aggro), which is why this spec gets it at all; the shared MaintainImbue
+    -- still applies its own rules, so in combat it only warns unless
+    -- imbueInCombat is opted in.
+    if self:MaintainImbue(cfg) then return end
+
     -- Downtime filler: optionally weave damage. Only with an enemy targeted and
     -- mana above the floor, so it never starves heals.
     if cfg.weaveDamage and self:ManaPct() >= (cfg.weaveManaFloor or 40)
@@ -739,7 +895,16 @@ function M:RotateElemental(cfg)
     -- P4 Totem upkeep (all four elements)
     if self:MaintainAllTotems(cfg) then return end
 
-    -- P5 Lightning Bolt filler, the main nuke (builds Electrify). Always the
+    -- P5 weapon imbue: lowest-priority upkeep above the filler, same slot as in
+    -- the melee rotations. Elemental had it only in the targetless pre-pull
+    -- branch, so an imbue lapsing once a fight was under way went unhandled -
+    -- an omission rather than a decision, since every other spec covers both.
+    -- Self-gated in MaintainImbue (in combat it acts only with the
+    -- imbueInCombat opt-in, so by default this warns rather than spending a
+    -- caster's global cooldown).
+    if self:MaintainImbue(cfg) then return end
+
+    -- P6 Lightning Bolt filler, the main nuke (builds Electrify). Always the
     -- level 1 fallback.
     if self:KnowsSpell("Lightning Bolt") then
         self:Queue("Lightning Bolt")
