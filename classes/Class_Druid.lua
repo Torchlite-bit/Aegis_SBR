@@ -266,6 +266,29 @@ function M:CanPay(name)
     return UnitMana("player") >= cost
 end
 
+-- Rake and Rip are bleeds, and Mechanical / Elemental mobs are immune to
+-- them. The debuff therefore never lands, the "not up" test stays true, and
+-- the upkeep is re-attempted on EVERY press - a wasted GCD and the energy
+-- each time, for the whole fight. Same shape as the Rend fix in v1.1.4, and
+-- the same cache: one UnitCreatureType call per target rather than one per
+-- press, keyed on the target id so a swap re-reads at once instead of
+-- answering stale.
+--
+-- An UNKNOWN type must ALLOW the cast: UnitCreatureType returns nil for some
+-- units, and failing open only risks today's behaviour, while failing closed
+-- would silently disable the bleeds against ordinary mobs. The comparison is
+-- against English strings - UnitCreatureType is localised, so this degrades to
+-- "never immune" on a non-enUS client, which is the safe direction.
+function M:TargetIsBleedImmune()
+    local id = Aegis_SBR:TargetId()
+    if id ~= self.bleedTypeId then
+        local t = UnitCreatureType("target")
+        self.bleedTypeId = id
+        self.bleedImmune = (t == "Mechanical" or t == "Elemental")
+    end
+    return self.bleedImmune
+end
+
 -- Queue a cast-time spell through SuperWoW so spamming the macro never
 -- clips the cast in progress; the press during a cast queues the next
 -- spell, which is also what lands the Eclipse-buffed nuke the moment the
@@ -324,6 +347,11 @@ function M:RotateCat(cfg)
     local energy = UnitMana("player")
     local cp = GetComboPoints("player", "target")
     local bleed = (cfg.catStyle ~= "shred")
+    -- Gates the bleed UPKEEPS only. Deliberately NOT folded into `bleed`
+    -- above: that variable also picks the builder, and turning Claw into
+    -- Shred on an immune target would change which ability fires, which is
+    -- a priority decision and not part of this fix.
+    local canBleed = not self:TargetIsBleedImmune()
 
     self:EnsureMeleeSwing()
 
@@ -333,6 +361,7 @@ function M:RotateCat(cfg)
             .. " prowl=" .. (self:HasBuff("Prowl") and "Y" or "N")
             .. " TF=" .. (cfg.useTigersFury and string.format("%.0fs", self:BuffTime("Tiger's Fury")) or "-")
             .. " FF=" .. (cfg.ffCat and (self:DebuffUp("Faerie Fire (Feral)") and "Y" or "n") or "-")
+            .. " immune=" .. (self:TargetIsBleedImmune() and "Y" or "N")
             .. " rake=" .. (bleed and (self:DebuffUp("Rake") and "Y" or "n") or "-")
             .. " rip=" .. (bleed and (self:DebuffUp("Rip") and "Y" or "n") or "-")
             .. " ps=" .. (cfg.powershift and "on" or "off"))
@@ -359,7 +388,7 @@ function M:RotateCat(cfg)
 
     -- P3 finisher at the combo threshold
     if cp >= (cfg.cpFinish or 5) then
-        if bleed and self:KnowsSpell("Rip") and not self:DebuffUp("Rip") then
+        if bleed and canBleed and self:KnowsSpell("Rip") and not self:DebuffUp("Rip") then
             if self:CanPay("Rip") and self:CastSafe("Rip") then return end
         elseif self:CanPay("Ferocious Bite") then
             if self:CastSafe("Ferocious Bite") then return end
@@ -368,7 +397,7 @@ function M:RotateCat(cfg)
     end
 
     -- P4 Rake upkeep (bleed style)
-    if bleed and self:KnowsSpell("Rake") and not self:DebuffUp("Rake") then
+    if bleed and canBleed and self:KnowsSpell("Rake") and not self:DebuffUp("Rake") then
         if self:CanPay("Rake") and self:CastSafe("Rake") then return end
     end
 

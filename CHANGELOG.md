@@ -4,6 +4,31 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.5 — Druid: Rake and Rip stop on bleed-immune targets
+
+### 🐛 Fixed — the Rend bug from v1.1.4, in the cat rotation
+
+**Same shape, different class.** Mechanical and Elemental mobs are immune to bleeds, so Rake
+and Rip never land on them, so the "not already on the target" test stays true and the upkeep
+is re-attempted on **every press** — a wasted global cooldown and the energy each time, for
+the whole fight. The Warrior's Rend was fixed for exactly this in v1.1.4; the druid's two
+bleeds have the identical pattern and were not covered.
+
+`M:TargetIsBleedImmune()` is ported from `Class_Warrior.lua` unchanged, cache and reasoning
+included: one `UnitCreatureType` call per target rather than one per press, keyed on the
+target id so a swap re-reads at once instead of answering stale, and an **unknown** type still
+allows the cast, because failing open only risks today's behaviour while failing closed would
+silently disable the bleeds against ordinary mobs. Same *Localisation note* as the Warrior fix
+— the comparison is against English strings, so a non-enUS client degrades to "never immune",
+which is the safe direction.
+
+**No priority ORDER was altered — this adds a gate.** The immunity check is deliberately kept
+out of the `bleed` variable, which also selects the builder: folding it in there would turn
+Claw into Shred on an immune target, and that is a priority decision rather than part of this
+fix. On an immune target the finisher now falls through to Ferocious Bite, which is the point
+— Rip can never land there.
+
+The cat trace line carries `immune=Y/N` so a play report says which branch ran.
 ## v1.2.5 — Knowing whether you are moving
 
 The client has no speed API, so nothing in the addon ever knew. Two classes were paying for that
