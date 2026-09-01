@@ -287,7 +287,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.spellCB.holyShield.cb,     "Holy Shield",     "Cast right after the strike, before seals.", "Fires whenever its own cooldown is ready.")
     ui:Tip(self.spellCB.hammerOfWrath.cb,  "Hammer of Wrath", "Execute, used only at or below 20 percent target HP.")
     ui:Tip(self.spellCB.repentance.cb,     "Repentance",      "Cast on cooldown as a damage proc on Turtle.")
-    ui:Tip(self.spellCB.consecration.cb,   "Consecration (AoE)", "AoE filler, cast on cooldown. Manual toggle (also /sbr aoe), since 1.12 cannot count nearby enemies.", "Held during mana recovery unless the option below is on.")
+    ui:Tip(self.spellCB.consecration.cb,   "Consecration (AoE)", "AoE filler, cast on cooldown while this is on (also /sbr aoe).", "Held during mana recovery unless the option below is on. The two rows under it can restrict it further: a minimum enemy count, and standing still.")
     -- One setting, two rows (Spells on the melee tabs, Damage fillers on the
     -- healer tab), so the text is written once.
     local csTip1 = "Holds Consecration until you have been standing still for a couple of seconds."

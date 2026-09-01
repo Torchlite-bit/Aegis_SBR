@@ -23,6 +23,17 @@ The label also read **"Only with enemies nearby"** next to a number, which the s
 flagged as ambiguous ("maybe it's an error on my part — it says only with enemies nearby, and
 then the number"). It is now **"Only with this many enemies"**.
 
+### 🐛 Fixed — two tooltips still said enemies could not be counted
+
+*"Manual toggle, since 1.12 cannot count nearby enemies"* — on the Paladin's Consecration row,
+directly above the slider that now counts them, and on the Druid's Swipe. True of the vanilla
+API and false of the environment the addon runs in. The paladin's now points at the two rows
+that restrict it; the druid's says plainly that counting exists and is simply not wired there,
+so the toggle stays the player's call.
+
+The README also still named the slider **"Only with enemies nearby"** after it was renamed —
+a label a player would go looking for and not find.
+
 ### 📚 Docs resynced to v1.2.8
 
 `CLAUDE.md`, `docs/architecture.md`, `docs/dependencies.md`, `docs/sources.md` and
@@ -43,7 +54,15 @@ because both have been rediscovered the hard way more than once:
 distance-to-any-unit and for facing, and records how SuperCleveRoidMacros counts enemies.
 `docs/sources.md` records **IWinEnhanced** as a source that was read rather than guessed at.
 `docs/roadmap.md` gets a "landed since this file was last touched" section, because several of
-these were on no list at all.
+these were on no list at all. `Aegis_SBR_BuffUp.lua` was missing from architecture.md's file
+layout — the very list that was completed a week ago.
+
+**`docs/dev-workflow.md` now says, at the top, that it does not describe the workflow in use.**
+It requires the dev folder to sit permanently on a `local/integration` branch; that branch does
+not exist, and every release has switched branches instead. This has been safe only because one
+feature has been in flight at a time, which is not the case the rule exists for. Flagged rather
+than quietly rewritten: a rule nobody follows is worse than no rule, because it is read as a
+description of reality.
 
 ---
 

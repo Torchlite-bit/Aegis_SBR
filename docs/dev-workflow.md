@@ -13,6 +13,24 @@
 Verified changes are copied dev → live without asking. The live folder is not a
 git repo; it is a plain mirror.
 
+## ⚠️ Status (checked 2026-09-01): this is NOT the workflow in use
+
+`local/integration` **does not exist**. The dev folder sits on whichever feature branch is
+current, and each release has gone `git stash` → `checkout main` → `pull` → `checkout -b` →
+`stash pop`.
+
+That has been safe so far only because **one feature has been in flight at a time**: with a
+single branch, stash/pop carries the whole working copy across and nothing is silently reverted.
+The failure this file describes needs two or more branches in flight, which has not happened yet.
+
+It has still cost something adjacent. Twice the live folder ended up missing work that was
+already merged (a friend's `CLAUDE.md` and `docs/architecture.md`), because the dev copy is the
+only source live is fed from and a branch switch is exactly when that copy is momentarily not
+"everything current".
+
+**Decide before the next parallel feature**, and either adopt the rule below or replace it — a
+rule nobody follows is worse than no rule, because it is read as a description of reality.
+
 ## The rule that makes this safe
 
 **The dev folder stays on `local/integration` and never changes branch.**

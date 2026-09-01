@@ -28,6 +28,10 @@ the `AegisUI_*` prefix.)
   `PickQueue` record into `decidePlan` instead of casting, and `Later(fn)` skips side effects
   entirely while deciding.
 - **Pet**: `Aegis_SBR_Pet.lua` — the pet window (Hunter/Warlock).
+- **BuffUp**: `Aegis_SBR_BuffUp.lua` — the upkeep monitors (buff watch, rebuff buttons,
+  weapon-enchant and poison reminders). Self-contained and optional in the sense that nothing
+  in the rotation reads it; it was folded in from a standalone addon, which is why it does not
+  follow the class-module shape.
 - **Range**: `Aegis_SBR_Range.lua` (v1.1.9) — the distance window, with a self-calibrating
   melee / dead-zone / ranged scale. Its distance comes from **UnitXP_SP3 (Required)**, not
   ClassicAPI — getting that source order wrong made the window dead on arrival without the

@@ -76,11 +76,19 @@ others, and with crits removed the ordering reverses. **13–19 casts per settin
 this**; roughly 100 would, or a log field recording what each cast would have healed without the
 crit. Do not change the default on the strength of the numbers currently in hand.
 
-**Resync note (2026-09-01):** no open PRs, but three merged branches are still undeleted on the
-remote (`feat/movement-aware-and-heal-fillers`, `feat/talent-slot-binding`, and this session's
-`claude/aegis-sbr-rebrand-phase-0-ua55yk`). `docs/dev-workflow.md` asks for deletion on merge —
-it is what makes GitHub retarget anything still based on them, and what keeps
-`git branch -r --merged origin/main` usable as a check for what has actually landed.
+**Standing check, not a snapshot:** merged branches keep accumulating on the remote because
+deletion needs the user (it is refused from this sandbox). Run
+
+```
+git branch -r --merged origin/main
+```
+
+at the start of a session; anything besides `origin/main` and `origin/HEAD` is landed and
+deletable. `docs/dev-workflow.md` asks for deletion on merge — it is what makes GitHub retarget
+anything still based on them, and what keeps that command usable as a check for what has actually
+landed. As of 2026-09-01 there were four. **Do not restate the current list here** — a snapshot
+in a file that is read first goes stale within days, which is exactly what happened to the note
+this replaced.
 
 Earlier history, v1.1.4 onward:
 **v1.1.5** `/sbr spell <name>` toggles instead of silently switching off; **v1.1.6** Hunter's
