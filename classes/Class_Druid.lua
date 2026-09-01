@@ -221,6 +221,9 @@ function M:CastSafe(name, reason)
     else
         CastSpellByName(name)
     end
+    -- Recorded centrally, so no bleed site can be added later and forget it.
+    local dur = M.OWNED_DEBUFF_DUR[name]
+    if dur then Aegis_SBR:NoteDebuffApplied(self:TargetId(), name, dur) end
     return true
 end
 
@@ -254,8 +257,23 @@ end
 
 -- The debuffTex keys are the spell names, so they also serve as the exact
 -- name match (SuperWoW id path); the texture stays as the fallback.
+-- Applied duration of the debuffs that belong to ONE druid. Faerie Fire and
+-- Demoralizing Roar are deliberately absent: those are shared, anybody's copy is
+-- as good as ours, and re-applying over somebody else's is pure waste.
+M.OWNED_DEBUFF_DUR = {
+    ["Moonfire"]     = 12,
+    ["Insect Swarm"] = 12,
+    ["Rip"]          = 12,
+    ["Rake"]         = 9,
+}
+
+-- Is this debuff up AND ours? Two druids on one mob each get their own Moonfire
+-- and their own bleeds, so reading somebody else's as ours means applying
+-- nothing at all for as long as they keep theirs running.
 function M:DebuffUp(spellName)
-    return self:TargetDebuffUp(spellName, self.debuffTex[spellName])
+    if not self:TargetDebuffUp(spellName, self.debuffTex[spellName]) then return false end
+    if not self.OWNED_DEBUFF_DUR[spellName] then return true end   -- shared
+    return Aegis_SBR:DebuffMine(spellName, self:TargetId())
 end
 
 -- Affordable and learned. UnitMana("player") reads the active power, so
@@ -301,6 +319,8 @@ function M:QueueCast(name, reason)
         return true
     end
     if QueueSpellByName then QueueSpellByName(name) else CastSpellByName(name) end
+    local dur = M.OWNED_DEBUFF_DUR[name]
+    if dur then Aegis_SBR:NoteDebuffApplied(self:TargetId(), name, dur) end
     return true
 end
 

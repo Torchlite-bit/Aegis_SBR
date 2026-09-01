@@ -335,9 +335,23 @@ M.dotThrottle = {}
 -- file. Kept next to the throttle it clears, since the two only make sense
 -- together.
 M.DOT_NAMES = { "Shadow Word: Pain", "Devouring Plague", "Holy Fire" }
+-- Applied duration of each DoT, handed to the ledger so a second priest on the
+-- same mob is told apart from us. Only the length matters here, not the damage.
+M.DOT_DUR = {
+    ["Shadow Word: Pain"] = 18,
+    ["Devouring Plague"]  = 24,
+    ["Holy Fire"]         = 10,
+}
+
 function M:ApplyDot(spellName, texFrag, interval)
     interval = interval or 3
-    if self:TargetDebuffUp(spellName, texFrag) then return "up" end
+    -- Ours, or another priest's? Shadow Word: Pain, Devouring Plague and Holy
+    -- Fire are all per-caster, so somebody else's answering for ours means
+    -- applying nothing for as long as they keep theirs up.
+    if self:TargetDebuffUp(spellName, texFrag)
+        and Aegis_SBR:DebuffMine(spellName, self:TargetId()) then
+        return "up"
+    end
     local detectable = (texFrag ~= nil) or self:CanResolveDebuffNames()
     local id = self:TargetId()
     local rec = self.dotThrottle[spellName]
@@ -346,7 +360,10 @@ function M:ApplyDot(spellName, texFrag, interval)
         if detectable then return "wait" else return "up" end
     end
     if not self:Queue(spellName, "DoT missing") then return "up" end
-    self:Later(function() self.dotThrottle[spellName] = { id = id, t = now } end)
+    self:Later(function()
+        self.dotThrottle[spellName] = { id = id, t = now }
+        Aegis_SBR:NoteDebuffApplied(id, spellName, M.DOT_DUR[spellName])
+    end)
     return "cast"
 end
 

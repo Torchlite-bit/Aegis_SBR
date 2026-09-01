@@ -406,7 +406,11 @@ function M:MaintainFlameShock()
     if not self:KnowsSpell("Flame Shock") then return false end
     if not self:IsReady("Flame Shock") then return false end
     local tex = self.dotTex["Flame Shock"]
-    if self:TargetDebuffUp("Flame Shock", tex) then return false end
+    -- Per-caster, so another shaman's Flame Shock is not ours.
+    if self:TargetDebuffUp("Flame Shock", tex)
+        and Aegis_SBR:DebuffMine("Flame Shock", self:TargetId()) then
+        return false
+    end
     local detectable = tex or Aegis_SBR:CanResolveDebuffNames()
     local now = GetTime()
     -- ClassicAPI knows the real expiration, INCLUDING Turtle's Molten Blast
@@ -423,7 +427,10 @@ function M:MaintainFlameShock()
     end
     if not detectable and (now - (self.flameT or 0)) < FLAMESHOCK_DUR then return false end
     if self:Queue("Flame Shock", "DoT missing") then
-        self:Later(function() self.flameT = now end)
+        self:Later(function()
+            self.flameT = now
+            Aegis_SBR:NoteDebuffApplied(self:TargetId(), "Flame Shock", FLAMESHOCK_DUR)
+        end)
         return true
     end
     return false

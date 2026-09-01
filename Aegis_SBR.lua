@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.5",
+    ver = "1.2.6",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1085,6 +1085,161 @@ function Aegis_SBR:StillFor(seconds)
     if not s then return true end
     if not s.since then return false end
     return (GetTime() - s.since) >= (seconds or 0)
+end
+
+-- ============================================================
+-- Counting nearby enemies
+--
+-- 1.12 has no API for "how many mobs are near me", which is why every AoE
+-- toggle in this addon is manual. It is still answerable, just not from the
+-- vanilla API: a VISIBLE NAMEPLATE is a frame under WorldFrame, and SuperWoW
+-- puts that unit's GUID in the frame's first name string - and a GUID is a unit
+-- token to SuperWoW. So the nameplates you can see enumerate the mobs you can
+-- see, and each one can then be asked its distance like any other unit.
+--
+-- That is how IWinEnhanced does it (through SuperCleveRoidMacros), and it is
+-- worth being plain about the consequence: this counts what the CLIENT is
+-- drawing. Nameplates switched off means nothing to enumerate. It is not a
+-- hidden mob radar and cannot be.
+--
+-- Which is why the answer distinguishes "none" from "cannot tell", and returns
+-- NIL for the latter. Everything gated on this must fail open - a count that
+-- cannot be taken must never be read as zero and silently switch an ability off.
+-- The capability is latched the first time a nameplate actually resolves, the
+-- same way sting / debuff / cast-event detection is established elsewhere.
+-- ============================================================
+local ENEMY_CACHE_TTL = 0.3
+
+-- Distance to any unit, not just the target. Same source order and the same
+-- reasoning as the range window's own measurement.
+function Aegis_SBR:DistanceTo(unit)
+    if not unit or not UnitExists(unit) then return nil end
+    if UnitDistanceSquared then
+        local ok, d = pcall(UnitDistanceSquared, unit)
+        if ok and type(d) == "number" and d >= 0 then return math.sqrt(d) end
+    end
+    if UnitXP then
+        local ok, d = pcall(UnitXP, "distanceBetween", "player", unit)
+        if ok and type(d) == "number" and d >= 0 then return d end
+    end
+    return nil
+end
+
+-- Enemies within `yards`, or nil when the count cannot be taken.
+--
+-- Cached for a fraction of a second: walking every WorldFrame child builds a
+-- table each time, and doing that on every press in a raid is exactly the shape
+-- of the cost this addon has been bitten by before.
+function Aegis_SBR:CountEnemiesNear(yards)
+    if not yards or yards <= 0 then return nil end
+    local now = GetTime()
+    local c = self.enemyCount
+    if c and c.yards == yards and (now - c.t) < ENEMY_CACHE_TTL then return c.n end
+
+    local seen, n = {}, 0
+    local function consider(unit)
+        if not unit or seen[unit] then return end
+        if not UnitExists(unit) or not UnitCanAttack("player", unit) then return end
+        if UnitIsDeadOrGhost(unit) then return end
+        seen[unit] = true
+        local d = self:DistanceTo(unit)
+        if d and d <= yards then n = n + 1 end
+    end
+
+    -- Nameplates: the only source that sees a mob you have not targeted.
+    if WorldFrame and WorldFrame.GetChildren then
+        local kids = { WorldFrame:GetChildren() }
+        for i = 1, table.getn(kids) do
+            local f = kids[i]
+            if f and f.IsVisible and f:IsVisible() and f.GetName then
+                local ok, guid = pcall(f.GetName, f, 1)
+                if ok and type(guid) == "string" and guid ~= "" and UnitExists(guid) then
+                    self.enemyScanSeen = true
+                    consider(guid)
+                end
+            end
+        end
+    end
+
+    -- Without a working nameplate scan there is no count, only a guess. Say so.
+    if not self.enemyScanSeen then return nil end
+
+    -- Cheap extras the scan can miss (a target behind you draws no nameplate).
+    consider("target")
+    consider("targettarget")
+    consider("pettarget")
+
+    self.enemyCount = { yards = yards, n = n, t = now }
+    return n
+end
+
+-- ============================================================
+-- Whose debuff is that?
+--
+-- Most damage-over-time effects do NOT stack between casters: two warlocks on
+-- one mob each get their own Corruption, two rogues each get their own Rupture,
+-- and the client shows both. Reading "Corruption is on the target" as "MY
+-- Corruption is on the target" means the second one to arrive applies nothing at
+-- all and spends the fight on filler, because somebody else's debuff answers for
+-- theirs. Reported from play on the warlock; it was true of every class that
+-- keeps a debuff up.
+--
+-- Two sources, in order of how much they actually know:
+--
+--   1. ClassicAPI records the caster. Where it answers true or false, that ends
+--      the question. nil is "cannot tell" - an aura applied before login has no
+--      caster on file - and falls through to:
+--
+--   2. Our own ledger of what we applied, per target and spell, checked against
+--      the effect's duration. This needs no API at all, which is the point: most
+--      clients running this have no caster information whatsoever.
+--
+-- Wrong in the cautious direction when the ledger is missing (after a reload,
+-- say): it answers "not mine", one extra application goes out, and the ledger is
+-- right from then on. The failure it replaces is the opposite and never self-
+-- corrects - applying nothing for as long as somebody else keeps theirs up.
+--
+-- NOT for debuffs that are shared rather than owned: Hunter's Mark, Sunder
+-- Armor, Demoralizing Shout, a paladin's judgement. There, anybody's copy is as
+-- good as ours and re-applying over it is pure waste. Each class names its own;
+-- this only answers the question it is asked.
+-- ============================================================
+Aegis_SBR.debuffLedger = {}
+
+-- `duration` is optional and is the effect's length AS APPLIED - the caster is
+-- the only one who knows it, and for several effects it is not a constant at
+-- all (a rogue's Rupture runs 6 to 16 seconds depending on the combo points
+-- spent). Stored as an expiry rather than a timestamp for exactly that reason.
+-- Omit it and the entry never expires, which reads as "ours" for as long as the
+-- debuff is visible: the right answer when nothing better is known, since the
+-- alternative is re-applying on a guess.
+function Aegis_SBR:NoteDebuffApplied(targetId, spell, duration)
+    if not targetId or not spell then return end
+    self.debuffLedger[targetId .. "|" .. spell] = {
+        expires = duration and (GetTime() + duration) or nil,
+    }
+end
+
+-- Cleared on leaving combat: a GUID belongs to one mob for one pull, and
+-- carrying the table around for a session would eventually answer for a
+-- different creature entirely.
+function Aegis_SBR:ClearDebuffLedger()
+    self.debuffLedger = {}
+end
+
+-- true when the debuff on this target is ours. The duration was supplied when it
+-- was applied, so nothing here has to guess how long it runs.
+function Aegis_SBR:DebuffMine(spell, targetId)
+    if not spell then return true end
+    if self.TargetDebuffMine then
+        local mine = self:TargetDebuffMine(spell)
+        if mine == true then return true end
+        if mine == false then return false end
+    end
+    local rec = targetId and self.debuffLedger[targetId .. "|" .. spell]
+    if not rec then return false end
+    if not rec.expires then return true end
+    return GetTime() < rec.expires
 end
 
 -- Every pet belonging to the given player units, appended in the same order.
@@ -2338,6 +2493,7 @@ ev:SetScript("OnEvent", function()
     elseif event == "UI_ERROR_MESSAGE" then
         Aegis_SBR:OnCastError(arg1)
     elseif event == "PLAYER_REGEN_ENABLED" then
+        Aegis_SBR:ClearDebuffLedger()
         if Aegis_SBR.active then Aegis_SBR.active.lastSwing = nil end
         -- Out of combat the kill curve is meaningless, and keeping it would let
         -- the last fight's rate answer the first press of the next one.

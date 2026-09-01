@@ -385,8 +385,18 @@ local SHARED_DEBUFF = {
 -- answers with a real expiry and, where it matters, a caster. Either saying yes
 -- is enough - both are positive evidence, and a miss on one is exactly the case
 -- the other exists to cover.
+-- Is the debuff we can see OURS? Shared ones never ask - anybody's Hunter's Mark
+-- is as good as ours and re-marking over it is waste, which is what SHARED_DEBUFF
+-- above says. The stings and Lacerate are the opposite: they are our own damage,
+-- another hunter's copy says nothing about ours, and reading theirs as ours means
+-- applying nothing at all for as long as they keep it up.
+function M:DebuffOwned(name)
+    if SHARED_DEBUFF[name] then return true end
+    return Aegis_SBR:DebuffMine(name, self:TargetId())
+end
+
 function M:DebuffUpAny(name)
-    if self:TargetDebuffUp(name, STING_TEX[name]) then return true end
+    if self:TargetDebuffUp(name, STING_TEX[name]) and self:DebuffOwned(name) then return true end
     if not Aegis_SBR.TargetDebuffRemaining then return false end
     if not SHARED_DEBUFF[name] and Aegis_SBR:TargetDebuffMine(name) == false then
         return false                      -- someone else's, and ownership matters here
@@ -438,7 +448,10 @@ function M:MaintainDebuff(name, interval)
         return false
     end
     if not self:Pick(name, "debuff missing") then return false end
-    self:Later(function() self.debuffThrottle[name] = { id = id, t = now } end)
+    self:Later(function()
+        self.debuffThrottle[name] = { id = id, t = now }
+        Aegis_SBR:NoteDebuffApplied(id, name, interval)
+    end)
     return true
 end
 
@@ -456,8 +469,11 @@ M.stingSeen = {}
 function M:MaintainSting(name, interval)
     if not self:KnowsSpell(name) then return false end
     if self:TargetDebuffUp(name, STING_TEX[name]) then
+        -- Reading it at all proves reading works on this client, whoever it
+        -- belongs to - that is what stingSeen records.
         self:Later(function() self.stingSeen[name] = true end)
-        return false
+        -- Only OUR sting means there is nothing to do here.
+        if self:DebuffOwned(name) then return false end
     end
     -- ClassicAPI second opinion, and it may ONLY ever say "do not cast".
     --
@@ -513,7 +529,10 @@ function M:MaintainSting(name, interval)
         return false
     end
     if not self:Queue(name, "sting missing") then return false end
-    self:Later(function() self.debuffThrottle[name] = { id = id, t = now } end)
+    self:Later(function()
+        self.debuffThrottle[name] = { id = id, t = now }
+        Aegis_SBR:NoteDebuffApplied(id, name, STING_DUR[name])
+    end)
     return true
 end
 
