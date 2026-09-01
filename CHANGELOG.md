@@ -4,6 +4,58 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.9 — The mage can be diagnosed at all (restored), and a changelog repair
+
+### 🩺 Mage tracing — shipped in the v1.2.8 tree, documented here
+
+This code **landed with v1.2.8** and its changelog entry was lost in a merge conflict
+resolution (the code file had no conflict, the changelog did, and the resolution took `main`'s
+side wholesale). Recorded now rather than back-dated, so the file says what actually happened.
+
+Reported: an arcane mage with only *Arcane Missiles* trained, spamming the macro, sees a
+delay of about three seconds between one channel finishing and the next starting.
+
+That report could not be answered, because **`Class_Mage.lua` had no tracing whatsoever** —
+it and the priest were the only two modules with zero `Trace` calls, so `/sbr log` and
+`/sbr trace` produced nothing at all for a mage. Worse, the one step that can hold the
+rotation for seconds — the channel guard protecting a running Arcane Missiles / Icicles /
+Blizzard / Evocation — sits as the **first statement** in `Rotate` and returned silently, so
+a held press emitted nothing and the entire stalled window was invisible in the log.
+
+- **A per-press trace line**: `mode` (plus `/aoe`), `mana`, `chan` (whether a channel is
+  being tracked **and how long it has been held**), `wanding`, `hasted`, target `hp`.
+- **A `STALL channel <n>s` line on the blocking exit**, mirroring the one the warlock's
+  equivalent exit received in v1.2.5 — the same guard, in the same shape, which the warlock
+  already traced and the mage did not.
+
+**This does not fix the delay** — it makes the delay observable. `/sbr log on`, cast a few
+Arcane Missiles, `/reload`, and the log now says whether the channel guard was holding the
+rotation and for exactly how long, or whether the wait is elsewhere.
+
+Two things noticed while reading, recorded rather than changed:
+
+- The guard's ceiling is **16 seconds against channels of 3–5 seconds**. It is a
+  wedge-preventer, not a timing guard: a missed `SPELLCAST_CHANNEL_STOP` stands the rotation
+  still for far longer than the channel it was protecting. Same constant in mage, priest and
+  warlock.
+- `SPELLCAST_CHANNEL_START` carries the channel **duration**, and all three modules discard
+  it. Clearing on `start + duration` as well as on the stop event would make a missed stop
+  cost nothing. Not done — shortening a guard is on the *unblock* side, which is what starved
+  Auto Shot on the hunter, so it wants the log first and a play-test after.
+
+*The priest has the identical untraced guard and no trace line either. Left alone to keep the
+diff to the reported class.*
+
+### 📋 Fixed — the changelog carried v1.2.5 twice
+
+PRs #58 (movement) and #59 (druid bleed immunity) were cut from v1.2.4 in parallel and both
+stamped the `.toc` **v1.2.5**, leaving two entries under the same number. They are now **one
+v1.2.5 entry with both changes**, rather than renumbered — the `.toc` genuinely read 1.2.5 for
+both, so that is what the version contained, and no number below 1.2.6 was free to move into.
+Every version in this file is used exactly once again.
+
+---
+
 ## v1.2.8 — The enemy count was one too many
 
 ### 🐛 Fixed — Consecration fired one enemy early
@@ -214,32 +266,15 @@ before.
 
 ---
 
-## v1.2.5 — Druid: Rake and Rip stop on bleed-immune targets
+## v1.2.5 — Knowing whether you are moving, and druid bleeds that stop on immune targets
 
-### 🐛 Fixed — the Rend bug from v1.1.4, in the cat rotation
-
-**Same shape, different class.** Mechanical and Elemental mobs are immune to bleeds, so Rake
-and Rip never land on them, so the "not already on the target" test stays true and the upkeep
-is re-attempted on **every press** — a wasted global cooldown and the energy each time, for
-the whole fight. The Warrior's Rend was fixed for exactly this in v1.1.4; the druid's two
-bleeds have the identical pattern and were not covered.
-
-`M:TargetIsBleedImmune()` is ported from `Class_Warrior.lua` unchanged, cache and reasoning
-included: one `UnitCreatureType` call per target rather than one per press, keyed on the
-target id so a swap re-reads at once instead of answering stale, and an **unknown** type still
-allows the cast, because failing open only risks today's behaviour while failing closed would
-silently disable the bleeds against ordinary mobs. Same *Localisation note* as the Warrior fix
-— the comparison is against English strings, so a non-enUS client degrades to "never immune",
-which is the safe direction.
-
-**No priority ORDER was altered — this adds a gate.** The immunity check is deliberately kept
-out of the `bleed` variable, which also selects the builder: folding it in there would turn
-Claw into Shred on an immune target, and that is a priority decision rather than part of this
-fix. On an immune target the finisher now falls through to Ferocious Bite, which is the point
-— Rip can never land there.
-
-The cat trace line carries `immune=Y/N` so a play report says which branch ran.
-## v1.2.5 — Knowing whether you are moving
+> **This entry covers two pull requests.** #58 (movement) and #59 (druid bleed immunity) were
+> both cut from v1.2.4 in parallel and both stamped the `.toc` **v1.2.5**, so the number was
+> genuinely used by both and the changelog carried two headers reading `## v1.2.5`. Merged
+> into one entry rather than renumbered, because the `.toc` really did read 1.2.5 for both —
+> this is what that version actually contained. `docs/dev-workflow.md` names this exact case:
+> when two branches collide on `CHANGELOG.md` / `README.md` / the `.toc`, resolve it by
+> **ORDER** — a release PR cut after the feature PRs land — not by merging both and hoping.
 
 The client has no speed API, so nothing in the addon ever knew. Two classes were paying for that
 in different ways, and one play report named both.
@@ -376,6 +411,32 @@ Three places can hold the whole rotation without casting: a running channel, the
 guard, and a DoT answering *"wait"*. All three now write a `STALL` line to `/sbr trace` naming
 which one it was and for how long — including which of the two DoT waits it is, a cast awaiting
 confirmation or the interval after a confirmed cast whose debuff is not visible yet.
+
+### 🐛 Fixed — Druid: Rake and Rip stop on bleed-immune targets
+
+*(PR #59, contributed by **Migux13** — the first outside contribution.)*
+
+**The Rend bug from v1.1.4, in the cat rotation.** Mechanical and Elemental mobs are immune to
+bleeds, so Rake and Rip never land on them, so the "not already on the target" test stays true
+and the upkeep is re-attempted on **every press** — a wasted global cooldown and the energy
+each time, for the whole fight. The Warrior's Rend was fixed for exactly this in v1.1.4; the
+druid's two bleeds have the identical pattern and were not covered.
+
+`M:TargetIsBleedImmune()` is ported from `Class_Warrior.lua` unchanged, cache and reasoning
+included: one `UnitCreatureType` call per target rather than one per press, keyed on the
+target id so a swap re-reads at once instead of answering stale, and an **unknown** type still
+allows the cast, because failing open only risks today's behaviour while failing closed would
+silently disable the bleeds against ordinary mobs. Same *Localisation note* as the Warrior fix
+— the comparison is against English strings, so a non-enUS client degrades to "never immune",
+which is the safe direction.
+
+**No priority ORDER was altered — this adds a gate.** The immunity check is deliberately kept
+out of the `bleed` variable, which also selects the builder: folding it in there would turn
+Claw into Shred on an immune target, and that is a priority decision rather than part of this
+fix. On an immune target the finisher now falls through to Ferocious Bite, which is the point
+— Rip can never land there.
+
+The cat trace line carries `immune=Y/N` so a play report says which branch ran.
 
 ---
 
