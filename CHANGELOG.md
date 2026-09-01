@@ -4,6 +4,76 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.10 — A press spent on a cast that never happened
+
+Two hunter reports, both about switching target while holding the macro down, and both landing
+on the same sentence: **`Pick` reports success on "known and learned", not on "accepted".**
+
+### 🐛 Fixed — Hunter's Mark and the sting missing after a target switch
+
+The cause has been written down in this file for months, in the comment on `MaintainSting`:
+
+> *"Dispatching a sting through the instant `CastSpellByName` path (**as MaintainDebuff does**)
+> lets Nampower drop it whenever a global cooldown is up, which silently burns the reapply
+> throttle and the sting never fires."*
+
+The sting was moved to the queue when that was written. **Hunter's Mark was left on the path the
+comment names as broken.**
+
+Which is exactly what a target switch under a held macro produces: the press lands mid-global-
+cooldown from the cast aimed at the previous target, the client drops it, and the throttle is
+stamped on a cast that never left. For Hunter's Mark that throttle is **110 seconds** — and the
+sting is gated on the mark being up, so one dropped cast silently costs both for most of two
+minutes. Mark now goes through the same queue the sting does.
+
+### 🐛 Fixed — at low mana, neither ranged nor melee auto-attack started
+
+Two independent causes, both of which had to go.
+
+**The press never got there.** Hunter's Mark leads the rotation; the mana-free Auto Shot sits
+four steps below it. An unaffordable Mark consumed the press anyway, and when that was gated,
+*Aspect upkeep* — one step further down and also paid for in mana — took it instead. So a hunter
+near empty spent every press on casts that could not happen and never reached the one attack that
+still works at zero mana.
+
+The affordability test now sits in this module's own `Pick` and `Queue` rather than at the
+twenty call sites that would eventually forget one — the same argument as the warlock's channel
+gate. An **unreadable cost answers yes**, so a tooltip that failed to populate can never lock a
+step out.
+
+**And the restart never fired.** `lastAutoShot` was a single timestamp with no notion of *which*
+target it belonged to. Tab to a new mob and the shot at the previous one is a fraction of a
+second old, so `EnsureAutoShot` concluded "still firing" and did nothing. It is now qualified by
+target.
+
+Deliberately **not** done: moving the auto-attack step above the spells. The comment there argues
+for the current order — starting Auto Shot costs its own press, and Hunter's Mark would lose to
+it at the pull. That is a priority decision with a stated rationale, not something to change in
+passing.
+
+### ✨ Priest and Mage got the same gate
+
+Neither had the hunter's bug: both already drop to the wand below a mana floor
+(`fillerManaFloor` / `wandManaFloor`, 25% by default), which is the same safety valve the warlock
+carries. But that protects the **filler**; everything above it — DoTs, *Mind Blast*, the cooldown
+spells — was still sent unchecked, so a spell can be unaffordable while the floor has not yet
+been crossed.
+
+A narrower window than the hunter's and not a reported fault. The gate closes it, costs nothing,
+and cannot lock anything out. **Heals are unaffected** — those go out through `CastOn` with a
+unit argument, and their rank is already chosen against available mana.
+
+### 🔧 Cast refusals now distinguish the target from ourselves
+
+The refusal list was one list. It is now two, because they answer different questions:
+line-of-sight, range and facing say the **unit** cannot be reached and mark it; mana, rage and
+energy say something about **us** and clear only that spell's throttle.
+
+Without the split, adding mana to the list would have had a healer marking group members as
+unreachable while they stood in front of him.
+
+---
+
 ## v1.2.9 — The mage can be diagnosed at all (restored), and a changelog repair
 
 ### 🩺 Mage tracing — shipped in the v1.2.8 tree, documented here

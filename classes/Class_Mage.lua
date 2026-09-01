@@ -197,8 +197,30 @@ end
 -- Cast helper: queue a known spell through SuperWoW's cast queue so a cast in
 -- progress is not clipped. Returns true if the spell is known and was issued.
 -- ============================================================
+-- Everything this module sends goes through one of these two, and both refuse
+-- what cannot be paid for.
+--
+-- `Pick` in the core reports success on "known and learned", not on "accepted",
+-- which is correct for it - most classes check the cost at the decision. This one
+-- did not, and at zero mana the consequence is the same one the hunter was
+-- reported for: every press spent on a cast that never happens, while the free
+-- wand filler sitting at the bottom of the rotation is never reached. The wand is
+-- the one attack that still works at zero mana, and on a target carrying a
+-- mana-return debuff it is how you climb back out.
+--
+-- Gated here rather than at the call sites because there are 28 of them and a
+-- new one would eventually forget.
+--
+-- An unreadable cost answers YES (see CanAfford), so a tooltip that failed to
+-- populate can never lock a step out.
+function M:Pick(name, reason)
+    if not Aegis_SBR:CanAfford(name) then return false end
+    return Aegis_SBR.Pick(self, name, reason)
+end
+
 function M:Queue(name, reason)
     if not self:KnowsSpell(name) then return false end
+    if not Aegis_SBR:CanAfford(name) then return false end
     if Aegis_SBR.deciding then
         local p = Aegis_SBR.decidePlan
         p.spell = name; p.reason = reason; p.queue = true

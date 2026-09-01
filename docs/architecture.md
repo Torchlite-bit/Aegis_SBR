@@ -115,6 +115,14 @@ the `AegisUI_*` prefix.)
   refuses. The shield test uses `itemEquipLoc` (a constant) rather than the localised subtype
   string; daggers have no such constant, so that check is an English-client improvement and a
   no-op elsewhere. Facing comes from UnitXP_SP3 — vanilla has no facing API at all.
+- Affordability (v1.2.10): `Aegis_SBR:CanAfford(name)` existed; what did not was any class
+  actually calling it before spending the press. `Pick` / `PickQueue` report success on "known
+  and learned", **not** on "accepted", which is correct for them and a trap for a caller that
+  does not know it. Hunter, Priest and Mage now test in their own `Pick` / `Queue` wrapper rather
+  than at each call site, because there are twenty of them per class and a new one forgets.
+  The failure mode is worst wherever a **free** action sits below a paid one — Auto Shot under
+  Hunter's Mark, the wand under the nukes — since the press is consumed before reaching the only
+  thing that still works when the bar is empty.
 - Per-press memoisation (core, v1.2.7): `Aegis_SBR:NewPress()` bumps `pressToken` where the
   rotation is invoked — **the press is what has to be identified, not the outcome**, which is
   why it is not tied to a cast. The paladin's `WorstHurt` uses it to answer once per press

@@ -280,7 +280,10 @@ function M:EnsureAutoShot()
         return false
     end
     local now = GetTime()
-    if self.lastAutoShot and self.lastAutoShot > 0 then
+    -- Only trust the last-shot time when it was a shot at THIS target. A recent
+    -- shot at the mob you just tabbed away from says nothing about this one.
+    local sameTarget = (self.lastAutoShotAt == nil) or (self.lastAutoShotAt == self:TargetId())
+    if sameTarget and self.lastAutoShot and self.lastAutoShot > 0 then
         if (now - self.lastAutoShot) < (self:RangedSpeed() + AUTOSHOT_STALL) then
             self:Later(function() self.autoShotOn = true end)
             return false
@@ -305,10 +308,34 @@ function M:EnsureAutoShot()
     return true
 end
 
+-- Everything this module sends goes through one of these two, and both refuse
+-- what cannot be paid for.
+--
+-- `Pick` and `PickQueue` in the core report success on "known and learned", not
+-- on "accepted" - which is correct for them, since most classes check the cost
+-- at the decision. This module did not, and the shape of that mistake is worse
+-- here than elsewhere: Hunter's Mark LEADS the rotation and the mana-free Auto
+-- Shot sits four steps below it. A hunter near empty therefore spent every press
+-- on a cast that never happened and never reached the one attack that still
+-- works at zero mana - reported as "at low mana neither ranged nor melee auto
+-- attack starts on a target switch".
+--
+-- Gated here rather than at the call sites because there are twenty of them and
+-- a new one would eventually forget. The same argument as the warlock's channel
+-- gate.
+--
+-- An unreadable cost answers YES (see CanAfford), so a tooltip that failed to
+-- populate can never lock a step out.
+function M:Pick(name, reason)
+    if not Aegis_SBR:CanAfford(name) then return false end
+    return Aegis_SBR.Pick(self, name, reason)
+end
+
 -- Queue a shot through SuperWoW/Nampower so the weave lands without clipping
 -- the Auto Shot in progress; falls back to a direct cast without the queue.
 function M:Queue(name, reason)
     if not self:KnowsSpell(name) then return false end
+    if not Aegis_SBR:CanAfford(name) then return false end
     if Aegis_SBR.deciding then
         local p = Aegis_SBR.decidePlan
         p.spell = name; p.reason = reason; p.queue = true
@@ -447,7 +474,21 @@ function M:MaintainDebuff(name, interval)
     if rec and rec.id == id and rec.t and (now - rec.t) <= wait then
         return false
     end
-    if not self:Pick(name, "debuff missing") then return false end
+    -- Queued, not cast outright.
+    --
+    -- The comment on MaintainSting below has described this bug since it was
+    -- written - and named this function while doing it: dispatching through the
+    -- instant CastSpellByName path lets the client drop the cast whenever a
+    -- global cooldown is up, which stamps the reapply throttle on a cast that
+    -- never left. For Hunter's Mark that throttle is 110 seconds, and the sting
+    -- is gated on the mark being up, so ONE dropped cast silently costs both for
+    -- most of two minutes.
+    --
+    -- That is exactly what a target switch under a held macro produces: the
+    -- press lands mid-GCD from the cast aimed at the previous target. Reported
+    -- as "switching target by tab or mouse often leaves Hunter's Mark and the
+    -- DoT unapplied".
+    if not self:Queue(name, "debuff missing") then return false end
     self:Later(function()
         self.debuffThrottle[name] = { id = id, t = now }
         Aegis_SBR:NoteDebuffApplied(id, name, interval)
@@ -753,6 +794,11 @@ end
 -- The mana aspect (Viper) swap takes priority in EITHER stance when low, so a
 -- mana-heavy melee hunter recovers the same way a ranged one does; otherwise the
 -- combat aspect for the current state is maintained (Wolf melee / Hawk ranged).
+-- Aspect upkeep. Costs mana, sits one step above the auto-attack floor, and used
+-- to spend the press whether or not it could be paid for - which is the second
+-- half of the low-mana starvation: with Hunter's Mark falling through, the
+-- aspect took the press instead. Pick now refuses an unaffordable cast, so this
+-- returns false and the rotation reaches the swing.
 function M:EnsureAspect(cfg, melee)
     if not cfg.useAspect then return false end
     if self.manaAspectActive then
@@ -1140,6 +1186,7 @@ hunterFrame:SetScript("OnEvent", function()
         M.autoShotTarget = nil
         M.steadyT = 0
         M.lastAutoShot = 0   -- forget the ranged-swing phase between pulls
+        M.lastAutoShotAt = nil
         -- Only the per-GUID half: what was learned per creature TYPE lives in
         -- AegisDB and is meant to outlast the fight.
         M.stingImmune = {}
@@ -1196,7 +1243,15 @@ hunterFrame:SetScript("OnEvent", function()
             if nm == "Auto Shot" then
                 -- "CAST" is the projectile launch (the swing reset); ignore the
                 -- "START" windup so the phase reference is the actual shot.
-                if arg3 == "CAST" then M.lastAutoShot = GetTime() end
+                if arg3 == "CAST" then
+                    M.lastAutoShot = GetTime()
+                    -- Which target it was aimed at. Without this the timestamp
+                    -- is target-blind and a shot at the PREVIOUS mob reads as
+                    -- "still firing" at the new one, so the restart never
+                    -- happens - reported as auto shot not starting after a
+                    -- target switch.
+                    M.lastAutoShotAt = arg2
+                end
             elseif nm == "Steady Shot" then
                 if arg3 == "START" then
                     local d = tonumber(arg5)

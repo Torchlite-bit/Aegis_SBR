@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.9",
+    ver = "1.2.10",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1432,12 +1432,29 @@ end
 
 -- Compared against the client's own strings, so it holds in any locale. The
 -- literals are only a fallback for a client that does not define them.
+-- Refusals that say something about the UNIT: it cannot be reached from here.
+-- These mark the unit as well as the spell.
 local CAST_REFUSED = {
     SPELL_FAILED_LINE_OF_SIGHT or "Target not in line of sight",
     SPELL_FAILED_OUT_OF_RANGE or "Out of range",
     SPELL_FAILED_TOO_CLOSE or "Target too close",
     SPELL_FAILED_UNIT_NOT_INFRONT or "Target needs to be in front of you",
     SPELL_FAILED_MOVING or "Can't do that while moving",
+}
+
+-- Refusals that say something about US, not about the target. These clear the
+-- SPELL's throttle and nothing else - blacklisting a unit because we were out of
+-- mana would stop us healing somebody who is perfectly reachable.
+--
+-- Mana matters here because a throttle stamped on a cast that never left is the
+-- worst of both worlds: Hunter's Mark carries a 110 second one, so a single
+-- unaffordable attempt used to leave the target unmarked for most of two minutes
+-- - and the sting, gated on the mark, never went out either.
+local CAST_REFUSED_SELF = {
+    ERR_NOT_ENOUGH_MANA or "Not enough mana",
+    SPELL_FAILED_NO_POWER or "Not enough mana",
+    ERR_OUT_OF_RAGE or "Not enough rage",
+    ERR_OUT_OF_ENERGY or "Not enough energy",
 }
 
 -- Spells the client has just refused, by name, with the time it said so.
@@ -1470,11 +1487,16 @@ end
 
 function Aegis_SBR:OnCastError(msg)
     if not msg then return end
-    local refused = false
+    local unitRefused, selfRefused = false, false
     for i = 1, table.getn(CAST_REFUSED) do
-        if msg == CAST_REFUSED[i] then refused = true; break end
+        if msg == CAST_REFUSED[i] then unitRefused = true; break end
     end
-    if not refused then return end
+    if not unitRefused then
+        for i = 1, table.getn(CAST_REFUSED_SELF) do
+            if msg == CAST_REFUSED_SELF[i] then selfRefused = true; break end
+        end
+    end
+    if not (unitRefused or selfRefused) then return end
     local now = GetTime()
 
     -- The spell, for the throttles that must not treat a thrown-away cast as a
@@ -1484,8 +1506,9 @@ function Aegis_SBR:OnCastError(msg)
         self.lastSpell = nil
     end
 
-    -- The unit, for the heal target selection.
-    if self.lastUnitCast and (now - (self.lastUnitCastAt or 0)) <= BLAME_WINDOW then
+    -- The unit, for the heal target selection. Only for refusals that are ABOUT
+    -- the unit.
+    if unitRefused and self.lastUnitCast and (now - (self.lastUnitCastAt or 0)) <= BLAME_WINDOW then
         self.castBlocked[self.lastUnitCast] = now
         -- Spent: one refusal marks one unit, so the next error cannot be blamed
         -- on the same cast.
