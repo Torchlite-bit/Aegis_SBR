@@ -76,6 +76,12 @@ others, and with crits removed the ordering reverses. **13–19 casts per settin
 this**; roughly 100 would, or a log field recording what each cast would have healed without the
 crit. Do not change the default on the strength of the numbers currently in hand.
 
+**The dev folder is on `local/integration` and stays there (since 2026-09-01).** Never
+`git checkout` in it — that is what silently reverts files belonging to other branches, and the
+live folder is fed only from this copy. To build a PR, use a throwaway worktree off
+`origin/main`; to add to an open PR, a worktree on its existing branch. Both recipes are in
+`docs/dev-workflow.md`, which is worth reading before the first commit of a session.
+
 **Standing check, not a snapshot:** merged branches keep accumulating on the remote because
 deletion needs the user (it is refused from this sandbox). Run
 
