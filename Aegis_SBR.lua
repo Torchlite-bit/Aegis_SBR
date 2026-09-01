@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.7",
+    ver = "1.2.8",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1250,11 +1250,20 @@ function Aegis_SBR:CountEnemiesNear(yards)
     if c and c.yards == yards and (now - c.t) < ENEMY_CACHE_TTL then return c.n end
 
     local seen, n = {}, 0
+    -- Deduplicated by GUID, never by unit token. The two sources below name the
+    -- same mob differently: the nameplate scan hands over a GUID, and "target"
+    -- is a token for a mob that also HAS a nameplate. Keyed by token, your own
+    -- target was therefore counted twice - reported from play as "set it to 2
+    -- and it fires on one mob, set it to 4 and it fires on three", an off-by-one
+    -- that appears the moment you have a target, which in combat is always.
     local function consider(unit)
-        if not unit or seen[unit] then return end
+        if not unit then return end
         if not UnitExists(unit) or not UnitCanAttack("player", unit) then return end
         if UnitIsDeadOrGhost(unit) then return end
-        seen[unit] = true
+        local _, guid = UnitExists(unit)
+        local key = guid or unit
+        if seen[key] then return end
+        seen[key] = true
         local d = self:DistanceTo(unit)
         if d and d <= yards then n = n + 1 end
     end

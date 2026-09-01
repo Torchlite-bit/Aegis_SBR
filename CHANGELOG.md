@@ -4,6 +4,49 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.8 — The enemy count was one too many
+
+### 🐛 Fixed — Consecration fired one enemy early
+
+Reported within hours of the feature landing, and precisely: *"at >=3 it does not do it at only
+1 mob, which means it functions correctly. However when put at >=2 in the slider it does do it
+at only 1. I put it at 4 and it does it at 3."*
+
+The count deduplicated by **unit token** instead of by GUID. The two sources name the same mob
+differently — the nameplate scan hands over a GUID, and `"target"` is a token for a mob that
+also has a nameplate — so your own target was counted twice. Hence exactly one too many, and
+only once you have a target, which in combat is always.
+
+Deduplicated by GUID now. The slider means what it says.
+
+The label also read **"Only with enemies nearby"** next to a number, which the same report
+flagged as ambiguous ("maybe it's an error on my part — it says only with enemies nearby, and
+then the number"). It is now **"Only with this many enemies"**.
+
+### 📚 Docs resynced to v1.2.8
+
+`CLAUDE.md`, `docs/architecture.md`, `docs/dependencies.md`, `docs/sources.md` and
+`docs/roadmap.md` were current to v1.2.5 while the code had moved three releases past them.
+
+Two conventions were promoted out of scattered comments into `CLAUDE.md` and `architecture.md`,
+because both have been rediscovered the hard way more than once:
+
+- **A detection that cannot answer must never close a gate.** Range, movement, facing, weapon,
+  caster and enemy count all carry a third "cannot tell" value, and every caller reads it as
+  permission. The symptom when this is broken is always the same: an ability silently stops and
+  nothing says why.
+- **A capability is established, not assumed.** Where a source may never answer on a given
+  client, latch the first real answer and run a fallback until then. The warlock throttle is the
+  cautionary tale — stamped only on a confirmation that, on the reporter's client, never came.
+
+`docs/dependencies.md` gains a **UnitXP_SP3** section, since the addon now calls it directly for
+distance-to-any-unit and for facing, and records how SuperCleveRoidMacros counts enemies.
+`docs/sources.md` records **IWinEnhanced** as a source that was read rather than guessed at.
+`docs/roadmap.md` gets a "landed since this file was last touched" section, because several of
+these were on no list at all.
+
+---
+
 ## v1.2.7 — Three things the client already knew
 
 All three came out of reading IWinEnhanced, which answers questions this addon had been
