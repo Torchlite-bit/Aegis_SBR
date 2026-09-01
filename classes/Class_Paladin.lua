@@ -1477,7 +1477,36 @@ function M:SmallestHeal()
     return (e.base + coeff * hp * (e.pf or 1)) * self:HealTalentMod()
 end
 
+-- Answered once per press.
+--
+-- Six call sites reach this, several of them in the same press, and each answer
+-- walks the whole group reading health, incoming heals, reachability and the
+-- priority handicaps. Repeating that for an answer that cannot have changed
+-- between two steps of one press is pure cost, and in a forty-man raid it is the
+-- shape of cost this addon has been bitten by before.
+--
+-- Keyed by the arguments that change the answer: the threshold, and whether a
+-- profile was passed at all (without one there are no handicaps, no pets and no
+-- self threshold, so it is a genuinely different question). The token is bumped
+-- where the rotation is invoked, so a stale answer cannot survive a press.
 function M:WorstHurt(ratio, cfg)
+    local tok = Aegis_SBR.pressToken
+    local key = tostring(ratio) .. (cfg and "|c" or "|-")
+    if tok and self.whToken == tok then
+        local hit = self.whCache and self.whCache[key]
+        if hit then return hit[1], hit[2], hit[3] end
+    else
+        self.whToken, self.whCache = tok, {}
+    end
+    local u, def, pct = self:WorstHurtNow(ratio, cfg)
+    if tok then
+        if not self.whCache then self.whCache = {} end
+        self.whCache[key] = { u, def, pct }
+    end
+    return u, def, pct
+end
+
+function M:WorstHurtNow(ratio, cfg)
     local pets = cfg and (cfg.petPriority or 1) > 0
     local units = self:GroupUnits(pets, cfg)
     if cfg and (cfg.healAggro or cfg.healPrecast) then self:SampleDanger(units) end

@@ -112,7 +112,7 @@ function M:BuildBody(ui, parent)
     self.spellCB.consecration = L:Row{ key = "consecration", label = "Consecration", spell = "Consecration", onToggle = sset("consecration") }
     self.consecManaRow = L:Row{ key = "consecInMana", label = "Consecration also in mana recovery", onToggle = set("consecInMana") }
     self.consecStillRow = L:Row{ key = "consecStill", label = "Only while standing still", onToggle = set("consecStill") }
-    self.consecCountRow = L:Row{ label = "Only with enemies nearby",
+    self.consecCountRow = L:Row{ label = "Only with this many enemies",
         slider = { key = "consecMinTargets", min = 0, max = 5, step = 1, suffix = "", onChange = set("consecMinTargets") } }
     self.spellCB.exorcism = L:Row{ key = "exorcism", label = "Exorcism", spell = "Exorcism", onToggle = sset("exorcism") }
     self.twistRow = L:Row{ key = "sealTwist", label = "Seal twisting", onToggle = set("sealTwist") }
@@ -287,13 +287,13 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.spellCB.holyShield.cb,     "Holy Shield",     "Cast right after the strike, before seals.", "Fires whenever its own cooldown is ready.")
     ui:Tip(self.spellCB.hammerOfWrath.cb,  "Hammer of Wrath", "Execute, used only at or below 20 percent target HP.")
     ui:Tip(self.spellCB.repentance.cb,     "Repentance",      "Cast on cooldown as a damage proc on Turtle.")
-    ui:Tip(self.spellCB.consecration.cb,   "Consecration (AoE)", "AoE filler, cast on cooldown. Manual toggle (also /sbr aoe), since 1.12 cannot count nearby enemies.", "Held during mana recovery unless the option below is on.")
+    ui:Tip(self.spellCB.consecration.cb,   "Consecration (AoE)", "AoE filler, cast on cooldown while this is on (also /sbr aoe).", "Held during mana recovery unless the option below is on. The two rows under it can restrict it further: a minimum enemy count, and standing still.")
     -- One setting, two rows (Spells on the melee tabs, Damage fillers on the
     -- healer tab), so the text is written once.
     local csTip1 = "Holds Consecration until you have been standing still for a couple of seconds."
     local csTip2 = "When you are moving the mobs usually are too, so the patch lands on ground everybody is about to leave: the mana is spent and the damage is not dealt. It waits for a short DWELL rather than the instant you stop, because stopping is not the same as staying - a step to reposition is a fraction of a second of standing still. Turn it off to have it on cooldown regardless; a tank who repositions constantly may prefer that, since a held Consecration is threat not made. Without SuperWoW movement cannot be measured and this never blocks anything."
     ui:Tip(self.consecStillRow.cb, "Only while standing still", csTip1, csTip2)
-    ui:Tip(self.consecCountRow.slider, "Only with enemies nearby", "How many enemies must be standing in the patch before it is worth casting. Off at 0, which casts on cooldown as before.",
+    ui:Tip(self.consecCountRow.slider, "Only with this many enemies", "How many enemies must be standing in the patch before it is worth casting. Off at 0, which casts on cooldown as before.",
         "1.12 has no API for this, so the count comes from the NAMEPLATES the client is drawing - SuperWoW turns each one into a unit that can be asked its distance. With nameplates switched off there is nothing to enumerate, and rather than read that as zero and silently stop casting, the count is treated as unknown and Consecration goes out. Enemies you cannot see are not counted; this is not a radar.")
     ui:Tip(self.consecStillHealRow.cb, "Only while standing still", csTip1, csTip2)
     ui:Tip(self.consecManaRow.cb, "Consecration also in mana recovery", "Keeps casting Consecration even while mana recovery is running, instead of holding it until mana is back up.", "Mana recovery LATCHES - on below 'Switch below', off only at 'Back above' - so with a wide band it can stay on all fight and keep Consecration suppressed. If yours never fires, this is why.")

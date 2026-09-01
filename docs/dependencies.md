@@ -200,6 +200,25 @@ building. **Full analysis + the in-game verification block: `docs/research-class
 
 ---
 
+## 2c. UnitXP_SP3  (konaka/UnitXP_SP3) — two calls Aegis uses directly
+
+Long referenced here only in passing, but as of v1.2.6/v1.2.7 the addon calls it itself, so it
+gets its own entry.
+
+- **`UnitXP("distanceBetween", "player", unit)`** — yards to any unit. It is the only source
+  that resolves **NPCs**: SuperWoW's `UnitPosition` was measured (2026-08-18, 40-minute capture)
+  to return positions for **players only**, every NPC coming back nil. It is hitbox-adjusted, so
+  it reads systematically *smaller* against a large mob than ClassicAPI's centre-to-centre
+  `UnitDistanceSquared` — the range window keeps a metric tag for exactly this reason and must
+  never mix the two silently. Used by `Aegis_SBR:DistanceTo(unit)` behind the enemy count.
+- **`UnitXP("behind", "player", "target")`** — the **only** facing source on this client;
+  vanilla has no facing API of any kind. Used by `Aegis_SBR:BehindTarget()` to stop *Backstab*
+  being chosen from the front.
+
+Both are wrapped in `pcall` and both answer `nil` when UnitXP is absent, which every caller
+treats as "go ahead" rather than "no". The features degrade to nothing without it; nothing
+breaks.
+
 ## 3. SuperCleveRoidMacros  (brues-code/SuperCleveRoidMacros)
 
 > **FORK NOTE (2026-08-07, user-confirmed):** the user runs **`brues-code/SuperCleveRoidMacros`**,
@@ -210,6 +229,19 @@ building. **Full analysis + the in-game verification block: `docs/research-class
 > it. Confirmed there so far: `/startattack` and `/stopattack` exist as conditional-capable
 > slash commands (<https://github.com/brues-code/SuperCleveRoidMacros/wiki/Slash-Commands>);
 > the wiki does not say whether they toggle or are start-only.
+
+**Counting nearby enemies (adopted v1.2.6).** SCRM's `CleveRoids.CountEnemiesMatching(fn)` is
+where this was read from, and the load-bearing part is layer 3 of its scan: **a visible nameplate
+is a frame under `WorldFrame`, and with SuperWoW `frame:GetName(1)` returns that unit's GUID** —
+which SuperWoW then accepts as a unit token, so `UnitExists`/`UnitCanAttack`/distance all work on
+it. That is the whole trick, and 1.12 has no other way to see a mob you have not targeted. SCRM
+adds three more layers (target and `*target` tokens, and a remembered-GUID cache for stealthed
+units that left nameplate range) which Aegis does not copy.
+
+Two consequences to keep in mind: it counts what the client is **drawing**, so nameplates
+switched off means nothing to enumerate; and building the child table on every press is
+expensive in a raid (Aegis caches ~0.3s). Aegis does **not** depend on SCRM for this — it does
+the nameplate walk itself, and returns `nil` rather than `0` when nothing resolves.
 
 **Auto-attack interaction with Aegis (found from a play report, fixed v1.2.2):** SCRM drives
 the swing via `/startattack`, so someone running it often never puts **Attack** on an action

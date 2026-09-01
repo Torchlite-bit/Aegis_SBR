@@ -250,6 +250,34 @@ presence on a test character (Shaman imbue on/off, Rogue poison on/off).
 
 ---
 
+## Landed since this file was last touched (v1.2.2 → v1.2.7)
+
+Recorded here because several were **not on any list** — they came out of play reports and one
+comparison against another addon, and the roadmap silently drifting behind the code is how a
+plan stops being read.
+
+- **Error handling, at all** (v1.2.3). The addon had none. `UI_ERROR_MESSAGE` is now read for
+  the client's own refusal strings, which is the only source for line of sight and the only one
+  for out-of-range after `IsSpellInRange` answered "cannot judge".
+- **Movement** (v1.2.5) — `Moving()` / `StillFor()`; channels and cast-time DoTs are no longer
+  attempted while running, and Consecration waits out a dwell.
+- **Debuff ownership** (v1.2.6) — the second warlock on a mob used to apply nothing at all.
+- **Enemy counting** (v1.2.6) — from the nameplates the client draws. This closes the standing
+  assumption in several comments that "1.12 cannot count nearby enemies": true of the vanilla
+  API, false of the environment the addon actually runs in.
+- **Weapon and facing requirements** (v1.2.7) — *Shield Slam* without a shield, *Backstab* from
+  the front.
+- **Per-press memoisation** (v1.2.7) — the paladin measured the group up to six times a press.
+
+Two backlog items below are now **partly done** and should be read as such:
+
+- *Rotation profiling / cast-log* — the press log (`/sbr log`), the trace, and the perf sampler
+  cover most of it. What is missing is the "which condition passed" half, which the `STALL` and
+  `exo=` / `near=` / `hold=` trace fields have started on ad hoc, one class at a time.
+- *Self-test warning about missing dependencies* — `/sbr capi` and `/sbr gobbo` report their own
+  capability, and the three-state detections make absence survivable rather than fatal. A single
+  consolidated "what is missing and what you lose" command still does not exist.
+
 ## Polish backlog ("make it perfect" — pull into phases as it fits)
 - Cooldown-ready indicators on the UI (glow/desaturate what the engine is waiting on).
 - Rotation profiling / cast-log + APM display (records what was cast and WHICH condition

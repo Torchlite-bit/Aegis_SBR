@@ -4,6 +4,126 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.8 — The enemy count was one too many
+
+### 🐛 Fixed — Consecration fired one enemy early
+
+Reported within hours of the feature landing, and precisely: *"at >=3 it does not do it at only
+1 mob, which means it functions correctly. However when put at >=2 in the slider it does do it
+at only 1. I put it at 4 and it does it at 3."*
+
+The count deduplicated by **unit token** instead of by GUID. The two sources name the same mob
+differently — the nameplate scan hands over a GUID, and `"target"` is a token for a mob that
+also has a nameplate — so your own target was counted twice. Hence exactly one too many, and
+only once you have a target, which in combat is always.
+
+Deduplicated by GUID now. The slider means what it says.
+
+The label also read **"Only with enemies nearby"** next to a number, which the same report
+flagged as ambiguous ("maybe it's an error on my part — it says only with enemies nearby, and
+then the number"). It is now **"Only with this many enemies"**.
+
+### 🐛 Fixed — two tooltips still said enemies could not be counted
+
+*"Manual toggle, since 1.12 cannot count nearby enemies"* — on the Paladin's Consecration row,
+directly above the slider that now counts them, and on the Druid's Swipe. True of the vanilla
+API and false of the environment the addon runs in. The paladin's now points at the two rows
+that restrict it; the druid's says plainly that counting exists and is simply not wired there,
+so the toggle stays the player's call.
+
+The README also still named the slider **"Only with enemies nearby"** after it was renamed —
+a label a player would go looking for and not find.
+
+### 📚 Docs resynced to v1.2.8
+
+`CLAUDE.md`, `docs/architecture.md`, `docs/dependencies.md`, `docs/sources.md` and
+`docs/roadmap.md` were current to v1.2.5 while the code had moved three releases past them.
+
+Two conventions were promoted out of scattered comments into `CLAUDE.md` and `architecture.md`,
+because both have been rediscovered the hard way more than once:
+
+- **A detection that cannot answer must never close a gate.** Range, movement, facing, weapon,
+  caster and enemy count all carry a third "cannot tell" value, and every caller reads it as
+  permission. The symptom when this is broken is always the same: an ability silently stops and
+  nothing says why.
+- **A capability is established, not assumed.** Where a source may never answer on a given
+  client, latch the first real answer and run a fallback until then. The warlock throttle is the
+  cautionary tale — stamped only on a confirmation that, on the reporter's client, never came.
+
+`docs/dependencies.md` gains a **UnitXP_SP3** section, since the addon now calls it directly for
+distance-to-any-unit and for facing, and records how SuperCleveRoidMacros counts enemies.
+`docs/sources.md` records **IWinEnhanced** as a source that was read rather than guessed at.
+`docs/roadmap.md` gets a "landed since this file was last touched" section, because several of
+these were on no list at all. `Aegis_SBR_BuffUp.lua` was missing from architecture.md's file
+layout — the very list that was completed a week ago.
+
+**`docs/dev-workflow.md` now says, at the top, that it does not describe the workflow in use.**
+It requires the dev folder to sit permanently on a `local/integration` branch; that branch does
+not exist, and every release has switched branches instead. This has been safe only because one
+feature has been in flight at a time, which is not the case the rule exists for. Flagged rather
+than quietly rewritten: a rule nobody follows is worse than no rule, because it is read as a
+description of reality.
+
+---
+
+## v1.2.7 — Three things the client already knew
+
+All three came out of reading IWinEnhanced, which answers questions this addon had been
+guessing at or asking too often.
+
+### 🐛 Fixed — abilities cast without the weapon they require
+
+*Shield Slam*, *Shield Block* and *Shield Bash* need a shield; *Backstab* and *Ambush* need a
+dagger. Nothing checked. `Class_Warrior.lua` has carried the note *"(Shield Slam needs a
+shield)"* next to a step that did not test for one since the file was written — so a fury
+warrior who switched the option on spent every press on a refusal, silently.
+
+`HasShield()` and `HasDagger()` are **three-state**, and the third state is the point. A freshly
+logged-in client has not cached the item and `GetItemInfo` returns nothing; the subtype string is
+also **localised**, so a non-English client will not match "Daggers" whatever is in the hand.
+Either way the answer is *"cannot tell"*, and every caller reads that as **go ahead**. Blocking
+an ability because we failed to identify a weapon would be a worse bug than the one being fixed,
+and an invisible one.
+
+The shield test leans on `itemEquipLoc == "INVTYPE_SHIELD"` — a constant rather than a translated
+word, so it holds in every locale. There is no equivalent for daggers, `equipLoc` saying only
+"one hand", so that one is honest about being an English-client improvement and a no-op
+elsewhere.
+
+The warrior's check sits inside `Try`, so every step that goes through it is covered and a new
+one cannot forget. *Shield Block* runs off the global cooldown and never reaches `Try`, so it
+carries its own.
+
+### 🐛 Fixed — Backstab cast from the front
+
+Vanilla has no facing API at all, but **UnitXP_SP3 does**, and it is already a required
+dependency for the range window. *Backstab* is refused outright from anywhere but behind, and
+nothing checked: pick it as your builder and stand in front, and every press was a refusal. The
+word "behind" appeared in this addon only in comments.
+
+Chosen as the builder without the position or the dagger, it now falls back to *Sinister Strike*
+rather than standing still. Only a **definite** no falls back — no UnitXP, or an item the client
+has not cached, answers "cannot tell" and *Backstab* is used exactly as before.
+
+### ⚡ The group is measured once per press, not six times
+
+Six call sites in the paladin reach `WorstHurt`, several of them in the same press, and every
+answer walks the whole group reading health, incoming heals, reachability and the priority
+handicaps. Repeating that for an answer that cannot have changed between two steps of one press
+is pure cost — and in a forty-man raid it is the same expensive loop several times over, which is
+the shape of cost this addon has been bitten by before.
+
+The idea is taken directly from IWinEnhanced, which clears a per-press table at the top of every
+rotation and memoises every condition into it. Here it is one token, bumped where the rotation is
+invoked rather than where a cast happens — what has to be identified is the **press**, not the
+outcome — and `WorstHurt` is keyed by the two things that change its answer: the threshold, and
+whether a profile was passed at all (without one there are no handicaps, no pets and no self
+threshold, so it is a genuinely different question).
+
+Priest, Druid and Shaman call it once per press already and are untouched.
+
+---
+
 ## v1.2.6 — Whose debuff is that, and how many of them are standing there
 
 ### 🐛 Fixed — a second warlock applied nothing at all
