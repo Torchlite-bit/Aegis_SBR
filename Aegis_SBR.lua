@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.7",
+    ver = "1.2.8",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1087,6 +1087,283 @@ function Aegis_SBR:StillFor(seconds)
     return (GetTime() - s.since) >= (seconds or 0)
 end
 
+-- ============================================================
+-- Are we behind the target?
+--
+-- Vanilla cannot answer this at all - there is no facing in the 1.12 API - but
+-- UnitXP_SP3 can, and it is already a Required dependency for the range window.
+-- Backstab and Ambush are refused outright from the front, so a rogue who picks
+-- Backstab as their builder and stands anywhere else spends every press on a
+-- refusal. Nothing here checked it; "behind" appeared only in comments.
+--
+-- Three-state on purpose, and nil is the common case: without UnitXP there is no
+-- answer, and a step that needs one must then go ahead rather than lock itself
+-- out. The same rule as the range checks - a source that cannot answer never
+-- closes a gate.
+-- ============================================================
+function Aegis_SBR:BehindTarget()
+    if not UnitXP or not UnitExists("target") then return nil end
+    local ok, r = pcall(UnitXP, "behind", "player", "target")
+    if not ok or r == nil then return nil end
+    return r and true or false
+end
+
+-- Only an explicit false forbids.
+function Aegis_SBR:PositionAllows(need)
+    if need ~= "behind" then return true end
+    return self:BehindTarget() ~= false
+end
+
+-- ============================================================
+-- What is actually equipped
+--
+-- Several abilities are refused by the client on the weapon alone: Shield Slam,
+-- Shield Block and Shield Bash need a shield, Backstab and Ambush need a dagger.
+-- Nothing here checked that, and Class_Warrior.lua even carries the note
+-- "(Shield Slam needs a shield)" next to a step that did not test for one - so a
+-- fury warrior who switched the option on spent every press on a refusal.
+--
+-- Both answers are three-state, and the third state is the important one. A
+-- freshly logged-in client has not cached the item yet and GetItemInfo returns
+-- nothing; the subtype string is also LOCALISED, so a non-English client will
+-- not match "Daggers" no matter what is in the hand. Either way the answer is
+-- "cannot tell" - nil - and every caller must read that as "go ahead". Blocking
+-- an ability because we failed to identify a weapon would be a worse bug than
+-- the one being fixed, and it would be invisible.
+--
+-- The shield check leans on itemEquipLoc first, which is a constant rather than
+-- a translated word and therefore holds everywhere. There is no equivalent for
+-- daggers - equipLoc says only "one hand" - so that one is honest about being
+-- an English-client improvement and a no-op elsewhere.
+-- ============================================================
+local SLOT_OFFHAND, SLOT_MAINHAND = 17, 16
+local DAGGER_SUBTYPE = { ["Daggers"] = true, ["Dagger"] = true }
+
+-- Cleared whenever gear changes; rebuilt lazily.
+function Aegis_SBR:ClearEquipCache()
+    self.equipCache = nil
+end
+
+local function itemAt(slot)
+    if not GetInventoryItemLink or not GetItemInfo then return nil end
+    local link = GetInventoryItemLink("player", slot)
+    if not link then return "empty" end
+    local _, _, id = string.find(link, "item:(%d+)")
+    if not id then return nil end
+    local _, _, _, _, _, subType, _, equipLoc = GetItemInfo(tonumber(id))
+    if not subType and not equipLoc then return nil end
+    return { subType = subType, equipLoc = equipLoc }
+end
+
+local function cached(self, slot)
+    if not self.equipCache then self.equipCache = {} end
+    local hit = self.equipCache[slot]
+    if hit ~= nil then return hit end
+    local v = itemAt(slot)
+    -- Only a definite answer is cached. A tooltip that has not populated yet
+    -- must not freeze "unknown" in place for the session.
+    if v ~= nil then self.equipCache[slot] = v end
+    return v
+end
+
+-- true / false / nil (cannot tell).
+function Aegis_SBR:HasShield()
+    local v = cached(self, SLOT_OFFHAND)
+    if v == nil then return nil end
+    if v == "empty" then return false end
+    if v.equipLoc == "INVTYPE_SHIELD" then return true end
+    if v.equipLoc then return false end          -- something else is in the hand
+    return nil
+end
+
+-- true / false / nil (cannot tell). See the note above: false is only ever
+-- returned when the subtype was read AND recognised as a weapon that is not a
+-- dagger, so a locale this does not know answers nil and blocks nothing.
+function Aegis_SBR:HasDagger()
+    local v = cached(self, SLOT_MAINHAND)
+    if v == nil then return nil end
+    if v == "empty" then return false end
+    if not v.subType then return nil end
+    if DAGGER_SUBTYPE[v.subType] then return true end
+    -- Recognised as a weapon class, and not a dagger.
+    if string.find(v.subType, "s$") or string.find(v.subType, "Weapon") then return false end
+    return nil
+end
+
+-- Convenience for a rotation step: does the weapon requirement forbid this?
+-- Only an explicit false forbids; nil never does.
+function Aegis_SBR:WeaponAllows(need)
+    local have
+    if need == "shield" then have = self:HasShield()
+    elseif need == "dagger" then have = self:HasDagger()
+    else return true end
+    return have ~= false
+end
+
+-- ============================================================
+-- Counting nearby enemies
+--
+-- 1.12 has no API for "how many mobs are near me", which is why every AoE
+-- toggle in this addon is manual. It is still answerable, just not from the
+-- vanilla API: a VISIBLE NAMEPLATE is a frame under WorldFrame, and SuperWoW
+-- puts that unit's GUID in the frame's first name string - and a GUID is a unit
+-- token to SuperWoW. So the nameplates you can see enumerate the mobs you can
+-- see, and each one can then be asked its distance like any other unit.
+--
+-- That is how IWinEnhanced does it (through SuperCleveRoidMacros), and it is
+-- worth being plain about the consequence: this counts what the CLIENT is
+-- drawing. Nameplates switched off means nothing to enumerate. It is not a
+-- hidden mob radar and cannot be.
+--
+-- Which is why the answer distinguishes "none" from "cannot tell", and returns
+-- NIL for the latter. Everything gated on this must fail open - a count that
+-- cannot be taken must never be read as zero and silently switch an ability off.
+-- The capability is latched the first time a nameplate actually resolves, the
+-- same way sting / debuff / cast-event detection is established elsewhere.
+-- ============================================================
+local ENEMY_CACHE_TTL = 0.3
+
+-- Distance to any unit, not just the target. Same source order and the same
+-- reasoning as the range window's own measurement.
+function Aegis_SBR:DistanceTo(unit)
+    if not unit or not UnitExists(unit) then return nil end
+    if UnitDistanceSquared then
+        local ok, d = pcall(UnitDistanceSquared, unit)
+        if ok and type(d) == "number" and d >= 0 then return math.sqrt(d) end
+    end
+    if UnitXP then
+        local ok, d = pcall(UnitXP, "distanceBetween", "player", unit)
+        if ok and type(d) == "number" and d >= 0 then return d end
+    end
+    return nil
+end
+
+-- Enemies within `yards`, or nil when the count cannot be taken.
+--
+-- Cached for a fraction of a second: walking every WorldFrame child builds a
+-- table each time, and doing that on every press in a raid is exactly the shape
+-- of the cost this addon has been bitten by before.
+function Aegis_SBR:CountEnemiesNear(yards)
+    if not yards or yards <= 0 then return nil end
+    local now = GetTime()
+    local c = self.enemyCount
+    if c and c.yards == yards and (now - c.t) < ENEMY_CACHE_TTL then return c.n end
+
+    local seen, n = {}, 0
+    -- Deduplicated by GUID, never by unit token. The two sources below name the
+    -- same mob differently: the nameplate scan hands over a GUID, and "target"
+    -- is a token for a mob that also HAS a nameplate. Keyed by token, your own
+    -- target was therefore counted twice - reported from play as "set it to 2
+    -- and it fires on one mob, set it to 4 and it fires on three", an off-by-one
+    -- that appears the moment you have a target, which in combat is always.
+    local function consider(unit)
+        if not unit then return end
+        if not UnitExists(unit) or not UnitCanAttack("player", unit) then return end
+        if UnitIsDeadOrGhost(unit) then return end
+        local _, guid = UnitExists(unit)
+        local key = guid or unit
+        if seen[key] then return end
+        seen[key] = true
+        local d = self:DistanceTo(unit)
+        if d and d <= yards then n = n + 1 end
+    end
+
+    -- Nameplates: the only source that sees a mob you have not targeted.
+    if WorldFrame and WorldFrame.GetChildren then
+        local kids = { WorldFrame:GetChildren() }
+        for i = 1, table.getn(kids) do
+            local f = kids[i]
+            if f and f.IsVisible and f:IsVisible() and f.GetName then
+                local ok, guid = pcall(f.GetName, f, 1)
+                if ok and type(guid) == "string" and guid ~= "" and UnitExists(guid) then
+                    self.enemyScanSeen = true
+                    consider(guid)
+                end
+            end
+        end
+    end
+
+    -- Without a working nameplate scan there is no count, only a guess. Say so.
+    if not self.enemyScanSeen then return nil end
+
+    -- Cheap extras the scan can miss (a target behind you draws no nameplate).
+    consider("target")
+    consider("targettarget")
+    consider("pettarget")
+
+    self.enemyCount = { yards = yards, n = n, t = now }
+    return n
+end
+
+-- ============================================================
+-- Whose debuff is that?
+--
+-- Most damage-over-time effects do NOT stack between casters: two warlocks on
+-- one mob each get their own Corruption, two rogues each get their own Rupture,
+-- and the client shows both. Reading "Corruption is on the target" as "MY
+-- Corruption is on the target" means the second one to arrive applies nothing at
+-- all and spends the fight on filler, because somebody else's debuff answers for
+-- theirs. Reported from play on the warlock; it was true of every class that
+-- keeps a debuff up.
+--
+-- Two sources, in order of how much they actually know:
+--
+--   1. ClassicAPI records the caster. Where it answers true or false, that ends
+--      the question. nil is "cannot tell" - an aura applied before login has no
+--      caster on file - and falls through to:
+--
+--   2. Our own ledger of what we applied, per target and spell, checked against
+--      the effect's duration. This needs no API at all, which is the point: most
+--      clients running this have no caster information whatsoever.
+--
+-- Wrong in the cautious direction when the ledger is missing (after a reload,
+-- say): it answers "not mine", one extra application goes out, and the ledger is
+-- right from then on. The failure it replaces is the opposite and never self-
+-- corrects - applying nothing for as long as somebody else keeps theirs up.
+--
+-- NOT for debuffs that are shared rather than owned: Hunter's Mark, Sunder
+-- Armor, Demoralizing Shout, a paladin's judgement. There, anybody's copy is as
+-- good as ours and re-applying over it is pure waste. Each class names its own;
+-- this only answers the question it is asked.
+-- ============================================================
+Aegis_SBR.debuffLedger = {}
+
+-- `duration` is optional and is the effect's length AS APPLIED - the caster is
+-- the only one who knows it, and for several effects it is not a constant at
+-- all (a rogue's Rupture runs 6 to 16 seconds depending on the combo points
+-- spent). Stored as an expiry rather than a timestamp for exactly that reason.
+-- Omit it and the entry never expires, which reads as "ours" for as long as the
+-- debuff is visible: the right answer when nothing better is known, since the
+-- alternative is re-applying on a guess.
+function Aegis_SBR:NoteDebuffApplied(targetId, spell, duration)
+    if not targetId or not spell then return end
+    self.debuffLedger[targetId .. "|" .. spell] = {
+        expires = duration and (GetTime() + duration) or nil,
+    }
+end
+
+-- Cleared on leaving combat: a GUID belongs to one mob for one pull, and
+-- carrying the table around for a session would eventually answer for a
+-- different creature entirely.
+function Aegis_SBR:ClearDebuffLedger()
+    self.debuffLedger = {}
+end
+
+-- true when the debuff on this target is ours. The duration was supplied when it
+-- was applied, so nothing here has to guess how long it runs.
+function Aegis_SBR:DebuffMine(spell, targetId)
+    if not spell then return true end
+    if self.TargetDebuffMine then
+        local mine = self:TargetDebuffMine(spell)
+        if mine == true then return true end
+        if mine == false then return false end
+    end
+    local rec = targetId and self.debuffLedger[targetId .. "|" .. spell]
+    if not rec then return false end
+    if not rec.expires then return true end
+    return GetTime() < rec.expires
+end
+
 -- Every pet belonging to the given player units, appended in the same order.
 --
 -- Dispelling only. Pets carry poisons, diseases and curses like anybody else and
@@ -1938,6 +2215,20 @@ end
 --
 -- One line every five seconds, so a whole raid night is a few hundred lines.
 local PERF_REPORT = 5
+-- A token that changes once per press.
+--
+-- Several rotation questions are expensive and get asked more than once in the
+-- same press by different steps - the paladin asks "who is worst hurt" up to six
+-- times, and each answer walks the whole group reading health, range and
+-- handicaps. In a forty-man raid that is the same costly loop several times over
+-- for an answer that cannot have changed in between.
+--
+-- Bumped where the rotation is invoked rather than where a cast happens, because
+-- what has to be identified is the PRESS, not the outcome.
+function Aegis_SBR:NewPress()
+    self.pressToken = (self.pressToken or 0) + 1
+end
+
 function Aegis_SBR:PerfStart()
     if not self:ProbeEnabled() then return end
     if debugprofilestart then debugprofilestart() end
@@ -2030,6 +2321,7 @@ function Aegis_SBR:RunRotation()
         if supportRun then
             self:SnapshotBuffs()
             self:SnapshotTargetDebuffs()
+            self:NewPress()
             self:PerfStart()
             self.active:Rotate(cfg)
             self:PerfStop()
@@ -2062,6 +2354,7 @@ function Aegis_SBR:RunRotation()
     -- finisher spends them and the cast event arrives with the counter already
     -- at zero. No-op unless the probe log is enabled.
     if self.ProbeNoteCombo then self:ProbeNoteCombo() end
+    self:NewPress()
     self:PerfStart()
     self.active:Rotate(cfg)
     self:PerfStop()
@@ -2300,6 +2593,8 @@ ev:RegisterEvent("CHARACTER_POINTS_CHANGED")
 ev:RegisterEvent("CHAT_MSG_COMBAT_SELF_HITS")
 ev:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
 ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+-- Gear changed: the weapon a step depends on may have.
+ev:RegisterEvent("UNIT_INVENTORY_CHANGED")
 -- The client's own refusal messages: the only source for line of sight.
 ev:RegisterEvent("UI_ERROR_MESSAGE")
 -- SuperWoW fires UNIT_CASTEVENT on every registered cast: arg1 caster GUID,
@@ -2335,9 +2630,12 @@ ev:SetScript("OnEvent", function()
         Aegis_SBR.validCacheName = nil
     elseif event == "CHAT_MSG_COMBAT_SELF_HITS" or event == "CHAT_MSG_COMBAT_SELF_MISSES" then
         if Aegis_SBR.active then Aegis_SBR.active:OnSwingMessage(arg1) end
+    elseif event == "UNIT_INVENTORY_CHANGED" then
+        if arg1 == "player" or arg1 == nil then Aegis_SBR:ClearEquipCache() end
     elseif event == "UI_ERROR_MESSAGE" then
         Aegis_SBR:OnCastError(arg1)
     elseif event == "PLAYER_REGEN_ENABLED" then
+        Aegis_SBR:ClearDebuffLedger()
         if Aegis_SBR.active then Aegis_SBR.active.lastSwing = nil end
         -- Out of combat the kill curve is meaningless, and keeping it would let
         -- the last fight's rate answer the first press of the next one.

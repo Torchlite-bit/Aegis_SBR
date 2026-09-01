@@ -13,6 +13,18 @@
 Verified changes are copied dev → live without asking. The live folder is not a
 git repo; it is a plain mirror.
 
+## Status: in use since 2026-09-01
+
+For a long while it was not. `local/integration` did not exist, and every release went
+`git stash` → `checkout main` → `pull` → `checkout -b` → `stash pop` — the branch switching this
+file exists to prevent. It survived only because **one feature was in flight at a time**, where
+stash/pop happens to carry the whole working copy across. It still cost something adjacent:
+twice the live folder ended up missing already-merged work, because the dev copy is the only
+source live is fed from and a branch switch is exactly the moment it is not "everything current".
+
+The branch now exists and the dev folder sits on it. **If you find yourself typing `git checkout`
+in the dev folder, stop** — that is the thing this document is for.
+
 ## The rule that makes this safe
 
 **The dev folder stays on `local/integration` and never changes branch.**
@@ -34,15 +46,37 @@ Work and commit on `local/integration` as usual. To turn a commit into a clean
 PR branch off `main`, use a throwaway worktree instead of switching branch:
 
 ```bash
-git worktree add ../_wt-feature -b feature/<name> main
+git fetch origin
+git worktree add ../_wt-feature -b feature/<name> origin/main
 git -C ../_wt-feature cherry-pick <sha>          # or several
 git -C ../_wt-feature push -u origin feature/<name>
 gh pr create --base main --head feature/<name> --title "..." --body "..."
 git worktree remove ../_wt-feature
+git branch -D feature/<name>                     # the local ref the worktree left behind
 ```
 
-A worktree is a second checkout of the same repository in another directory. The
-dev folder keeps `local/integration` the whole time, so live stays valid.
+Branch off **`origin/main`**, not the local `main`: the local one is only as fresh as the last
+`fetch`, and a PR based on a stale main is how a merge picks up conflicts that were never real.
+
+A worktree is a second checkout of the same repository in another directory. The dev folder
+keeps `local/integration` the whole time, so live stays valid.
+
+## Adding a commit to a PR that is already open
+
+Same idea, checking out the existing remote branch instead of creating one:
+
+```bash
+git fetch origin
+git worktree add ../_wt-feature feature/<name>   # tracks origin/feature/<name>
+git -C ../_wt-feature cherry-pick <sha>
+git -C ../_wt-feature push
+git worktree remove ../_wt-feature
+```
+
+Do this rather than opening a second PR whenever the new work touches the same files or the same
+version number — two PRs that both edit `CHANGELOG.md` and the `.toc` will conflict, and both
+will want the same version. See "Never stack a PR on another PR's branch" below for the case
+where a second PR *is* right.
 
 ## A NEW file needs a client restart, not a reload
 

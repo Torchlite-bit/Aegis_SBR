@@ -4,57 +4,217 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
-## v1.2.7 — The mage can be diagnosed at all
+## v1.2.8 — The enemy count was one too many
 
-**Diagnostics only. No rotation logic, no gate, no ability changed.**
+### 🐛 Fixed — Consecration fired one enemy early
 
-Reported: an arcane mage with only *Arcane Missiles* trained, spamming the macro, sees a
-delay of about three seconds between one channel finishing and the next starting.
+Reported within hours of the feature landing, and precisely: *"at >=3 it does not do it at only
+1 mob, which means it functions correctly. However when put at >=2 in the slider it does do it
+at only 1. I put it at 4 and it does it at 3."*
 
-That report could not be answered, because **`Class_Mage.lua` had no tracing whatsoever** —
-it and the priest were the only two modules with zero `Trace` calls, so `/sbr log` and
-`/sbr trace` produced nothing at all for a mage. Worse, the one step that can hold the
-rotation for seconds — the channel guard protecting a running Arcane Missiles / Icicles /
-Blizzard / Evocation — sits as the **first statement** in `Rotate` and returned silently, so
-a held press emitted nothing and the entire stalled window was invisible in the log.
+The count deduplicated by **unit token** instead of by GUID. The two sources name the same mob
+differently — the nameplate scan hands over a GUID, and `"target"` is a token for a mob that
+also has a nameplate — so your own target was counted twice. Hence exactly one too many, and
+only once you have a target, which in combat is always.
 
-- **A per-press trace line**, carrying the state that matters for this class: `mode`
-  (plus `/aoe`), `mana`, `chan` (whether a channel is being tracked **and how long it has
-  been held**), `wanding`, `hasted`, and target `hp`.
-- **A `STALL channel <n>s` line on the blocking exit**, mirroring the one the warlock's
-  equivalent exit got in v1.2.5 — the same guard, in the same shape, which the warlock
-  already traces and the mage did not.
+Deduplicated by GUID now. The slider means what it says.
 
-**This does not fix the delay** — it makes the delay observable. `/sbr log on`, cast a few
-Arcane Missiles, `/reload`, and the log now says whether the channel guard was holding the
-rotation and for exactly how long, or whether the wait is somewhere else entirely.
+The label also read **"Only with enemies nearby"** next to a number, which the same report
+flagged as ambiguous ("maybe it's an error on my part — it says only with enemies nearby, and
+then the number"). It is now **"Only with this many enemies"**.
 
-Two things noticed while reading, recorded rather than changed:
+### 🐛 Fixed — two tooltips still said enemies could not be counted
 
-- The guard's ceiling is **16 seconds against channels of 3–5 seconds**. It is a
-  wedge-preventer, not a timing guard: if a `SPELLCAST_CHANNEL_STOP` is ever missed, the
-  rotation stands still for far longer than the channel it was protecting. The same 16s
-  constant is in the mage, priest and warlock.
-- `SPELLCAST_CHANNEL_START` carries the channel **duration**, and all three modules discard
-  it, keeping only the start time. Clearing on `start + duration` as well as on the stop
-  event would make a missed stop cost nothing. Not done here — shortening a guard is on the
-  *unblock* side, which is exactly what starved Auto Shot on the hunter (see CLAUDE.md's
-  lessons), so it wants the log first and a play-test after.
+*"Manual toggle, since 1.12 cannot count nearby enemies"* — on the Paladin's Consecration row,
+directly above the slider that now counts them, and on the Druid's Swipe. True of the vanilla
+API and false of the environment the addon runs in. The paladin's now points at the two rows
+that restrict it; the druid's says plainly that counting exists and is simply not wired there,
+so the toggle stays the player's call.
 
-*The priest has the identical untraced guard and no trace line either. Left alone to keep
-this diff to the reported class.*
+The README also still named the slider **"Only with enemies nearby"** after it was renamed —
+a label a player would go looking for and not find.
+
+### 📚 Docs resynced to v1.2.8
+
+`CLAUDE.md`, `docs/architecture.md`, `docs/dependencies.md`, `docs/sources.md` and
+`docs/roadmap.md` were current to v1.2.5 while the code had moved three releases past them.
+
+Two conventions were promoted out of scattered comments into `CLAUDE.md` and `architecture.md`,
+because both have been rediscovered the hard way more than once:
+
+- **A detection that cannot answer must never close a gate.** Range, movement, facing, weapon,
+  caster and enemy count all carry a third "cannot tell" value, and every caller reads it as
+  permission. The symptom when this is broken is always the same: an ability silently stops and
+  nothing says why.
+- **A capability is established, not assumed.** Where a source may never answer on a given
+  client, latch the first real answer and run a fallback until then. The warlock throttle is the
+  cautionary tale — stamped only on a confirmation that, on the reporter's client, never came.
+
+`docs/dependencies.md` gains a **UnitXP_SP3** section, since the addon now calls it directly for
+distance-to-any-unit and for facing, and records how SuperCleveRoidMacros counts enemies.
+`docs/sources.md` records **IWinEnhanced** as a source that was read rather than guessed at.
+`docs/roadmap.md` gets a "landed since this file was last touched" section, because several of
+these were on no list at all. `Aegis_SBR_BuffUp.lua` was missing from architecture.md's file
+layout — the very list that was completed a week ago.
+
+**`docs/dev-workflow.md` now says, at the top, that it does not describe the workflow in use.**
+It requires the dev folder to sit permanently on a `local/integration` branch; that branch does
+not exist, and every release has switched branches instead. This has been safe only because one
+feature has been in flight at a time, which is not the case the rule exists for. Flagged rather
+than quietly rewritten: a rule nobody follows is worse than no rule, because it is read as a
+description of reality.
 
 ---
 
-## v1.2.6 — Druid: Rake and Rip stop on bleed-immune targets
+## v1.2.7 — Three things the client already knew
 
-> *Renumbered from v1.2.5 (was a collision).* PR #58 (movement) and PR #59 (this one) were
-> both cut from v1.2.4 and both independently stamped **v1.2.5**, so the number was used
-> twice. Resolved the way the v1.1.0 repair did — by each commit's own evidence: the movement
-> commit is titled `v1.2.5:` and its PR merged first, so it keeps the number; this one bumped
-> the `.toc` only as a side effect of its base and moves up. `docs/dev-workflow.md` calls this
-> exact case: when two branches collide on `CHANGELOG.md` / `README.md` / the `.toc`, resolve
-> by ORDER — a release PR after the feature PRs land — not by merging both.
+All three came out of reading IWinEnhanced, which answers questions this addon had been
+guessing at or asking too often.
+
+### 🐛 Fixed — abilities cast without the weapon they require
+
+*Shield Slam*, *Shield Block* and *Shield Bash* need a shield; *Backstab* and *Ambush* need a
+dagger. Nothing checked. `Class_Warrior.lua` has carried the note *"(Shield Slam needs a
+shield)"* next to a step that did not test for one since the file was written — so a fury
+warrior who switched the option on spent every press on a refusal, silently.
+
+`HasShield()` and `HasDagger()` are **three-state**, and the third state is the point. A freshly
+logged-in client has not cached the item and `GetItemInfo` returns nothing; the subtype string is
+also **localised**, so a non-English client will not match "Daggers" whatever is in the hand.
+Either way the answer is *"cannot tell"*, and every caller reads that as **go ahead**. Blocking
+an ability because we failed to identify a weapon would be a worse bug than the one being fixed,
+and an invisible one.
+
+The shield test leans on `itemEquipLoc == "INVTYPE_SHIELD"` — a constant rather than a translated
+word, so it holds in every locale. There is no equivalent for daggers, `equipLoc` saying only
+"one hand", so that one is honest about being an English-client improvement and a no-op
+elsewhere.
+
+The warrior's check sits inside `Try`, so every step that goes through it is covered and a new
+one cannot forget. *Shield Block* runs off the global cooldown and never reaches `Try`, so it
+carries its own.
+
+### 🐛 Fixed — Backstab cast from the front
+
+Vanilla has no facing API at all, but **UnitXP_SP3 does**, and it is already a required
+dependency for the range window. *Backstab* is refused outright from anywhere but behind, and
+nothing checked: pick it as your builder and stand in front, and every press was a refusal. The
+word "behind" appeared in this addon only in comments.
+
+Chosen as the builder without the position or the dagger, it now falls back to *Sinister Strike*
+rather than standing still. Only a **definite** no falls back — no UnitXP, or an item the client
+has not cached, answers "cannot tell" and *Backstab* is used exactly as before.
+
+### ⚡ The group is measured once per press, not six times
+
+Six call sites in the paladin reach `WorstHurt`, several of them in the same press, and every
+answer walks the whole group reading health, incoming heals, reachability and the priority
+handicaps. Repeating that for an answer that cannot have changed between two steps of one press
+is pure cost — and in a forty-man raid it is the same expensive loop several times over, which is
+the shape of cost this addon has been bitten by before.
+
+The idea is taken directly from IWinEnhanced, which clears a per-press table at the top of every
+rotation and memoises every condition into it. Here it is one token, bumped where the rotation is
+invoked rather than where a cast happens — what has to be identified is the **press**, not the
+outcome — and `WorstHurt` is keyed by the two things that change its answer: the threshold, and
+whether a profile was passed at all (without one there are no handicaps, no pets and no self
+threshold, so it is a genuinely different question).
+
+Priest, Druid and Shaman call it once per press already and are untouched.
+
+---
+
+## v1.2.6 — Whose debuff is that, and how many of them are standing there
+
+### 🐛 Fixed — a second warlock applied nothing at all
+
+Reported from play, and true of every class here that keeps a debuff up.
+
+Most damage-over-time effects do **not** stack between casters: two warlocks on one mob each get
+their own *Corruption*, two rogues each get their own *Rupture*, and the client shows both.
+Reading *"Corruption is on the target"* as *"MY Corruption is on the target"* means the second
+one to arrive applies nothing for as long as the first keeps theirs up, and spends the fight on
+filler.
+
+Ownership now lives in the core, because seven classes were about to grow seven copies of it.
+Two sources, in order of how much they actually know:
+
+1. **ClassicAPI records the caster.** Where it answers true or false, that ends the question.
+   `nil` is "cannot tell" — an aura applied before login has no caster on file — and falls
+   through to:
+2. **Our own ledger** of what we applied, per target and spell. This needs no API at all, which
+   is the point: most clients running this have no caster information whatsoever.
+
+The ledger stores an **expiry, not a timestamp**, and the duration is supplied by the caster at
+the moment of application. That is not tidiness — a rogue's *Rupture* runs 8 to 16 seconds
+depending on the combo points spent, so there is no constant for a checking site to look up. Only
+the one casting knows.
+
+Wrong in the cautious direction when the ledger is missing (after a reload, say): it answers "not
+mine", one extra application goes out, and it is right from then on. The failure it replaces is
+the opposite and never self-corrects.
+
+**Owned, so owner-checked:** Warlock DoTs and curses, Hunter stings and *Lacerate*, Rogue
+*Rupture*, Druid *Moonfire* / *Insect Swarm* / *Rip* / *Rake*, Priest *Shadow Word: Pain* /
+*Devouring Plague* / *Holy Fire*, Shaman *Flame Shock*, Warrior *Rend*.
+
+**Shared, so deliberately left alone:** *Hunter's Mark*, *Expose Armor*, *Faerie Fire*,
+*Demoralizing Roar*, *Demoralizing Shout*, *Sunder Armor*. Anybody's copy is as good as ours and
+re-applying over it is pure waste — the Hunter module already drew that distinction and it was
+adopted rather than reinvented.
+
+### 🐛 Fixed — the warlock's DoT throttle depended on a confirmation that never came
+
+Same session log, and the reason the rotation stalled. `dotThrottle` was stamped **only** on a
+`UNIT_CASTEVENT` confirmation. In 746 seconds of play across 580 measurements, `throttleAge` was
+`-1` **every single time** — it had never been stamped once. With the debuff read also failing
+much of the time (*Corruption* was readable on a quarter of presses in the same log), nothing was
+left to stop a re-send but the two-second pending window, so every press went into sending the
+same DoT again or waiting on it and the filler was never reached.
+
+The confirmation is now a capability to be **established, not assumed**: until one has actually
+arrived, the send stamps the throttle itself. Where confirmations do arrive, the first one
+switches the old behaviour back on unchanged. A cast the client *refuses* — out of range, no line
+of sight — discards the stamp, so stamping on send cannot bring back the regression the original
+design was avoiding.
+
+### ✨ Consecration can wait for a crowd
+
+*"IWinEnhanced only cast Consecration if 3 or more enemies were in proximity — I know 1.12 cannot
+count nearby enemies, but somehow it did, so there must be a way."*
+
+There is, and the comment in this addon saying otherwise was right about the vanilla API and
+wrong about the environment it actually runs in. **A visible nameplate is a frame under
+`WorldFrame`, and SuperWoW puts that unit's GUID in the frame's first name string — and a GUID is
+a unit token to SuperWoW.** So the nameplates the client draws enumerate the mobs you can see,
+and each one can then be asked its distance like any other unit. That is exactly what
+IWinEnhanced does, through SuperCleveRoidMacros.
+
+A new **Only with enemies nearby** slider (0–5, default **0 = off**) holds Consecration until
+that many enemies are standing in it. The radius is read from the spell's own tooltip rather than
+assumed. It applies to both places Consecration is cast — the damage rotation and the new
+heal-mode filler.
+
+Two things done differently to the reference implementation, both deliberate:
+
+- **"none" and "cannot tell" are different answers.** With nameplates switched off there is
+  nothing to enumerate; that returns `nil` and Consecration goes out anyway. A capability that
+  cannot answer is never allowed to switch an ability off silently — the same rule the range and
+  movement checks follow, and the defect this file has hit most often. The capability latches the
+  first time a nameplate actually resolves.
+- **Off by default**, because the count depends on a client setting. A default that quietly needs
+  nameplates enabled is a trap.
+
+Stated plainly in the tooltip as well: this counts what the client is **drawing**. Enemies you
+cannot see are not counted, and it is not a radar.
+
+Cached for a fraction of a second — walking every `WorldFrame` child builds a table each time,
+and doing that on every press in a raid is the exact shape of cost this addon has been bitten by
+before.
+
+---
+
+## v1.2.5 — Druid: Rake and Rip stop on bleed-immune targets
 
 ### 🐛 Fixed — the Rend bug from v1.1.4, in the cat rotation
 

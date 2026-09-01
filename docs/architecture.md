@@ -28,6 +28,10 @@ the `AegisUI_*` prefix.)
   `PickQueue` record into `decidePlan` instead of casting, and `Later(fn)` skips side effects
   entirely while deciding.
 - **Pet**: `Aegis_SBR_Pet.lua` — the pet window (Hunter/Warlock).
+- **BuffUp**: `Aegis_SBR_BuffUp.lua` — the upkeep monitors (buff watch, rebuff buttons,
+  weapon-enchant and poison reminders). Self-contained and optional in the sense that nothing
+  in the rotation reads it; it was folded in from a standalone addon, which is why it does not
+  follow the class-module shape.
 - **Range**: `Aegis_SBR_Range.lua` (v1.1.9) — the distance window, with a self-calibrating
   melee / dead-zone / ranged scale. Its distance comes from **UnitXP_SP3 (Required)**, not
   ClassicAPI — getting that source order wrong made the window dead on arrival without the
@@ -80,6 +84,43 @@ the `AegisUI_*` prefix.)
   out-of-range, line-of-sight and facing refusals arrive as an error message and never reach
   the combat log. Compare by timestamp, not by ordering: the error and the stamp can land in
   either order within one frame.
+- Debuff ownership (core, v1.2.6): `NoteDebuffApplied(targetId, spell, duration)` and
+  `DebuffMine(spell, targetId)`. Most damage-over-time effects do **not** stack between
+  casters, so "a Corruption is on the target" is not "mine is" — the second warlock on a mob
+  otherwise applies nothing all fight. Two sources: ClassicAPI's caster record where it
+  answers `true`/`false`, otherwise our own ledger. The ledger stores an **expiry, not a
+  timestamp**, because the duration is only knowable at the moment of casting (a rogue's
+  *Rupture* runs 8–16s depending on the combo points spent). Cleared on
+  `PLAYER_REGEN_ENABLED`.
+  **The dangerous half is the writing**, not the reading: a guarded check with no matching
+  `NoteDebuffApplied` on its cast path answers "not mine" forever and spams that spell every
+  press. Adding an owner-checked debuff means adding both halves.
+  Shared debuffs (*Hunter's Mark*, *Expose Armor*, *Faerie Fire*, *Demoralizing Roar*,
+  *Demoralizing Shout*, *Sunder Armor*) are deliberately exempt — anybody's copy is as good
+  as ours and re-applying over it is waste.
+- Enemy counting (core, v1.2.6): `CountEnemiesNear(yards)`, plus `DistanceTo(unit)` for a
+  unit other than the target. 1.12 has no API for "how many mobs are near me", but a visible
+  **nameplate is a frame under `WorldFrame` and SuperWoW puts that unit's GUID in the frame's
+  first name string** — and a GUID is a unit token to SuperWoW. So the drawn nameplates
+  enumerate what the client can see. Taken from IWinEnhanced (via SuperCleveRoidMacros).
+  Returns `nil` for **"cannot count"** — nameplates switched off means nothing to enumerate,
+  and every caller must fail open rather than read that as zero. Cached ~0.3s: walking every
+  `WorldFrame` child builds a table each call, which in a raid is the exact cost shape this
+  addon has been bitten by. It counts what is **drawn**; it is not a radar.
+- Equipment and facing (core, v1.2.7): `HasShield()` / `HasDagger()` / `WeaponAllows(need)`
+  and `BehindTarget()` / `PositionAllows(need)`. Several abilities are refused by the client
+  on the weapon or the angle alone (*Shield Slam*, *Backstab*), and nothing checked either.
+  All are **three-state**, and the third state carries the weight: an item the client has not
+  cached, or a locale whose subtype strings we do not know, is *"cannot tell"* and never
+  refuses. The shield test uses `itemEquipLoc` (a constant) rather than the localised subtype
+  string; daggers have no such constant, so that check is an English-client improvement and a
+  no-op elsewhere. Facing comes from UnitXP_SP3 — vanilla has no facing API at all.
+- Per-press memoisation (core, v1.2.7): `Aegis_SBR:NewPress()` bumps `pressToken` where the
+  rotation is invoked — **the press is what has to be identified, not the outcome**, which is
+  why it is not tied to a cast. The paladin's `WorstHurt` uses it to answer once per press
+  instead of up to six times, each of which walks the whole group. The idea is IWinEnhanced's:
+  it clears a per-press table at the top of every rotation and memoises every condition.
+  Any new memo must be keyed by everything that changes the answer.
 - Heal engines: four near-identical copies live in the healer modules
   (Paladin/Priest/Druid/Shaman) — slated for dedupe (roadmap Phase 2). Touch with care;
   changing one usually means changing all four until deduped.
@@ -105,9 +146,16 @@ the `AegisUI_*` prefix.)
 ## Events (core event frame)
 - `ADDON_LOADED` (init + the Phase 0 DB migration), `PLAYER_LOGIN`, `SPELLS_CHANGED`
   (invalidate spell index + validity cache), `CHAT_MSG_COMBAT_SELF_HITS/MISSES` (swing
-  tracking), `PLAYER_REGEN_ENABLED`, and **`UNIT_CASTEVENT`** (SuperWoW; resolved via
-  `SpellInfo(arg4)` and dispatched to the active module's `OnCastEvent` if it defines one —
-  currently Shaman totem tracking).
+  tracking), `PLAYER_REGEN_ENABLED` (also clears the debuff ledger), and **`UNIT_CASTEVENT`**
+  (SuperWoW; resolved via `SpellInfo(arg4)` and dispatched to the active module's
+  `OnCastEvent` if it defines one — currently Shaman totem tracking).
+- `UI_ERROR_MESSAGE` (v1.2.3) — the client's own refusal strings, compared against its
+  globals so it holds in any locale. **The only source for line of sight**, and the only one
+  for out-of-range after `IsSpellInRange` answered "cannot judge". Feeds both `castBlocked`
+  (a unit that cannot be healed) and `spellRefused` (a throttle that must not treat a
+  thrown-away cast as a cast).
+- `UNIT_INVENTORY_CHANGED` (v1.2.7) — drops the equipment cache behind `HasShield`/
+  `HasDagger`.
 - **Before writing casting/detection code, read `docs/dependencies.md`** — the actual
   SuperWoW / Nampower / SuperCleveRoidMacros APIs, events, and limits (e.g. Nampower's
   one-GCD-queued / one-non-GCD-per-tick constraints, GUID hex-string handling).
@@ -126,6 +174,17 @@ the `AegisUI_*` prefix.)
   version strings remain.
 - **Profiles**: `NormalizeProfile` fills MISSING keys only (never clobbers user values) — so
   adding a config field is backward-safe. Templates per spec provide sensible defaults.
+- **A detection that cannot answer must never close a gate.** Range, movement, facing,
+  weapon, caster and enemy count all return a third value for "cannot tell", and every caller
+  treats it as permission rather than refusal. This is the single rule this codebase has
+  broken most often, and every time the symptom was the same: an ability silently stops and
+  nothing says why. `CheckInteractDistance` on the player, `IsSpellInRange` returning `-1`
+  and the Holy Shock range clause are all the same defect wearing different clothes.
+- **A capability is established, not assumed.** Where a source may simply never answer on a
+  given client — nameplate GUIDs, `UNIT_CASTEVENT` confirmations, debuff-name resolution — the
+  code latches the first real answer (`stingSeen`, `debuffSeen`, `castEventSeen`,
+  `enemyScanSeen`) and runs a safe fallback until then. A warlock log showed the cost of not
+  doing this: 580 measurements, and the DoT throttle had never once been stamped.
 
 ## Verifier (scripts/verify.py)
 - `python3 scripts/verify.py --all` after every edit: balance check + define-before-use

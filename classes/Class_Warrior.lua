@@ -58,6 +58,9 @@ M.STANCES = {
 -- GCD ability (so the priority can fall through to a cheaper one instead
 -- of stalling). Talents/ranks shift these a little; values are slightly
 -- forgiving on purpose. Tune here if a spec feels like it skips casts.
+-- Rend's applied duration, for telling our bleed from another warrior's.
+local REND_DUR = 21
+
 local RAGE = {
     ["Mortal Strike"] = 30,
     ["Bloodthirst"]   = 30,
@@ -290,7 +293,24 @@ end
 
 -- Convenience wrapper that reads the rage cost and stance requirement from
 -- the tables above, then attempts the cast. Returns true if cast.
+-- Abilities the client refuses on the weapon alone. Checked in Try, so every
+-- step that goes through it is covered and a new one cannot forget.
+--
+-- The comment beside the stance table has said "Shield Slam needs a shield"
+-- since it was written, without anything testing for it: a fury warrior who
+-- switched the option on spent every press on a refusal, silently.
+--
+-- WeaponAllows only ever refuses on a DEFINITE answer. An item the client has
+-- not cached yet, or a locale whose subtype strings we do not know, reads as
+-- "cannot tell" and changes nothing.
+local WEAPON_REQ = {
+    ["Shield Slam"]  = "shield",
+    ["Shield Block"] = "shield",
+    ["Shield Bash"]  = "shield",
+}
+
 function M:Try(name, reason)
+    if WEAPON_REQ[name] and not Aegis_SBR:WeaponAllows(WEAPON_REQ[name]) then return false end
     if self:CanCast(name, RAGE[name], STANCE_REQ[name]) then
         return self:Pick(name, reason)
     end
@@ -415,7 +435,9 @@ function M:Rotate(cfg)
 
     -- 0d. Shield Block to feed Revenge / mitigate (Defensive only, off GCD).
     if cfg.useShieldBlock and self:InStance("Defensive Stance")
-        and self:KnowsSpell("Shield Block") and self:IsReady("Shield Block") then
+        and self:KnowsSpell("Shield Block") and self:IsReady("Shield Block")
+        -- Off the GCD, so it never reaches Try: checked here instead.
+        and Aegis_SBR:WeaponAllows("shield") then
         self:PickExtra("Shield Block")
     end
 
@@ -533,8 +555,14 @@ function M:Rotate(cfg)
     if cfg.useRend and not inExecute and self:KnowsSpell("Rend")
         and not self:TargetIsBleedImmune()
         and self:CanCast("Rend", RAGE["Rend"], STANCE_REQ["Rend"])
-        and not Aegis_SBR:TargetDebuffUp("Rend", "ability_rend") then
-        if self:Pick("Rend", "bleed missing") then return end
+        -- Rend is per-caster. Demoralizing Shout above is shared and is
+        -- deliberately left alone: anybody's copy is as good as ours.
+        and not (Aegis_SBR:TargetDebuffUp("Rend", "ability_rend")
+            and Aegis_SBR:DebuffMine("Rend", Aegis_SBR:TargetId())) then
+        if self:Pick("Rend", "bleed missing") then
+            Aegis_SBR:NoteDebuffApplied(Aegis_SBR:TargetId(), "Rend", REND_DUR)
+            return
+        end
     end
 
     -- 1e. Whirlwind: on cooldown in AoE, or as a single-target rage dump

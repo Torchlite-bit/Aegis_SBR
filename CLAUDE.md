@@ -29,7 +29,26 @@ Author tag: "Mercaius & Subtilizer (Torchlite)".
 3. Run `python3 scripts/verify.py --all` after every edit; never hand off a failing file.
 
 ## Current State / Next Task
-**Current release: v1.2.5** — the client now knows whether you are moving. Since v1.2.0:
+**Current release: v1.2.7** — three releases about asking the client what it already knows.
+
+**v1.2.6** every class that keeps a debuff up now checks **whose it is**. Most DoTs do not stack
+between casters, so the second warlock on a mob was reading the first one's Corruption as their
+own and applying nothing all fight. `NoteDebuffApplied` / `DebuffMine` live in the core; the
+ledger stores an **expiry, not a timestamp**, because a rogue's *Rupture* runs 8–16s depending on
+the combo points spent and only the caster knows which. Shared debuffs (*Hunter's Mark*, *Expose
+Armor*, *Faerie Fire*, *Demoralizing Shout*, *Sunder Armor*) stay exempt. Same release: the
+warlock's DoT throttle stopped depending on a `UNIT_CASTEVENT` confirmation that a captured log
+proved had **never arrived once in 580 measurements**; and Consecration can wait for a crowd,
+counting enemies from the **nameplates the client draws** (a nameplate is a `WorldFrame` child
+and SuperWoW puts the unit's GUID in its first name string — the trick read out of IWinEnhanced).
+
+**v1.2.7** three more, all from studying IWinEnhanced: abilities are no longer cast without the
+weapon they require (*Shield Slam* needed a shield, and the comment beside it said so while
+nothing tested for it); *Backstab* is no longer chosen from the front (vanilla has no facing API,
+UnitXP_SP3 does); and the paladin measures the group **once per press** instead of up to six
+times, via `Aegis_SBR:NewPress()`.
+
+Since v1.2.0:
 **v1.2.2** the auto-attack fallback stopped toggling the white swing every press (`AttackTarget()`
 is a TOGGLE on 1.12 and the no-slot branch called it unguarded — see the Lessons list);
 **v1.2.3** Holy Strike ahead of the heal (opt-in), Seal of Wisdom above the heal, the Holy Shock
@@ -46,13 +65,36 @@ contributor** (Migux13, PR #59) ported the Warrior v1.1.4 bleed-immunity gate to
 Rake/Rip.
 
 Cut history to be aware of: **v1.3.0 was renumbered to v1.2.3** after the fact (nothing broke or
-was removed, so a minor bump overstated it) — the CHANGELOG entry carries the final number.
+was removed, so a minor bump overstated it) — the CHANGELOG entry carries the final number. The
+user's stated preference is patch bumps unless something actually breaks or is removed; do not
+reach for a minor bump because a release feels large.
 
-**Resync note (2026-09-01):** no open PRs, but three merged branches are still undeleted on the
-remote (`feat/movement-aware-and-heal-fillers`, `feat/talent-slot-binding`, and this session's
-`claude/aegis-sbr-rebrand-phase-0-ua55yk`). `docs/dev-workflow.md` asks for deletion on merge —
-it is what makes GitHub retarget anything still based on them, and what keeps
-`git branch -r --merged origin/main` usable as a check for what has actually landed.
+**Open question, deliberately unresolved:** whether `ratioHealthy` (Paladin heal, default 60)
+should move. Three logged sessions at 60/70/80 were compared and the first reading favoured 80 —
+until crit counts were checked: the 80 run had 4 crits in 14 landings against 1 in each of the
+others, and with crits removed the ordering reverses. **13–19 casts per setting cannot answer
+this**; roughly 100 would, or a log field recording what each cast would have healed without the
+crit. Do not change the default on the strength of the numbers currently in hand.
+
+**The dev folder is on `local/integration` and stays there (since 2026-09-01).** Never
+`git checkout` in it — that is what silently reverts files belonging to other branches, and the
+live folder is fed only from this copy. To build a PR, use a throwaway worktree off
+`origin/main`; to add to an open PR, a worktree on its existing branch. Both recipes are in
+`docs/dev-workflow.md`, which is worth reading before the first commit of a session.
+
+**Standing check, not a snapshot:** merged branches keep accumulating on the remote because
+deletion needs the user (it is refused from this sandbox). Run
+
+```
+git branch -r --merged origin/main
+```
+
+at the start of a session; anything besides `origin/main` and `origin/HEAD` is landed and
+deletable. `docs/dev-workflow.md` asks for deletion on merge — it is what makes GitHub retarget
+anything still based on them, and what keeps that command usable as a check for what has actually
+landed. As of 2026-09-01 there were four. **Do not restate the current list here** — a snapshot
+in a file that is read first goes stale within days, which is exactly what happened to the note
+this replaced.
 
 Earlier history, v1.1.4 onward:
 **v1.1.5** `/sbr spell <name>` toggles instead of silently switching off; **v1.1.6** Hunter's
@@ -163,7 +205,14 @@ The probe log collects most of this passively — `/sbr probe on`, play, `/reloa
     Lua API (`SCRIPTS.md`) + custom events (`EVENTS.md`). Confirm the installed fork/version.
   - **SuperCleveRoidMacros** — conditional macro engine. **Requires Nampower v3.0.0+ and
     UnitXP_SP3**; reactive abilities must be on action bars for detection; 261-char macro
-    limit; enemy-debuff timers need pfUI libdebuff/Cursive. (Repo is archived/stable.)
+    limit; enemy-debuff timers need pfUI libdebuff/Cursive. The user runs the **`brues-code`**
+    fork (active); `jrc13245` is archived. Aegis does not depend on it, but its
+    `CountEnemiesMatching` is where the nameplate-GUID enemy count was read from.
+  - **UnitXP_SP3** — `UnitXP("distanceBetween", a, b)` for a distance to any unit (SuperWoW's
+    positions resolve for PLAYERS only), and `UnitXP("behind", a, b)`, which is the **only**
+    source of facing on this client. Both are optional here in the sense that every caller
+    must handle their absence, and required in the sense that the features degrade to nothing
+    without them.
   - Target client: **Turtle WoW 1.18.1**.
 - **Custom textures**: TGA, power-of-two dimensions, 32-bit (referenced WITHOUT the `.tga`
   extension in Lua paths, using double backslashes). New/renamed textures need a full
@@ -260,6 +309,22 @@ calculators block automated access.
 - If a texture was added/renamed: noted that a **full relog** is required.
 - Version bumped + CHANGELOG entry added when cutting a version; all version spots in sync.
 - Files ready for the user to pull and test in-game.
+
+## Two rules that keep being relearned
+
+- **A detection that cannot answer must never close a gate.** Range, movement, facing, weapon,
+  caster and enemy count all have a third value for "cannot tell", and every caller treats it as
+  permission. This is the rule this codebase has broken most often, and the symptom is always the
+  same: an ability silently stops and nothing says why. `CheckInteractDistance` asked about the
+  player, `IsSpellInRange` returning `-1`, and the Holy Shock range clause that cancelled its own
+  health threshold are the same defect in three costumes.
+- **A capability is established, not assumed.** Where a source may simply never answer on a given
+  client — nameplate GUIDs, `UNIT_CASTEVENT` confirmations, debuff-name resolution — latch the
+  first real answer (`stingSeen`, `debuffSeen`, `castEventSeen`, `enemyScanSeen`) and run a safe
+  fallback until then. The warlock throttle is the cautionary tale: it was stamped **only** on a
+  confirmation, and on the reporter's client that confirmation never came, so the protection did
+  not exist at all. Design intent that quietly evaporates on someone else's setup is worse than no
+  design, because it looks correct in the source.
 
 ## House style
 - Comments explain WHY, not what. Keep the flat-dark UI conventions and palette already in
