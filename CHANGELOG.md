@@ -4,6 +4,96 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.6 — Whose debuff is that, and how many of them are standing there
+
+### 🐛 Fixed — a second warlock applied nothing at all
+
+Reported from play, and true of every class here that keeps a debuff up.
+
+Most damage-over-time effects do **not** stack between casters: two warlocks on one mob each get
+their own *Corruption*, two rogues each get their own *Rupture*, and the client shows both.
+Reading *"Corruption is on the target"* as *"MY Corruption is on the target"* means the second
+one to arrive applies nothing for as long as the first keeps theirs up, and spends the fight on
+filler.
+
+Ownership now lives in the core, because seven classes were about to grow seven copies of it.
+Two sources, in order of how much they actually know:
+
+1. **ClassicAPI records the caster.** Where it answers true or false, that ends the question.
+   `nil` is "cannot tell" — an aura applied before login has no caster on file — and falls
+   through to:
+2. **Our own ledger** of what we applied, per target and spell. This needs no API at all, which
+   is the point: most clients running this have no caster information whatsoever.
+
+The ledger stores an **expiry, not a timestamp**, and the duration is supplied by the caster at
+the moment of application. That is not tidiness — a rogue's *Rupture* runs 8 to 16 seconds
+depending on the combo points spent, so there is no constant for a checking site to look up. Only
+the one casting knows.
+
+Wrong in the cautious direction when the ledger is missing (after a reload, say): it answers "not
+mine", one extra application goes out, and it is right from then on. The failure it replaces is
+the opposite and never self-corrects.
+
+**Owned, so owner-checked:** Warlock DoTs and curses, Hunter stings and *Lacerate*, Rogue
+*Rupture*, Druid *Moonfire* / *Insect Swarm* / *Rip* / *Rake*, Priest *Shadow Word: Pain* /
+*Devouring Plague* / *Holy Fire*, Shaman *Flame Shock*, Warrior *Rend*.
+
+**Shared, so deliberately left alone:** *Hunter's Mark*, *Expose Armor*, *Faerie Fire*,
+*Demoralizing Roar*, *Demoralizing Shout*, *Sunder Armor*. Anybody's copy is as good as ours and
+re-applying over it is pure waste — the Hunter module already drew that distinction and it was
+adopted rather than reinvented.
+
+### 🐛 Fixed — the warlock's DoT throttle depended on a confirmation that never came
+
+Same session log, and the reason the rotation stalled. `dotThrottle` was stamped **only** on a
+`UNIT_CASTEVENT` confirmation. In 746 seconds of play across 580 measurements, `throttleAge` was
+`-1` **every single time** — it had never been stamped once. With the debuff read also failing
+much of the time (*Corruption* was readable on a quarter of presses in the same log), nothing was
+left to stop a re-send but the two-second pending window, so every press went into sending the
+same DoT again or waiting on it and the filler was never reached.
+
+The confirmation is now a capability to be **established, not assumed**: until one has actually
+arrived, the send stamps the throttle itself. Where confirmations do arrive, the first one
+switches the old behaviour back on unchanged. A cast the client *refuses* — out of range, no line
+of sight — discards the stamp, so stamping on send cannot bring back the regression the original
+design was avoiding.
+
+### ✨ Consecration can wait for a crowd
+
+*"IWinEnhanced only cast Consecration if 3 or more enemies were in proximity — I know 1.12 cannot
+count nearby enemies, but somehow it did, so there must be a way."*
+
+There is, and the comment in this addon saying otherwise was right about the vanilla API and
+wrong about the environment it actually runs in. **A visible nameplate is a frame under
+`WorldFrame`, and SuperWoW puts that unit's GUID in the frame's first name string — and a GUID is
+a unit token to SuperWoW.** So the nameplates the client draws enumerate the mobs you can see,
+and each one can then be asked its distance like any other unit. That is exactly what
+IWinEnhanced does, through SuperCleveRoidMacros.
+
+A new **Only with enemies nearby** slider (0–5, default **0 = off**) holds Consecration until
+that many enemies are standing in it. The radius is read from the spell's own tooltip rather than
+assumed. It applies to both places Consecration is cast — the damage rotation and the new
+heal-mode filler.
+
+Two things done differently to the reference implementation, both deliberate:
+
+- **"none" and "cannot tell" are different answers.** With nameplates switched off there is
+  nothing to enumerate; that returns `nil` and Consecration goes out anyway. A capability that
+  cannot answer is never allowed to switch an ability off silently — the same rule the range and
+  movement checks follow, and the defect this file has hit most often. The capability latches the
+  first time a nameplate actually resolves.
+- **Off by default**, because the count depends on a client setting. A default that quietly needs
+  nameplates enabled is a trap.
+
+Stated plainly in the tooltip as well: this counts what the client is **drawing**. Enemies you
+cannot see are not counted, and it is not a radar.
+
+Cached for a fraction of a second — walking every `WorldFrame` child builds a table each time,
+and doing that on every press in a raid is the exact shape of cost this addon has been bitten by
+before.
+
+---
+
 ## v1.2.5 — Druid: Rake and Rip stop on bleed-immune targets
 
 ### 🐛 Fixed — the Rend bug from v1.1.4, in the cat rotation

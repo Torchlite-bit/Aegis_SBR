@@ -58,6 +58,9 @@ M.STANCES = {
 -- GCD ability (so the priority can fall through to a cheaper one instead
 -- of stalling). Talents/ranks shift these a little; values are slightly
 -- forgiving on purpose. Tune here if a spec feels like it skips casts.
+-- Rend's applied duration, for telling our bleed from another warrior's.
+local REND_DUR = 21
+
 local RAGE = {
     ["Mortal Strike"] = 30,
     ["Bloodthirst"]   = 30,
@@ -533,8 +536,14 @@ function M:Rotate(cfg)
     if cfg.useRend and not inExecute and self:KnowsSpell("Rend")
         and not self:TargetIsBleedImmune()
         and self:CanCast("Rend", RAGE["Rend"], STANCE_REQ["Rend"])
-        and not Aegis_SBR:TargetDebuffUp("Rend", "ability_rend") then
-        if self:Pick("Rend", "bleed missing") then return end
+        -- Rend is per-caster. Demoralizing Shout above is shared and is
+        -- deliberately left alone: anybody's copy is as good as ours.
+        and not (Aegis_SBR:TargetDebuffUp("Rend", "ability_rend")
+            and Aegis_SBR:DebuffMine("Rend", Aegis_SBR:TargetId())) then
+        if self:Pick("Rend", "bleed missing") then
+            Aegis_SBR:NoteDebuffApplied(Aegis_SBR:TargetId(), "Rend", REND_DUR)
+            return
+        end
     end
 
     -- 1e. Whirlwind: on cooldown in AoE, or as a single-target rage dump

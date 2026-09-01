@@ -219,6 +219,10 @@ wlCastEventFrame:SetScript("OnEvent", function()
     if not pend or pend.id ~= arg2 then return end
     M.dotPending[name] = nil
     if arg3 == "CAST" then
+        -- One arriving confirmation is the proof that confirmations arrive on
+        -- this client. Until that has happened even once, QueueDot stamps the
+        -- throttle itself - see there.
+        M.castEventSeen = true
         M.dotThrottle[name] = { id = pend.id, t = GetTime() }
     end
 end)
@@ -505,6 +509,7 @@ function M:Queue(name, reason)
         p.spell = name; p.reason = reason; p.queue = true
         return true
     end
+    Aegis_SBR:NoteSpellCast(name)
     if self:Wanding() or not QueueSpellByName then
         CastSpellByName(name)
     else
@@ -749,15 +754,43 @@ end
 -- spell name -> { id = targetId at cast time, t = time sent }.
 M.dotPending = {}
 
--- Send a DoT cast and mark it pending confirmation. dotThrottle is only
--- stamped once UNIT_CASTEVENT confirms it actually went out (CAST), so a
--- cast that silently fails (e.g. the GCD was still active) is retried on the
--- very next press instead of blocking for the full interval on a guess -
--- this replaced an earlier version that stamped the throttle optimistically
--- right here, which is exactly what caused that multi-second stall.
+-- Send a DoT cast and mark it pending confirmation.
+--
+-- Where UNIT_CASTEVENT answers, dotThrottle is stamped only once it confirms the
+-- cast went out, so a cast that silently failed (the GCD was still up) is
+-- retried on the very next press rather than blocking for the whole interval on
+-- a guess. That replaced an older version which stamped optimistically here, and
+-- it is the right design - on a client that confirms.
+--
+-- On one that does not, it degrades to no throttle at all, and a captured
+-- session showed exactly that: 746 seconds of play, 580 measurements, and
+-- throttleAge was -1 in every single one. The throttle had never been stamped
+-- once. With the debuff read also failing much of the time (Corruption was
+-- readable on a quarter of presses in the same log), nothing was left to stop a
+-- re-send but the two second pending window - so every press went into sending
+-- the same DoT again or waiting on it, and the filler was never reached. That is
+-- the reported multi-second hangup.
+--
+-- So the confirmation is treated as a capability to be established, not assumed:
+-- until one has actually arrived, the send stamps the throttle itself. Where
+-- confirmations do arrive, the first one flips castEventSeen and this behaves
+-- exactly as before. Same shape as the hunter's stingSeen / debuffSeen, and the
+-- same lesson - a detection that never answers must not be the only thing a
+-- decision rests on.
 function M:QueueDot(spellName, id)
     if not self:Queue(spellName, "DoT missing") then return end
-    self:Later(function() self.dotPending[spellName] = { id = id, t = GetTime() } end)
+    self:Later(function()
+        local now = GetTime()
+        self.dotPending[spellName] = { id = id, t = now }
+        if not M.castEventSeen then
+            self.dotThrottle[spellName] = { id = id, t = now }
+        end
+        -- Per TARGET, unlike dotThrottle, which holds only the most recent cast
+        -- of each spell and is overwritten the instant you dot a second mob -
+        -- the normal affliction pattern. Without this, coming back to the first
+        -- mob would read as "never cast here".
+        Aegis_SBR:NoteDebuffApplied(id, spellName, self:DotAppliedDuration(spellName))
+    end)
 end
 
 -- Apply or maintain one DoT. Returns:
@@ -770,9 +803,28 @@ end
 -- resolve names), missing-but-recent counts as "wait" so the cast is allowed to
 -- land before re-queuing. Otherwise recent counts as "up" and the effect is
 -- simply reapplied on the interval, the old texture-less blind-timer path.
+-- Whose DoT is on the target? The model lives in the core (DebuffMine) because
+-- every class that keeps a debuff up has the same question; here it only needs
+-- this warlock's duration table, Rapid Deterioration included.
+function M:DotIsMine(spellName)
+    return Aegis_SBR:DebuffMine(spellName, self:TargetId())
+end
+
+-- The duration this DoT will actually run for, Rapid Deterioration folded in,
+-- handed to the ledger at the moment it is applied.
+function M:DotAppliedDuration(spellName)
+    local dur = self.dotDuration[spellName]
+    if dur and self.rapidDetSpells[spellName] then
+        dur = dur * (1 - self:RapidDeteriorationPct() / 100)
+    end
+    return dur
+end
+
 function M:ApplyDot(spellName, texFrag, interval)
     interval = interval or 3
-    if self:TargetDebuffUp(spellName, texFrag) then return "up" end
+    if self:TargetDebuffUp(spellName, texFrag) and self:DotIsMine(spellName) then
+        return "up"
+    end
     -- Immune to this one: report it as handled so the DoT chain moves on to the
     -- next spell instead of stopping here for the rest of the fight.
     if self:DotImmune(spellName) then return "up" end
@@ -795,8 +847,20 @@ function M:ApplyDot(spellName, texFrag, interval)
         local throttleAge = (rec and rec.id == id and rec.t) and (now - rec.t) or -1
         local pend = self.dotPending[spellName]
         local pendAge = (pend and pend.id == id) and (now - pend.t) or -1
-        self:Trace(string.format("%s missing wanding=%s throttleAge=%.2f pendAge=%.2f",
-            spellName, tostring(self:Wanding()), throttleAge, pendAge))
+        self:Trace(string.format("%s missing wanding=%s throttleAge=%.2f pendAge=%.2f conf=%s vis=%s",
+            spellName, tostring(self:Wanding()), throttleAge, pendAge,
+            M.castEventSeen and "Y" or "N",
+            -- Visible on the target but not ours: the second-warlock case.
+            self:TargetDebuffUp(spellName, texFrag) and "other's" or "no"))
+    end
+    -- Stamping on send (see QueueDot) means a cast the CLIENT threw away would
+    -- otherwise hold the throttle for the whole interval - the exact regression
+    -- the old comment there warns about. Out of range and line of sight arrive
+    -- as an error message, never in the combat log, so the resist / miss handler
+    -- cannot see them. Discard the stamp when one of those named this spell.
+    if rec and Aegis_SBR.SpellRefusedSince and Aegis_SBR:SpellRefusedSince(spellName, rec.t) then
+        self.dotThrottle[spellName] = nil
+        rec = nil
     end
     if rec and rec.id == id and rec.t and (now - rec.t) <= interval then
         if detectable then return "wait" else return "up" end

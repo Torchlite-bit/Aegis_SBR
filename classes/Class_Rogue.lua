@@ -297,7 +297,12 @@ function M:RuptureDue()
     if self:TalentRank(TALENT_TASTE) > 0 then
         return self:TasteLeft() < TFB_RENEW
     end
-    return not self:TargetDebuffUp("Rupture", "Ability_Rogue_Rupture")
+    -- Rupture is per-caster: two rogues on one mob each get their own, so
+    -- another rogue's says nothing about ours. Expose Armor is the opposite and
+    -- is deliberately NOT owner-checked - only one sits on a target at a time
+    -- and re-applying over somebody else's is waste.
+    return not (self:TargetDebuffUp("Rupture", "Ability_Rogue_Rupture")
+        and Aegis_SBR:DebuffMine("Rupture", self:TargetId()))
 end
 
 -- Fire Cold Blood immediately before the Eviscerate it is meant to turn into a
@@ -742,7 +747,18 @@ end
 
 function M:Rotate(cfg)
     local p = self:Decide(cfg, true)
+    -- Read BEFORE Perform: the cast spends them, and Rupture's duration is what
+    -- was spent (8s at one combo point, two more per point after that).
+    local cpSpent = GetComboPoints("player", "target") or 0
     Aegis_SBR:Perform(self, p)
+    -- Whose Rupture is on the mob. Two rogues each get their own, so without
+    -- this the second one to arrive reads the first one's as theirs and never
+    -- applies a bleed at all. Written here rather than in Decide, which the
+    -- preview window asks four times a second and which must not change
+    -- anything.
+    if p and p.spell == "Rupture" and cpSpent > 0 then
+        Aegis_SBR:NoteDebuffApplied(self:TargetId(), "Rupture", 6 + 2 * cpSpent)
+    end
     -- Expose Armor has neither a cooldown to read nor a readable duration on the
     -- target, so the one thing that stops it re-firing on a client that cannot
     -- see the debuff is remembering the attempt. Written HERE and not in Decide:

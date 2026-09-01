@@ -39,6 +39,22 @@ local ZEAL_STACKS = 3
 -- you are stationary the moment melee starts.
 local CONSEC_DWELL = 2
 
+-- Fallback radius for the enemy count, used only if the tooltip cannot be read.
+local CONSEC_RADIUS = 8
+
+-- Enough enemies standing in it? nil from the counter means the count could not
+-- be taken - no nameplates drawn, no SuperWoW - and that must read as YES, never
+-- as zero. A capability that cannot answer is not allowed to switch an ability
+-- off silently; that is the same rule the range and movement checks follow, and
+-- the one defect this file has hit most often.
+function M:ConsecrationCrowded(cfg)
+    local want = cfg.consecMinTargets or 0
+    if want <= 0 then return true end
+    local n = Aegis_SBR:CountEnemiesNear(self:SpellRadius("Consecration") or CONSEC_RADIUS)
+    if n == nil then return true end
+    return n >= want
+end
+
 -- Absolute-mana downrank thresholds (Turtle WoW), mirroring the proven
 -- ExAutoCSHS tables. Cast the lowest-numbered rank whose ceiling the current
 -- raw mana is under; at or above the last ceiling, use full rank. These are
@@ -484,6 +500,14 @@ function M:NormalizeProfile(c)
     -- Where movement cannot be measured at all (no SuperWoW) Moving() answers
     -- "standing still", so this switch simply never blocks anything.
     if c.consecStill == nil then c.consecStill = true end
+    -- How many enemies must be standing in the patch. 0 is off, which is the
+    -- default and the behaviour every earlier version had: cast on cooldown and
+    -- let the player decide with the AoE toggle.
+    --
+    -- Off by default because the count depends on nameplates being drawn. It is
+    -- a real measurement where it works and no measurement at all where it does
+    -- not, and a default that quietly needs a client setting is a trap.
+    if c.consecMinTargets == nil then c.consecMinTargets = 0 end
     if c.healFillerHoW == nil then c.healFillerHoW = false end
     if c.healFillerConsec == nil then c.healFillerConsec = false end
     if c.healFillerExo == nil then c.healFillerExo = false end
@@ -2426,6 +2450,7 @@ function M:Rotate(cfg)
         if fillersOK and cfg.healFillerConsec and self:InMeleeRange()
             and (not self.manaMgmtActive or cfg.consecInMana)
             and (not cfg.consecStill or Aegis_SBR:StillFor(CONSEC_DWELL))
+            and self:ConsecrationCrowded(cfg)
             and self:KnowsSpell("Consecration") and self:IsReady("Consecration")
             and self:Affordable("Consecration") then
             if self:Pick("Consecration", "heal filler") then return end
@@ -2467,6 +2492,11 @@ function M:Rotate(cfg)
                 .. " sotc=" .. (self:TargetHasJudgementDebuff("Seal of the Crusader") and "up" or "-")
                 .. " zeal=" .. traceZeal
                 .. " ctype=" .. (UnitCreatureType and (UnitCreatureType("target") or "?") or "?")
+                -- Nameplate-derived enemy count, "?" when it cannot be taken.
+                .. " near=" .. (function()
+                    local n = Aegis_SBR:CountEnemiesNear(self:SpellRadius("Consecration") or 8)
+                    return n and tostring(n) or "?"
+                end)() .. "/" .. (cfg.consecMinTargets or 0)
                 .. " exo=" .. (cfg.spells.exorcism and (
                     (not self:KnowsSpell("Exorcism")) and "unknown"
                     or (not self:TargetIsUndeadOrDemon()) and "wrong type"
@@ -2624,6 +2654,7 @@ function M:Rotate(cfg)
     if not cfg.healMode and cfg.spells.consecration and self:InMeleeRange()
         and (not self.manaMgmtActive or cfg.consecInMana)
         and (not cfg.consecStill or Aegis_SBR:StillFor(CONSEC_DWELL))
+        and self:ConsecrationCrowded(cfg)
         and self:KnowsSpell("Consecration") and self:IsReady("Consecration") then
         if self:Pick("Consecration", "AoE") then return end
     end
