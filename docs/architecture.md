@@ -17,6 +17,21 @@ the `AegisUI_*` prefix.)
   pill, spec tab rails.
 - **Minimap**: `Aegis_SBR_Minimap.lua` (was `AutoRota_Minimap.lua`) — button + options
   (`/sbrmap`, legacy `/armap`).
+- **Capability layer**: `Aegis_SBR_Capabilities.lua` (v1.1.9) — loads SECOND, right after the
+  core, because everything below may ask it questions. Owns **every** `C_*` probe and wrapper
+  (ClassicAPI is *Recommended*, never *Required*, so nothing else may call one directly — see
+  CLAUDE.md's `C_*` carve-out) plus the passive probe log behind `/sbr capi` and `/sbr probe`.
+  Every wrapper returns `nil` for "unknown", and `nil` is never `0` and never `false`.
+- **Preview**: `Aegis_SBR_Preview.lua` — the next-ability window. Runs a module's `Rotate`
+  in decide-mode (`Aegis_SBR.deciding`) so it reports the choice WITHOUT casting; modules opt
+  in with `M.previewReady = true`. This is why terminal operations are two-mode: `Pick` /
+  `PickQueue` record into `decidePlan` instead of casting, and `Later(fn)` skips side effects
+  entirely while deciding.
+- **Pet**: `Aegis_SBR_Pet.lua` — the pet window (Hunter/Warlock).
+- **Range**: `Aegis_SBR_Range.lua` (v1.1.9) — the distance window, with a self-calibrating
+  melee / dead-zone / ranged scale. Its distance comes from **UnitXP_SP3 (Required)**, not
+  ClassicAPI — getting that source order wrong made the window dead on arrival without the
+  DLL in the first draft.
 - **Per-class rotation modules**: `Class_<Name>.lua` (Warrior, Paladin, Hunter, Rogue,
   Priest, Shaman, Mage, Warlock, Druid) — the priority lists + class helpers.
 - **Per-class UI panels**: `Class_<Name>_UI.lua` — the config panel for that class.
@@ -54,6 +69,17 @@ the `AegisUI_*` prefix.)
   30s where the shaman's table said 55, leaving a levelling shaman's fire slot empty for 25
   seconds. Both return `nil` when the tooltip cannot be read, and callers keep their own
   fallback: these correct a number, they do not replace the caller's judgement.
+- Movement (core, v1.2.5): `Aegis_SBR:Moving()` and `StillFor(seconds)`. The 1.12 client has
+  no speed API, so position is sampled and differenced through SuperWoW's `UnitPosition`. It
+  answers **"standing still" whenever it cannot tell** — "cannot judge" must never block a
+  cast, the same stance every other unreadable source takes here. `StillFor` exists because
+  stopping is not a commitment to stay stopped (Consecration waits out a 2s dwell).
+- Cast outcome (core, v1.2.3/v1.2.5): `NoteSpellCast(name)` records the spell last sent and
+  `SpellRefusedSince(name, t)` reports whether the client refused it since `t`. **Needed
+  because `Pick`/`PickQueue` return true on "known and affordable", not on "accepted"** —
+  out-of-range, line-of-sight and facing refusals arrive as an error message and never reach
+  the combat log. Compare by timestamp, not by ordering: the error and the stamp can land in
+  either order within one frame.
 - Heal engines: four near-identical copies live in the healer modules
   (Paladin/Priest/Druid/Shaman) — slated for dedupe (roadmap Phase 2). Touch with care;
   changing one usually means changing all four until deduped.

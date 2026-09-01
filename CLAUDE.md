@@ -29,10 +29,32 @@ Author tag: "Mercaius & Subtilizer (Torchlite)".
 3. Run `python3 scripts/verify.py --all` after every edit; never hand off a failing file.
 
 ## Current State / Next Task
-**Current release: v1.2.0** — the Paladin healing engine rebuilt from the ground up, dispelling
-for all four healers plus the mage, a Solofarming page, and a rotation that finally knows how
-far away things are. Driven throughout by play reports and press logs rather than theory. Since
-v1.1.4:
+**Current release: v1.2.5** — the client now knows whether you are moving. Since v1.2.0:
+**v1.2.2** the auto-attack fallback stopped toggling the white swing every press (`AttackTarget()`
+is a TOGGLE on 1.12 and the no-slot branch called it unguarded — see the Lessons list);
+**v1.2.3** Holy Strike ahead of the heal (opt-in), Seal of Wisdom above the heal, the Holy Shock
+threshold actually enforced, plus the first error handling in the addon — the core reads the
+client's refusal messages and stands a unit down, where a line-of-sight refusal used to repeat
+forever; **v1.2.4** spec tabs bind to Goblin Brainwashing Device slots, read out of the gossip
+text (no event and no API names the active slot) with the talent build as a second source, plus
+`/sbr gobbo`; **v1.2.5** `Aegis_SBR:Moving()` / `StillFor(seconds)` from SuperWoW `UnitPosition`
+(answers "standing still" whenever it cannot tell), a Warlock movement stall fixed, channels
+refused while moving inside `Queue` rather than at six call sites, a stand-still switch for
+Consecration, and three opt-in heal-mode damage fillers behind a mana line. Also since: the
+Hunter now lets the debuff on the target decide rather than the reapply timer, and an **outside
+contributor** (Migux13, PR #59) ported the Warrior v1.1.4 bleed-immunity gate to the Druid's
+Rake/Rip.
+
+Cut history to be aware of: **v1.3.0 was renumbered to v1.2.3** after the fact (nothing broke or
+was removed, so a minor bump overstated it) — the CHANGELOG entry carries the final number.
+
+**Resync note (2026-09-01):** no open PRs, but three merged branches are still undeleted on the
+remote (`feat/movement-aware-and-heal-fillers`, `feat/talent-slot-binding`, and this session's
+`claude/aegis-sbr-rebrand-phase-0-ua55yk`). `docs/dev-workflow.md` asks for deletion on merge —
+it is what makes GitHub retarget anything still based on them, and what keeps
+`git branch -r --merged origin/main` usable as a check for what has actually landed.
+
+Earlier history, v1.1.4 onward:
 **v1.1.5** `/sbr spell <name>` toggles instead of silently switching off; **v1.1.6** Hunter's
 Mark leads the rotation (approved priority change) + `verify.py` lookbehind fix; **v1.1.7**
 Shaman totem + imbue overhaul, per-context buff lists, Paladin melee heal margin; **v1.1.8**
@@ -94,8 +116,22 @@ The probe log collects most of this passively — `/sbr probe on`, play, `/reloa
   though it already sits ABOVE both. Likeliest cause is the Battle Stance gate or
   `overpowerExpiry` being zeroed before a cast that then fails (Revenge has the same shape).
   Awaiting a `/sbr log` capture; the Warrior trace already carries `op=Y/N`.
-- **PR #32** (a `holyLightPct` health gate) was **closed unmerged**, superseded by #33 — not
-  shipped; whether a slider is wanted, and which way it points, is still open.
+  **Do not be fooled by the `Later()` wrapper** the two-mode conversion put around the zeroing:
+  `Later` only skips while `Aegis_SBR.deciding` (preview mode), so on a real press it runs
+  immediately — and `Pick` returns true as soon as the spell is KNOWN, not when the cast was
+  accepted. The proc is still discarded on a refused cast. **v1.2.3/v1.2.5 added the tool that
+  would fix it**: `Aegis_SBR:NoteSpellCast` + `SpellRefusedSince(name, t)`, which is exactly how
+  37f3826 fixed the Hunter's equivalent throttle bug. Wiring it into the two proc windows is a
+  candidate fix once the log confirms the cause.
+- **PR #32's `holyLightPct` — resolved, and the old note here was wrong twice.** It was NOT
+  "closed unmerged, never shipped": the gate DID ship (5447c7e, v1.1.8), and was then
+  deliberately **retired** in the v1.2.0 Paladin healing rebuild (014d655). The field is now
+  actively cleared (`c.holyLightPct = nil`, `Class_Paladin.lua`) rather than left dormant,
+  because a hidden setting that still acts is worse than a visible one. Its job is done by
+  **`ratioHealthy`** (default 60) — "below this a target is hurt enough for a Holy Light, above
+  it the fast heal is used whatever the deficit", which is the same sentence pointing the same
+  way. So the open question ("is a slider wanted, and which way should it point?") is answered;
+  do not re-raise it.
 - Phase 2 leftovers: off-hand imbue, poison auto-apply beyond the Quick Bar.
 - **Logos:** raw image files still pending from the user. They need TGA conversion
   (power-of-two, 32-bit, uncompressed). The header stub already tries
@@ -233,8 +269,11 @@ calculators block automated access.
 - **README badge header is USER-OWNED — preserve it verbatim.** The top of `README.md`
   carries the version in the **H1** (`# Aegis: Single Button Rotation (vX.Y.Z)` — bump this
   with every version cut, per Workflow step 4) plus two shields.io badge rows the user
-  curates by hand: row 1 = Discord (blurple `5865F2`) · Octo WoW 1.18.1 (**purple**
-  `8A2BE2`) · Capy WoW 1.18.1 (**brown** `8B5A2B`); row 2 = SuperWoW / Nampower / UnitXP_SP3
+  curates by hand. **Row 1 changed in v1.2.3 — re-read it from the file before touching it,
+  do not restore the older three-badge version:** it is now FOUR badges, Discord (blurple
+  `5865F2`) · **RavenCraft** 1.18.1 (near-black `1e1e1e`) · **CapyCraft** 1.18.1 (**brown**
+  `8B5A2B`) · Octo WoW 1.18.1 (**purple** `8A2BE2`) — note Capy was also renamed and Octo
+  moved to last. Row 2 = SuperWoW / Nampower / UnitXP_SP3
   (**Required**, **red** `C41E3A`) then ClassicAPI / SCRM (**Recommended**, **orange**
   `ff8c00`), all `style=flat-square&labelColor=555`. Do NOT add classes/license badges back,
   and do not reorder or re-colour the rows without being asked. Keep the Requirements
@@ -259,6 +298,19 @@ calculators block automated access.
     silently wrong. Latent from v0.15.0 until v1.1.8 because only the main hand had a
     caller. When a 1.12 API's return count is assumed rather than counted, check it against
     a live call before building on the later values.
+  - `AttackTarget()` is a **TOGGLE** on 1.12 — it STOPS a swing already running, and there is
+    no Lua `/startattack` equivalent (that arrived in 2.0). `EnsureAutoAttack`'s no-slot branch
+    called it every press, so spamming the macro flipped auto-attack on and off; it now fires
+    at most once per target (v1.2.2). The branch is only reached when **Attack** is on no
+    action bar, which selects for SuperCleveRoidMacros users — SCRM drives the swing with
+    `/startattack`, so its users never slot Attack. Tell them to slot it: that restores the
+    guarded path, which reads state and restarts the swing whenever it actually drops.
+  - `Pick` / `PickQueue` return true when a spell is **known and affordable**, NOT when the
+    cast was accepted — so anything stamped or cleared on their return records the attempt,
+    not the outcome. Out-of-range / line-of-sight / "must be in front of you" arrive as an
+    error message and never reach the combat log. Use `NoteSpellCast` + `SpellRefusedSince`
+    (core) to tell them apart, as the Hunter's throttle does since v1.2.5. `Later(fn)` is NOT
+    a success guard — it only skips while `Aegis_SBR.deciding` (preview mode).
   - A second detection source (ClassicAPI) wired into a gate may only ever **suppress** a
     cast, never shorten a throttle or unblock one. Letting it shorten the sting retry while
     the OLD detection still decided whether to cast re-queued a ranged shot every 1.5s and
