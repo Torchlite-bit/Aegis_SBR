@@ -286,8 +286,37 @@ function M:CureStep(cfg)
 end
 
 function M:Rotate(cfg)
+    -- One line per press, so /sbr log and /sbr trace can answer a mage report at
+    -- all. This module had no tracing whatsoever, which is why "there is a delay
+    -- between casts" could only ever be guessed at: the blocking exit below sits
+    -- FIRST, so a held press produced no output of any kind and the whole stalled
+    -- window was invisible in the log.
+    if self:Tracing() then
+        self:Trace("mode=" .. (cfg.mode or "frost")
+            .. (cfg.aoeMode and "/aoe" or "")
+            .. " mana=" .. string.format("%.0f", self:ManaPct())
+            .. " chan=" .. (self.channeling and string.format("Y %.1fs", GetTime() - (self.chanStart or 0)) or "n")
+            .. " wanding=" .. (self:Wanding() and "Y" or "n")
+            .. " hasted=" .. (self:Hasted() and "Y" or "n")
+            .. " hp=" .. string.format("%.0f", self:TargetHPPct()))
+    end
+
     -- Never act over a running channel (Arcane Missiles / Icicles / Evocation).
-    if self.channeling and self.chanStart and (GetTime() - self.chanStart) < 16 then return end
+    -- The stop event also fires when the target dies mid-channel; the 16s ceiling
+    -- guards a missed stop so the rotation can never wedge permanently.
+    --
+    -- Traced like the warlock's equivalent exit (v1.2.5): this is the only step
+    -- in the module that can hold the rotation for seconds, so when a mage
+    -- reports a gap between casts, the log has to say whether this was the cause
+    -- and for how long. Note the ceiling is 16s against channels of 3-5s, so it
+    -- is a wedge-preventer, not a timing guard - a missed stop event still costs
+    -- far more than the channel it was protecting.
+    if self.channeling and self.chanStart and (GetTime() - self.chanStart) < 16 then
+        if self:Tracing() then
+            self:Trace(string.format("STALL channel %.1fs", GetTime() - self.chanStart))
+        end
+        return
+    end
 
     -- Shields and emergency Evocation, in any spec (Ice Barrier pre-pull works
     -- with no target).

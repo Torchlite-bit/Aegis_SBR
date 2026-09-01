@@ -4,7 +4,57 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
-## v1.2.5 — Druid: Rake and Rip stop on bleed-immune targets
+## v1.2.7 — The mage can be diagnosed at all
+
+**Diagnostics only. No rotation logic, no gate, no ability changed.**
+
+Reported: an arcane mage with only *Arcane Missiles* trained, spamming the macro, sees a
+delay of about three seconds between one channel finishing and the next starting.
+
+That report could not be answered, because **`Class_Mage.lua` had no tracing whatsoever** —
+it and the priest were the only two modules with zero `Trace` calls, so `/sbr log` and
+`/sbr trace` produced nothing at all for a mage. Worse, the one step that can hold the
+rotation for seconds — the channel guard protecting a running Arcane Missiles / Icicles /
+Blizzard / Evocation — sits as the **first statement** in `Rotate` and returned silently, so
+a held press emitted nothing and the entire stalled window was invisible in the log.
+
+- **A per-press trace line**, carrying the state that matters for this class: `mode`
+  (plus `/aoe`), `mana`, `chan` (whether a channel is being tracked **and how long it has
+  been held**), `wanding`, `hasted`, and target `hp`.
+- **A `STALL channel <n>s` line on the blocking exit**, mirroring the one the warlock's
+  equivalent exit got in v1.2.5 — the same guard, in the same shape, which the warlock
+  already traces and the mage did not.
+
+**This does not fix the delay** — it makes the delay observable. `/sbr log on`, cast a few
+Arcane Missiles, `/reload`, and the log now says whether the channel guard was holding the
+rotation and for exactly how long, or whether the wait is somewhere else entirely.
+
+Two things noticed while reading, recorded rather than changed:
+
+- The guard's ceiling is **16 seconds against channels of 3–5 seconds**. It is a
+  wedge-preventer, not a timing guard: if a `SPELLCAST_CHANNEL_STOP` is ever missed, the
+  rotation stands still for far longer than the channel it was protecting. The same 16s
+  constant is in the mage, priest and warlock.
+- `SPELLCAST_CHANNEL_START` carries the channel **duration**, and all three modules discard
+  it, keeping only the start time. Clearing on `start + duration` as well as on the stop
+  event would make a missed stop cost nothing. Not done here — shortening a guard is on the
+  *unblock* side, which is exactly what starved Auto Shot on the hunter (see CLAUDE.md's
+  lessons), so it wants the log first and a play-test after.
+
+*The priest has the identical untraced guard and no trace line either. Left alone to keep
+this diff to the reported class.*
+
+---
+
+## v1.2.6 — Druid: Rake and Rip stop on bleed-immune targets
+
+> *Renumbered from v1.2.5 (was a collision).* PR #58 (movement) and PR #59 (this one) were
+> both cut from v1.2.4 and both independently stamped **v1.2.5**, so the number was used
+> twice. Resolved the way the v1.1.0 repair did — by each commit's own evidence: the movement
+> commit is titled `v1.2.5:` and its PR merged first, so it keeps the number; this one bumped
+> the `.toc` only as a side effect of its base and moves up. `docs/dev-workflow.md` calls this
+> exact case: when two branches collide on `CHANGELOG.md` / `README.md` / the `.toc`, resolve
+> by ORDER — a release PR after the feature PRs land — not by merging both.
 
 ### 🐛 Fixed — the Rend bug from v1.1.4, in the cat rotation
 
