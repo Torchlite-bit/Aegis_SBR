@@ -293,7 +293,24 @@ end
 
 -- Convenience wrapper that reads the rage cost and stance requirement from
 -- the tables above, then attempts the cast. Returns true if cast.
+-- Abilities the client refuses on the weapon alone. Checked in Try, so every
+-- step that goes through it is covered and a new one cannot forget.
+--
+-- The comment beside the stance table has said "Shield Slam needs a shield"
+-- since it was written, without anything testing for it: a fury warrior who
+-- switched the option on spent every press on a refusal, silently.
+--
+-- WeaponAllows only ever refuses on a DEFINITE answer. An item the client has
+-- not cached yet, or a locale whose subtype strings we do not know, reads as
+-- "cannot tell" and changes nothing.
+local WEAPON_REQ = {
+    ["Shield Slam"]  = "shield",
+    ["Shield Block"] = "shield",
+    ["Shield Bash"]  = "shield",
+}
+
 function M:Try(name, reason)
+    if WEAPON_REQ[name] and not Aegis_SBR:WeaponAllows(WEAPON_REQ[name]) then return false end
     if self:CanCast(name, RAGE[name], STANCE_REQ[name]) then
         return self:Pick(name, reason)
     end
@@ -418,7 +435,9 @@ function M:Rotate(cfg)
 
     -- 0d. Shield Block to feed Revenge / mitigate (Defensive only, off GCD).
     if cfg.useShieldBlock and self:InStance("Defensive Stance")
-        and self:KnowsSpell("Shield Block") and self:IsReady("Shield Block") then
+        and self:KnowsSpell("Shield Block") and self:IsReady("Shield Block")
+        -- Off the GCD, so it never reaches Try: checked here instead.
+        and Aegis_SBR:WeaponAllows("shield") then
         self:PickExtra("Shield Block")
     end
 

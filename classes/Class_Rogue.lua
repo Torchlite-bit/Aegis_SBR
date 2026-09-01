@@ -507,6 +507,17 @@ function M:Decide(cfg, tracing)
     local isElite = (cls == "worldboss" or cls == "elite" or cls == "rareelite")
 
     local builder = cfg.builder
+    -- Backstab is refused from the front and refused without a dagger, and both
+    -- were unchecked: chosen as the builder under either condition, every press
+    -- went into a refusal. Fall back to the strike that has no requirement
+    -- rather than standing still.
+    --
+    -- Only a DEFINITE no falls back. No UnitXP, or an item the client has not
+    -- cached, answers "cannot tell" and Backstab is used exactly as before.
+    if builder == "Backstab"
+        and not (Aegis_SBR:PositionAllows("behind") and Aegis_SBR:WeaponAllows("dagger")) then
+        builder = self:KnowsSpell("Sinister Strike") and "Sinister Strike" or ""
+    end
     if builder == "" then
         -- Both alternatives are talents, so knowing one says which tree was
         -- spent in: Noxious Assault means Assassination, Hemorrhage means at

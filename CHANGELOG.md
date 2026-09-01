@@ -4,6 +4,64 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.7 — Three things the client already knew
+
+All three came out of reading IWinEnhanced, which answers questions this addon had been
+guessing at or asking too often.
+
+### 🐛 Fixed — abilities cast without the weapon they require
+
+*Shield Slam*, *Shield Block* and *Shield Bash* need a shield; *Backstab* and *Ambush* need a
+dagger. Nothing checked. `Class_Warrior.lua` has carried the note *"(Shield Slam needs a
+shield)"* next to a step that did not test for one since the file was written — so a fury
+warrior who switched the option on spent every press on a refusal, silently.
+
+`HasShield()` and `HasDagger()` are **three-state**, and the third state is the point. A freshly
+logged-in client has not cached the item and `GetItemInfo` returns nothing; the subtype string is
+also **localised**, so a non-English client will not match "Daggers" whatever is in the hand.
+Either way the answer is *"cannot tell"*, and every caller reads that as **go ahead**. Blocking
+an ability because we failed to identify a weapon would be a worse bug than the one being fixed,
+and an invisible one.
+
+The shield test leans on `itemEquipLoc == "INVTYPE_SHIELD"` — a constant rather than a translated
+word, so it holds in every locale. There is no equivalent for daggers, `equipLoc` saying only
+"one hand", so that one is honest about being an English-client improvement and a no-op
+elsewhere.
+
+The warrior's check sits inside `Try`, so every step that goes through it is covered and a new
+one cannot forget. *Shield Block* runs off the global cooldown and never reaches `Try`, so it
+carries its own.
+
+### 🐛 Fixed — Backstab cast from the front
+
+Vanilla has no facing API at all, but **UnitXP_SP3 does**, and it is already a required
+dependency for the range window. *Backstab* is refused outright from anywhere but behind, and
+nothing checked: pick it as your builder and stand in front, and every press was a refusal. The
+word "behind" appeared in this addon only in comments.
+
+Chosen as the builder without the position or the dagger, it now falls back to *Sinister Strike*
+rather than standing still. Only a **definite** no falls back — no UnitXP, or an item the client
+has not cached, answers "cannot tell" and *Backstab* is used exactly as before.
+
+### ⚡ The group is measured once per press, not six times
+
+Six call sites in the paladin reach `WorstHurt`, several of them in the same press, and every
+answer walks the whole group reading health, incoming heals, reachability and the priority
+handicaps. Repeating that for an answer that cannot have changed between two steps of one press
+is pure cost — and in a forty-man raid it is the same expensive loop several times over, which is
+the shape of cost this addon has been bitten by before.
+
+The idea is taken directly from IWinEnhanced, which clears a per-press table at the top of every
+rotation and memoises every condition into it. Here it is one token, bumped where the rotation is
+invoked rather than where a cast happens — what has to be identified is the **press**, not the
+outcome — and `WorstHurt` is keyed by the two things that change its answer: the threshold, and
+whether a profile was passed at all (without one there are no handicaps, no pets and no self
+threshold, so it is a genuinely different question).
+
+Priest, Druid and Shaman call it once per press already and are untouched.
+
+---
+
 ## v1.2.6 — Whose debuff is that, and how many of them are standing there
 
 ### 🐛 Fixed — a second warlock applied nothing at all

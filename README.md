@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation (v1.2.6)
+# Aegis: Single Button Rotation (v1.2.7)
 
 **One button. Your whole rotation.**
 
@@ -358,6 +358,8 @@ Cat (DPS), Bear (Tank), Balance (Caster/Moonkin), and **Restoration** (group hea
 * **Bear Tanking:** *Faerie Fire (Feral)* as the **ranged opener** (instant, 30yd), optional **Growl** taunt that grabs threat on the pull and whenever the target stops attacking you, *Demoralizing Roar* upkeep, *Maul* as the rage dump, *Swipe* leading under `/sbr aoe`, and optional *Enrage* when rage-starved (in combat only — it lowers armor, so it is off by default). *(Moonfire cannot be cast in bear form, so Faerie Fire is the bear's ranged opener.)*
 * **Form-Aware Auto-Attack:** The white swing is started automatically in **Cat and Bear** (and never while casting in caster/Moonkin) — see the action-bar note in [Using it](#using-it).
 </details>
+
+> **What the client already knows.** Abilities are no longer cast without the weapon they require (*Shield Slam*, *Shield Block* and *Shield Bash* need a shield; *Backstab* and *Ambush* need a dagger), and *Backstab* is no longer chosen from the front — vanilla has no facing API, but UnitXP_SP3 does. Both checks are **three-state**: an item the client has not cached yet, or a locale whose subtype strings are unknown, answers *"cannot tell"* and changes nothing. Refusing an ability because we failed to identify a weapon would be the worse bug.
 
 > **Whose debuff is that?** Most damage-over-time effects do not stack between casters — two warlocks on one mob each get their own *Corruption*. Reading *"a Corruption is on the target"* as *"mine is"* means the second one to arrive applies nothing all fight. Every class here that keeps an owned debuff up now checks ownership: ClassicAPI's caster record where it answers, and otherwise a ledger of what we applied, per target, against the duration the caster supplied. Shared debuffs (*Hunter's Mark*, *Expose Armor*, *Faerie Fire*, *Demoralizing Shout*, *Sunder Armor*) are deliberately exempt — anybody's copy is as good as ours.
 
