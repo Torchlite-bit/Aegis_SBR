@@ -576,9 +576,10 @@ dealt, and the threat lands on nothing.
 replaces is the accident, not the feature. Off restores casting on cooldown regardless, which a
 tank who repositions constantly may well prefer, since a held Consecration is threat not made.
 
-It waits for a **dwell of two seconds**, not for the instant you stop. That correction came from
-the sharpest review this addon has had: *"rotation going: ah, this person hasn't moved for one
-second, seems like a good time to fart gold"*. Two seconds against an eight second patch is long
+It waits for a **dwell of two seconds**, not for the instant you stop — a correction that came
+from play before this shipped, and the right one: a step to reposition contains a fraction of a
+second of standing still, so a check that only asks "moving right now" drops the patch into
+exactly the gap the switch exists to avoid. Two seconds against an eight second patch is long
 enough that a step is not mistaken for a stand, and short enough that a real fight never waits —
 you are stationary the moment melee starts.
 

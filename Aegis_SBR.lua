@@ -1068,9 +1068,8 @@ end
 -- Not the same question as "are we moving", and the difference is the whole
 -- point. Stopping is not a commitment to stay stopped: a step to reposition
 -- puts a fraction of a second of stillness in the middle of moving, and a check
--- that only asks "moving right now" fires into it. Described from play, exactly
--- and unkindly: "ah, this person hasn't moved for one second, seems like a good
--- time to fart gold".
+-- that only asks "moving right now" fires into it. That gap was spotted from
+-- play before the first version shipped with it.
 --
 -- So a ground effect asks for a DWELL, not for a moment. What it buys is a
 -- guess that the next few seconds look like the last few - the only guess

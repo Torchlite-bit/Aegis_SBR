@@ -327,6 +327,17 @@ calculators block automated access.
   design, because it looks correct in the source.
 
 ## House style
+- **Never quote a play report verbatim.** Reports reach this project as relayed Discord
+  messages, and none of it belongs in `CHANGELOG.md`, `README.md`, a code comment, or a PR
+  body: the person was talking in a chat, not writing for publication. Paraphrase what the
+  observation ESTABLISHED — "a step to reposition contains a fraction of a second of standing
+  still, so checking 'moving right now' is not enough" — and drop the wording, the name and any
+  characterisation of the remark. v1.2.5 shipped a tester's throwaway joke into the changelog
+  under the heading of "the sharpest review this addon has had"; it read as unprofessional to
+  anyone without the context and as mockery to anyone with it, and not one word of the substance
+  was in the quote. Numbers, symptoms and measurements are the useful part and carry none of
+  that risk. **Named credit is the exception, and only when the user asks for it** — the v1.2.0
+  thanks to Holyhollie was requested and stays.
 - Comments explain WHY, not what. Keep the flat-dark UI conventions and palette already in
   the code. Don't introduce new dependencies. Don't refactor unrelated code in a feature
   change. When you fix a class of bug, add a one-line note to this file so it isn't
