@@ -4,6 +4,32 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.15 — The mage's refusal trace was never wired up
+
+The v1.2.13 fix added a trace for cast refusals the client discards, so an unrecognised
+"why did nothing happen" message would show up as `refused? <spell> :: <message>` instead
+of vanishing. A follow-up log on the same arcane-missiles report showed the double-cast
+pattern was still there — but with **no `refused?` line anywhere**, which meant the trace
+itself was not firing.
+
+### 🐛 Fixed — `Class_Mage.lua` never told the core a cast was sent
+
+`OnCastError` decides whether to trace an unrecognised refusal by checking `self.lastSpell`,
+which is set by `Aegis_SBR:NoteSpellCast`. That is only called from the core's own
+`Pick`/`PickQueue`. The mage module's `M:Queue` and `M:Wand` call `CastSpellByName` /
+`QueueSpellByName` **directly** — that direct call is the entire point of the v1.2.11
+post-channel window — so neither ever told the core a cast had gone out. `OnCastError` saw
+every refusal and had nothing to blame it on, silently.
+
+`M:Queue` and `M:Wand` now call `Aegis_SBR:NoteSpellCast` themselves, matching what
+`Pick`/`PickQueue` already do. `M:Pick` was already correct — it routes through the core's
+`Pick`, which sets this on its own.
+
+Not a rotation change: this makes an existing diagnostic actually run. No ability, gate, or
+order touched.
+
+---
+
 ## v1.2.14 — Two reports, one guessed second
 
 ### 🐛 Fixed — a target healed to full, then healed again
