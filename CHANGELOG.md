@@ -4,6 +4,63 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.15 — Mage cast bookkeeping, and a correction to v1.2.11–v1.2.13
+
+### 🐛 Fixed — `Class_Mage.lua` never told the core a cast was sent
+
+`Aegis_SBR:NoteSpellCast` records the spell last sent. `OnCastError` and
+`SpellRefusedSince` both read it to attribute a refusal to a spell. Only the core's
+`Pick`/`PickQueue` called it.
+
+`M:Queue` and `M:Wand` call `CastSpellByName` / `QueueSpellByName` directly — that direct
+call is the point of the v1.2.11 post-channel window — so neither recorded anything. Any
+genuine refusal on those paths (out of range, line of sight, out of mana) had no spell to
+blame and was dropped.
+
+Both now call `NoteSpellCast`, matching `Pick`/`PickQueue`. `M:Pick` was already correct;
+it routes through the core `Pick`.
+
+Not a rotation change. No ability, gate, or order touched.
+
+### ⚠️ Correction — the arcane-missiles delay was misdiagnosed three times
+
+Re-reading the captured log against the reporter's stated 307ms latency shows the earlier
+conclusions were wrong. In every cycle the **first** cast is the one that starts the
+channel, one round trip later:
+
+| Channel start | 1st cast | Δ | 2nd cast | Δ |
+|---|---|---|---|---|
+| 1.18 | 0.87 | 0.31s | 1.03 | 0.15s |
+| 6.60 | 6.24 | 0.36s | 6.43 | 0.17s |
+| 12.07 | 11.74 | 0.33s | 11.93 | 0.14s |
+| 17.60 | 17.25 | 0.35s | 17.47 | 0.13s |
+
+The first-cast deltas match the stated latency. The second-cast deltas are below it, so the
+second cast cannot be what started the channel — it is a redundant press sent while the
+first was still in flight, before `SPELLCAST_CHANNEL_START` arrived. Mana staying flat
+across the first cast, read at the time as proof of a refusal, is explained the same way:
+mana does not drop until the server confirms.
+
+The gap from `SPELLCAST_CHANNEL_STOP` to the next channel is ~0.45s, of which ~0.10s is
+noticing and pressing and ~0.34s is the network. The rotation already casts on the first
+press after the guard opens.
+
+What this means for the three preceding releases:
+
+| Release | Claim | Status |
+|---|---|---|
+| v1.2.11 | Nampower's queue caused the delay | Wrong — delay persists without Nampower |
+| v1.2.12 | Ten filler casts consumed the press when refused | Real bug, stands; not this symptom |
+| v1.2.13 | The client refused every first cast | **Wrong** — the first cast lands |
+
+The v1.2.13 entry is left in place with this correction pointing at it, rather than
+rewritten, since it shipped.
+
+The 0.05s macro measurement that prompted v1.2.11 is not consistent with 307ms latency and
+should be treated as unexplained rather than as evidence.
+
+---
+
 ## v1.2.14 — Two reports, one guessed second
 
 ### 🐛 Fixed — a target healed to full, then healed again

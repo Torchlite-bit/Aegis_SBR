@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation (v1.2.14)
+# Aegis: Single Button Rotation (v1.2.15)
 
 **One button. Your whole rotation.**
 

@@ -197,6 +197,9 @@ function M:Wand()
         return true
     end
     CastSpellByName("Shoot")
+    -- Same reason as Queue below: this calls the primitive directly, so it must
+    -- do its own bookkeeping for OnCastError's refusal trace to see it.
+    Aegis_SBR:NoteSpellCast("Shoot")
     return true
 end
 
@@ -293,6 +296,13 @@ function M:Queue(name, reason)
     else
         QueueSpellByName(name)
     end
+    -- This module calls the primitives directly instead of going through the
+    -- core's Pick/PickQueue (that is the point of the direct/queue choice above),
+    -- so it must do the bookkeeping those do. NoteSpellCast is what lets
+    -- OnCastError and SpellRefusedSince attribute a refusal to a spell; without
+    -- it, a genuine refusal on this path - out of range, line of sight, out of
+    -- mana - has nothing to blame and is dropped.
+    Aegis_SBR:NoteSpellCast(name)
     -- Names the spell AND which primitive sent it, so a log answers "what did
     -- this press do" outright instead of by inference from what happened next.
     if self:Tracing() then
