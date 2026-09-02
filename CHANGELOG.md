@@ -4,6 +4,66 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.16 — Carve in single target, and a buff fallback that never worked
+
+### ✨ Hunter: Carve as a single-target filler (Survival melee)
+
+Carve was gated on AoE mode (`Class_Hunter.lua:1006`), so it never fired in single
+target. It now also sits at the **bottom** of the melee priority — after Raptor Strike,
+before Wing Clip — where it can only take a press nothing else wanted. The AoE lead is
+unchanged.
+
+Placed as filler rather than ranked against the strikes deliberately: Carve's damage
+relative to Raptor Strike has not been measured, and filler is the position where being
+wrong about that costs nothing. The shared Multi-Shot cooldown needs no handling in melee,
+where Multi-Shot is not part of the branch.
+
+Approved change; the research documents Carve as an AoE tool, so this is a deliberate
+departure from it rather than a correction.
+
+### 🐛 Fixed — a buff fallback in two modules searched a texture path for a spell name
+
+`UnitBuff("player", i)` returns the icon **texture path** as its first value, not a name.
+`Aegis_SBR_BuffUp.lua:600` is the reference: it names that return `tex` and builds a
+tooltip through `SetUnitBuff` to obtain the name.
+
+Three modules hand-rolled a "check for a differently worded proc" fallback on top of it:
+
+| Module | Searched for | Correct |
+|---|---|---|
+| Warlock | `Spell_Shadow_Twilight` | yes — a texture fragment |
+| Shaman | `Clearcast` | no — a name |
+| Druid | `Eclipse` | no — a name |
+
+The Warlock's is the only working copy and is untouched. The other two could match only if
+the icon filename happened to contain the word, so both were dead code.
+
+New core helper `Aegis_SBR:BuffNameContaining(frag)` returns the first buff whose
+**resolved name** contains a fragment, using the same SuperWoW id → `SpellInfo` path as
+`ScanBuff`. That is the partial match `HasBuff` cannot do, since it requires the exact
+name. Both modules now use it, so the defect cannot recur in a third.
+
+**Impact differs sharply between the two.** On the Shaman the fallback was never reached —
+`HasBuff("Clearcasting")` is almost certainly the right name. On the **Druid it was
+load-bearing**: `EclipseSide()` guesses five possible Eclipse buff names, and when none
+matched, the broken fallback was the only remaining path. It returned `nil` every press, so
+the Eclipse reaction never fired and Balance chain-cast Wrath — the reported symptom.
+
+`EclipseSide()` also gains a side fallback: a buff named for Eclipse but with no side in
+its name now reports `lunar` rather than `nil`. `nil` means "no proc" and drops the
+reaction entirely; guessing lunar costs a cast ratio at worst, where guessing solar
+re-casts the filler already being spammed.
+
+**This may not be the whole Druid fix.** Audit item **D5** remains open on whether Turtle's
+Eclipse is a buff at all — the research reads as rewarding strict Wrath/Starfire
+alternation, which would mean no buff exists and `EclipseSide()` is the wrong model rather
+than a mis-named one. `/sbr debug` with a proc up settles it: it resolves buff names
+correctly (`GetPlayerBuff` → `GetPlayerBuffID` → `SpellInfo`). If a buff appears, its name
+goes into `M.ECLIPSE_LUNAR` / `M.ECLIPSE_SOLAR` and this is finished. If none appears, the
+rotation shape needs revisiting.
+
+---
+
 ## v1.2.15 — Mage cast bookkeeping, and a correction to v1.2.11–v1.2.13
 
 ### 🐛 Fixed — `Class_Mage.lua` never told the core a cast was sent

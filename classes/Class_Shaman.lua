@@ -340,11 +340,12 @@ end
 -- 60% cheaper. Tried by name first, then a texture scan as a fallback.
 function M:ClearcastUp()
     if self:HasBuff("Clearcasting") then return true end
-    for i = 1, 32 do
-        local b = UnitBuff("player", i)
-        if b and string.find(b, "Clearcast") then return true end
-    end
-    return false
+    -- Fallback for a differently worded proc. Was scanning UnitBuff's first
+    -- return for "Clearcast", but that return is the icon texture PATH, not a
+    -- name, so it never matched. Harmless in practice - the exact name above
+    -- is almost certainly right - but it was the same defect the druid's
+    -- Eclipse check had, where the fallback WAS load-bearing.
+    return Aegis_SBR:BuffNameContaining("Clearcast") ~= nil
 end
 
 -- The configured shield/shock resolved to a spell name ("" if none/off).

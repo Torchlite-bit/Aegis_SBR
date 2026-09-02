@@ -338,12 +338,23 @@ function M:EclipseSide()
     for i = 1, table.getn(self.ECLIPSE_LUNAR) do
         if self:HasBuff(self.ECLIPSE_LUNAR[i]) then return "lunar" end
     end
-    for i = 1, 32 do
-        local b = UnitBuff("player", i)
-        if b and string.find(b, "Eclipse") then
-            if string.find(b, "Orange") or string.find(b, "Solar") then return "solar" end
-            return "lunar"
-        end
+    -- Fallback: any buff whose real NAME mentions Eclipse, whatever the exact
+    -- wording. This used to scan UnitBuff and search its first return for
+    -- "Eclipse" - but that return is the icon texture PATH, not a name, so it
+    -- could only ever match if the icon filename happened to contain the word.
+    -- The side test below it had the same fault, searching a file path for
+    -- "Orange"/"Solar". Both were dead, which left detection resting entirely
+    -- on one of the five guessed names above being exactly right.
+    local nm = Aegis_SBR:BuffNameContaining("Eclipse")
+    if nm then
+        if string.find(nm, "Solar", 1, true) then return "solar" end
+        if string.find(nm, "Lunar", 1, true) then return "lunar" end
+        -- Named for Eclipse but with no side in the name: report the side we
+        -- cannot rule out rather than nil, since nil means "no proc" and would
+        -- silently drop the reaction entirely. Lunar/Starfire is the safer of
+        -- the two to guess - it is the bigger nuke, so a wrong guess costs a
+        -- cast ratio, where guessing solar re-casts the filler we already spam.
+        return "lunar"
     end
     return nil
 end

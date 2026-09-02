@@ -1025,6 +1025,21 @@ function M:Rotate(cfg)
         if cfg.useRaptorStrike and self:KnowsSpell("Raptor Strike") and self:IsReady("Raptor Strike") then
             if self:Pick("Raptor Strike", "on cooldown") then return end
         end
+        -- Carve as a single-target filler, BELOW every rotational attack, so it
+        -- can only take a press nothing else wanted. Requested from play.
+        --
+        -- The research documents Carve as an AoE tool (Survival AoE is "Carve +
+        -- Explosive Trap"), which is why the AoE lead above exists and stays. A
+        -- cone hitting one target is still damage on an otherwise idle global,
+        -- and the shared Multi-Shot cooldown costs nothing in melee, where
+        -- Multi-Shot is not part of the branch at all.
+        --
+        -- Placed last rather than ranked against the strikes on purpose: its
+        -- damage relative to Raptor Strike has not been measured, and filler is
+        -- the position where being wrong about that is free.
+        if cfg.useCarve and self:KnowsSpell("Carve") and self:IsReady("Carve") then
+            if self:Pick("Carve", "single-target filler") then return end
+        end
         -- Wing Clip (optional kite / slow).
         if cfg.useWingClip and self:KnowsSpell("Wing Clip") and self:IsReady("Wing Clip") then
             if self:Pick("Wing Clip", "slow") then return end
