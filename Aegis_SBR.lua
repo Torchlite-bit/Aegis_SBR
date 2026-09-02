@@ -1068,9 +1068,8 @@ end
 -- Not the same question as "are we moving", and the difference is the whole
 -- point. Stopping is not a commitment to stay stopped: a step to reposition
 -- puts a fraction of a second of stillness in the middle of moving, and a check
--- that only asks "moving right now" fires into it. Described from play, exactly
--- and unkindly: "ah, this person hasn't moved for one second, seems like a good
--- time to fart gold".
+-- that only asks "moving right now" fires into it. That gap was spotted from
+-- play before the first version shipped with it.
 --
 -- So a ground effect asks for a DWELL, not for a moment. What it buys is a
 -- guess that the next few seconds look like the last few - the only guess
@@ -1293,6 +1292,47 @@ function Aegis_SBR:CountEnemiesNear(yards)
 
     self.enemyCount = { yards = yards, n = n, t = now }
     return n
+end
+
+-- ============================================================
+-- Is the target casting?
+--
+-- 1.12 cannot see another unit's cast at all - there is no API and no cast bar
+-- to read. SuperWoW's UNIT_CASTEVENT can: it reports every registered cast with
+-- the caster's GUID, the spell id and the cast length in milliseconds, so a
+-- START recorded against a GUID plus its duration is a cast in progress.
+--
+-- Kept in the core rather than in a class because it answers the same question
+-- for every interrupt there will ever be, and because the event is already
+-- registered and dispatched here.
+--
+-- Instants never appear as a cast in progress (they arrive as CAST with no
+-- meaningful duration), which is correct: there is nothing to interrupt.
+-- ============================================================
+Aegis_SBR.enemyCastEnd = {}
+
+function Aegis_SBR:NoteEnemyCast(guid, ms)
+    if not guid then return end
+    local secs = tonumber(ms)
+    if not secs or secs <= 0 then return end
+    self.enemyCastEnd[guid] = GetTime() + (secs / 1000)
+end
+
+function Aegis_SBR:ClearEnemyCast(guid)
+    if guid then self.enemyCastEnd[guid] = nil end
+end
+
+-- True only when a cast is genuinely still running. Answers FALSE without
+-- SuperWoW, which is "cannot tell" - and here that is the safe direction: it
+-- withholds an interrupt rather than inventing one.
+function Aegis_SBR:TargetIsCasting()
+    if not UnitExists("target") then return false end
+    local _, guid = UnitExists("target")
+    if not guid then return false end
+    local t = self.enemyCastEnd[guid]
+    if not t then return false end
+    if GetTime() > t then self.enemyCastEnd[guid] = nil; return false end
+    return true
 end
 
 -- ============================================================
@@ -2695,6 +2735,10 @@ ev:SetScript("OnEvent", function()
         end
         if Aegis_SBR.ProbeOnTotem then Aegis_SBR:ProbeOnTotem(arg1) end
     elseif event == "UNIT_CASTEVENT" then
+        -- Somebody else's cast starting or ending. Recorded for every unit, not
+        -- just the target: you can be switched onto a mob mid-cast.
+        if arg3 == "START" then Aegis_SBR:NoteEnemyCast(arg1, arg5)
+        elseif arg3 == "CAST" or arg3 == "FAIL" then Aegis_SBR:ClearEnemyCast(arg1) end
         -- Only successful casts ("CAST"), and only if the active module wants them.
         if arg3 == "CAST" and Aegis_SBR.active and Aegis_SBR.active.OnCastEvent then
             local sname
