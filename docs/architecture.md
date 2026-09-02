@@ -128,6 +128,10 @@ the `AegisUI_*` prefix.)
   refuses. The shield test uses `itemEquipLoc` (a constant) rather than the localised subtype
   string; daggers have no such constant, so that check is an English-client improvement and a
   no-op elsewhere. Facing comes from UnitXP_SP3 — vanilla has no facing API at all.
+- Enemy casts (core, v1.2.13): `TargetIsCasting()`, from SuperWoW's `UNIT_CASTEVENT` — a START
+  against a caster GUID plus its duration. 1.12 has no way to see another unit's cast at all, so
+  every interrupt that ever gets built rests on this. Answers **false** without SuperWoW, which
+  here is the safe direction: it withholds an interrupt rather than inventing one.
 - Affordability (v1.2.10): `Aegis_SBR:CanAfford(name)` existed; what did not was any class
   actually calling it before spending the press. `Pick` / `PickQueue` report success on "known
   and learned", **not** on "accepted", which is correct for them and a trap for a caller that
