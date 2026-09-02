@@ -47,6 +47,10 @@ local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 -- on stop. A 16s ceiling guards a missed stop event so the rotation never wedges.
 M.channeling = false
 M.chanStart = 0
+-- When the last channel ENDED. Read by Queue: for a short window after a channel
+-- stops there is provably nothing in flight, so Nampower's queue can only add
+-- delay and the cast goes out directly instead. See the note on Queue.
+M.chanEnd = 0
 local mgChannelFrame = CreateFrame("Frame")
 mgChannelFrame:RegisterEvent("SPELLCAST_CHANNEL_START")
 mgChannelFrame:RegisterEvent("SPELLCAST_CHANNEL_STOP")
@@ -54,9 +58,14 @@ mgChannelFrame:SetScript("OnEvent", function()
     if event == "SPELLCAST_CHANNEL_START" then
         M.channeling = true; M.chanStart = GetTime()
     elseif event == "SPELLCAST_CHANNEL_STOP" then
-        M.channeling = false
+        M.channeling = false; M.chanEnd = GetTime()
     end
 end)
+
+-- How long after a channel stops the direct-cast path is used. One press is all
+-- it needs: the next press casts, a new channel starts, and the guard in Rotate
+-- takes over again. Sized to cover a slow press cadence, not to be a mode.
+local POST_CHANNEL_DIRECT = 0.5
 
 M.modeAlias = { frost = "frost", ice = "frost", fire = "fire",
                 arcane = "arcane", arc = "arcane" }
@@ -226,7 +235,28 @@ function M:Queue(name, reason)
         p.spell = name; p.reason = reason; p.queue = true
         return true
     end
-    if self:Wanding() or not QueueSpellByName then
+    -- Nampower's queue exists to hold a press until a cast ALREADY IN FLIGHT
+    -- finishes, so the next spell goes out without clipping it. Immediately
+    -- after a channel ends nothing is in flight, and there it does the opposite:
+    -- measured on an arcane mage spamming Arcane Missiles, the gap from
+    -- SPELLCAST_CHANNEL_STOP to the next SPELLCAST_CHANNEL_START was 0.37s
+    -- through QueueSpellByName and 0.05s through CastSpellByName - same channel,
+    -- same gate, one word different. On a ~5.09s channel that is 0.32s of dead
+    -- time per cast, about 6% of throughput for a spec whose whole rotation is
+    -- one channel.
+    --
+    -- 0.05s is BELOW the player's 307ms latency, which is the proof that channel
+    -- start is client-predicted and the 0.37s was never network-bound - it was
+    -- the queue holding the spell against its own idea of when the channel ends.
+    -- docs/dependencies.md says as much in the abstract: "Aegis IS a casting
+    -- manager - if a specific interaction misbehaves, suspect queue timing first."
+    --
+    -- Deliberately a WINDOW rather than "always cast directly": a press during a
+    -- Frostbolt still has something real to queue behind, and that is the case
+    -- the queue was added for. Only the post-channel moment is carved out.
+    local direct = self:Wanding() or not QueueSpellByName
+        or (GetTime() - (self.chanEnd or 0)) < POST_CHANNEL_DIRECT
+    if direct then
         CastSpellByName(name)
     else
         QueueSpellByName(name)

@@ -4,6 +4,59 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.11 — The queue was the delay
+
+### ⚡ Mage: cast directly in the moment after a channel ends
+
+Reported as a roughly three second wait between Arcane Missiles on a mage who had
+nothing else trained. **Measured, it was 0.32s per cast — and none of it was the channel
+guard, the rotation, or the network.**
+
+The player built a minimal no-clip macro to compare against, and it settled the question
+by holding everything constant. Its gate is *identical* to Aegis's — same two events, same
+"don't cast while channeling" rule. Then a second macro was run with `CastSpellByName`
+swapped for `QueueSpellByName` and **nothing else changed**. That one was slow too. One
+word, reproduced.
+
+Measured with a macro that prints the gap from `SPELLCAST_CHANNEL_STOP` to the next
+`SPELLCAST_CHANNEL_START`:
+
+| Path | Gap | Cycle | Casts/min |
+|---|---|---|---|
+| `QueueSpellByName` (Aegis) | **0.37s** | 5.46s | 10.99 |
+| `CastSpellByName` (macro) | **0.05s** | 5.14s | 11.67 |
+
+**≈6.2% throughput** for a spec whose entire rotation is one channel.
+
+The 0.05s figure is what proves the cause. It is **below the player's 307ms latency**, so
+channel start is client-predicted and never waited on the server — meaning the 0.37s was
+never network-bound. It was Nampower's queue holding the spell against its own idea of
+when the channel had ended. `docs/dependencies.md` already said so in the abstract:
+*"Aegis IS a casting manager — if a specific interaction misbehaves, suspect queue timing
+first."*
+
+`M:Queue` now casts **directly** within 0.5s of a channel stopping, and queues as before
+otherwise. The queue exists to hold a press until a cast **already in flight** finishes;
+in the moment after a channel ends there is nothing in flight, so it can only add delay.
+
+Deliberately a **window, not a mode**: a press during a Frostbolt still has something real
+to queue behind, and that is the case the queue was added for. Only the post-channel
+moment is carved out. One press is all the window needs — the next press casts, a new
+channel starts, and the guard in `Rotate` takes over again.
+
+**Not done, and worth saying:** two turns of this investigation proposed clearing the
+channel guard at `start + tooltip duration` instead. The measurements killed it. The
+tooltip reads **4s** while the channel measured **5.09s** across five cycles (4.93–5.19),
+so that "fix" would have fired a second early, clipped the real channel, and dropped a
+missile. It was on the *unblock a guard* side that starved Auto Shot on the hunter, and it
+was wrong for the same reason.
+
+*The priest and warlock queue through the same shape and carry the same 0.32s. Left alone
+on purpose — this is the class that was measured, and the mage result should be confirmed
+in play before it is assumed to generalise.*
+
+---
+
 ## v1.2.10 — A press spent on a cast that never happened
 
 Two hunter reports, both about switching target while holding the macro down, and both landing
