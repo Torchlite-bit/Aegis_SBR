@@ -158,13 +158,27 @@ end
 -- ============================================================
 -- Wand helpers (mirror the priest)
 -- ============================================================
+-- Is the wand currently auto-repeating? Cached per press against the core's
+-- press token, because the miss path scans up to 120 action slots and this is
+-- called at least twice on every press - once by the trace line and once by
+-- Queue - so an idle mage was paying 240 API calls a press to answer a question
+-- that cannot change within one press. Same reason the paladin measures the
+-- group once per press (v1.2.7, Aegis_SBR:NewPress).
 function M:Wanding()
+    local tok = Aegis_SBR.pressToken
+    if tok and self.wandingTok == tok then return self.wandingVal end
+    local val = false
     local slot = self.wandSlot
-    if slot and IsAutoRepeatAction(slot) then return true end
-    for s = 1, 120 do
-        if IsAutoRepeatAction(s) then self.wandSlot = s; return true end
+    if slot and IsAutoRepeatAction(slot) then
+        val = true
+    else
+        for s = 1, 120 do
+            if IsAutoRepeatAction(s) then self.wandSlot = s; val = true; break end
+        end
     end
-    return false
+    self.wandingTok = tok
+    self.wandingVal = val
+    return val
 end
 
 -- A mage can only equip a wand in the ranged slot, so an occupied ranged slot
@@ -223,13 +237,31 @@ end
 -- An unreadable cost answers YES (see CanAfford), so a tooltip that failed to
 -- populate can never lock a step out.
 function M:Pick(name, reason)
-    if not Aegis_SBR:CanAfford(name) then return false end
-    return Aegis_SBR.Pick(self, name, reason)
+    -- Traced for the same reason as Queue: a press turned away here used to be
+    -- indistinguishable in the log from a press that never got this far.
+    if not Aegis_SBR:CanAfford(name) then
+        if self:Tracing() then self:Trace("skip " .. name .. " (cost)") end
+        return false
+    end
+    local ok = Aegis_SBR.Pick(self, name, reason)
+    if ok and self:Tracing() then self:Trace("cast " .. name) end
+    return ok
 end
 
 function M:Queue(name, reason)
-    if not self:KnowsSpell(name) then return false end
-    if not Aegis_SBR:CanAfford(name) then return false end
+    -- Both refusals are traced. Until now a press that reached a cast and was
+    -- turned away here produced NO output at all, so a report of "it just waits"
+    -- could not be told apart from "it cast and the spell is slow" - which cost
+    -- several rounds of guessing on the arcane-missiles report. A press that
+    -- does nothing must say so.
+    if not self:KnowsSpell(name) then
+        if self:Tracing() then self:Trace("skip " .. name .. " (unknown)") end
+        return false
+    end
+    if not Aegis_SBR:CanAfford(name) then
+        if self:Tracing() then self:Trace("skip " .. name .. " (cost)") end
+        return false
+    end
     if Aegis_SBR.deciding then
         local p = Aegis_SBR.decidePlan
         p.spell = name; p.reason = reason; p.queue = true
@@ -260,6 +292,11 @@ function M:Queue(name, reason)
         CastSpellByName(name)
     else
         QueueSpellByName(name)
+    end
+    -- Names the spell AND which primitive sent it, so a log answers "what did
+    -- this press do" outright instead of by inference from what happened next.
+    if self:Tracing() then
+        self:Trace((direct and "cast " or "queue ") .. name)
     end
     return true
 end
@@ -419,8 +456,8 @@ function M:RotateFrost(cfg)
     end
 
     -- Frostbolt filler (primary nuke). Fireball covers levels 1-3 before it.
-    if self:KnowsSpell("Frostbolt") then self:Queue("Frostbolt", "main nuke"); return end
-    if self:KnowsSpell("Fireball") then self:Queue("Fireball", "main nuke"); return end
+    if self:Queue("Frostbolt", "main nuke") then return end
+    if self:Queue("Fireball", "main nuke") then return end
     self:Wand()
 end
 
@@ -477,8 +514,8 @@ function M:RotateFire(cfg)
 
     -- Fireball filler (primary nuke). Frostbolt covers very early levels if Fire
     -- was somehow picked before Fireball is up.
-    if self:KnowsSpell("Fireball") then self:Queue("Fireball", "main nuke"); return end
-    if self:KnowsSpell("Frostbolt") then self:Queue("Frostbolt", "main nuke"); return end
+    if self:Queue("Fireball", "main nuke") then return end
+    if self:Queue("Frostbolt", "main nuke") then return end
     self:Wand()
 end
 
@@ -520,9 +557,9 @@ function M:RotateArcane(cfg)
 
     -- Arcane Missiles filler (channel). Frostbolt / Fireball cover the early
     -- levels before Missiles is trained.
-    if self:KnowsSpell("Arcane Missiles") then self:Queue("Arcane Missiles", "main nuke"); return end
-    if self:KnowsSpell("Frostbolt") then self:Queue("Frostbolt", "main nuke"); return end
-    if self:KnowsSpell("Fireball") then self:Queue("Fireball", "main nuke"); return end
+    if self:Queue("Arcane Missiles", "main nuke") then return end
+    if self:Queue("Frostbolt", "main nuke") then return end
+    if self:Queue("Fireball", "main nuke") then return end
     self:Wand()
 end
 
@@ -557,11 +594,11 @@ function M:RotateAoE(cfg)
     end
 
     -- Arcane Explosion: the PBAoE finisher for every spec.
-    if self:KnowsSpell("Arcane Explosion") then self:Queue("Arcane Explosion", "AoE"); return end
+    if self:Queue("Arcane Explosion", "AoE") then return end
 
     -- Low-level fallback: just nuke the target.
-    if self:KnowsSpell("Frostbolt") then self:Queue("Frostbolt", "main nuke"); return end
-    if self:KnowsSpell("Fireball") then self:Queue("Fireball", "main nuke"); return end
+    if self:Queue("Frostbolt", "main nuke") then return end
+    if self:Queue("Fireball", "main nuke") then return end
     self:Wand()
 end
 
