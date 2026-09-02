@@ -4,6 +4,52 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.12 — Mage: a press that does nothing now says so
+
+**v1.2.11 blamed Nampower's queue. That was wrong** — the delay is present with Nampower
+uninstalled, where `QueueSpellByName` does not exist and `M:Queue` already fell through to
+`CastSpellByName`, the identical call the comparison macro makes. The queue was never the
+cause. The 0.37s-vs-0.05s measurement was real, but it was measuring something downstream of
+the actual problem. The v1.2.11 window is kept — it is correct on its own terms and costs
+nothing — but it is not the fix, and the note claiming it was has been corrected.
+
+### 🐛 Fixed — ten filler casts consumed the press when refused
+
+Every other cast site in the module is written `if self:Queue(x) then return end`. The nuke
+fillers — the last line of every spec's rotation — were written
+`if self:KnowsSpell(x) then self:Queue(x); return end`: an **unconditional** return that
+fires whether or not the cast was accepted.
+
+`M:Queue` returns `false` when the spell is unaffordable (the `CanAfford` gate added in
+v1.2.10). So below the cost of one Arcane Missiles the arcane mage did this, every press:
+reach the filler, get refused, **return anyway**. No wand, no fallback, nothing — a press
+that looked identical to a stall. Ten lines across all four rotations had this shape
+(frost, fire, arcane, AoE).
+
+They now fall through, which is what the module's own documented *"nuke then wand"* rule
+always intended: refused nuke → next nuke → wand.
+
+### 🔍 A press that casts nothing now leaves a trace line
+
+This is why the report took as long as it did. `M:Queue` and `M:Pick` could turn a press away
+with **no output whatsoever**, so in a log "it waited" and "it cast, and the spell is simply
+slow" were indistinguishable — and three separate causes were proposed and shipped against
+that ambiguity.
+
+Both refusal paths now trace `skip <spell> (cost)` or `skip <spell> (unknown)`, and a cast
+traces `cast <spell>` or `queue <spell>` — naming **which primitive sent it**. A log now
+answers "what did this press do" outright rather than by inference from what happened next.
+
+### ⚡ `Wanding()` no longer scans 120 action slots twice a press
+
+The miss path walks every action slot looking for an auto-repeat, and it is called at least
+twice per press — once by the trace line, once by `Queue`. An idle mage was paying ~240 API
+calls per press to answer a question that cannot change within a press. Now cached against
+the core's press token, the same way the paladin measures its group once per press
+(`Aegis_SBR:NewPress`, v1.2.7).
+
+---
+
 ## v1.2.11 — The queue was the delay
 
 ### ⚡ Mage: cast directly in the moment after a channel ends
