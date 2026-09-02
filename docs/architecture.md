@@ -57,6 +57,19 @@ the `AegisUI_*` prefix.)
 - Casting primitives: `Cast(name)` (reports success if merely KNOWN — see the caveat in the
   Warrior module header), `Queue(name)` (uses Nampower queueing), `Try(name)` /
   `CanCast(name, cost, stances)` wrappers in some modules.
+- **Queueing is not free when nothing is in flight** (v1.2.11). Nampower's queue exists to
+  hold a press until a cast **already running** finishes. In the moment right after a
+  *channel* ends there is nothing to hold behind, and there it does the opposite: measured
+  on an arcane mage, the gap from `SPELLCAST_CHANNEL_STOP` to the next channel was **0.37s
+  through `QueueSpellByName` and 0.05s through `CastSpellByName`** — same gate, same spell,
+  one word different, ≈6% of throughput. The 0.05s is below that player's 307ms latency,
+  which proves channel start is client-predicted and the loss was never network-bound.
+  `Class_Mage.lua` carves out a 0.5s post-channel window that casts directly (`chanEnd` +
+  `POST_CHANNEL_DIRECT`) and queues as normal otherwise — a window, not a mode, because a
+  press during a Frostbolt still has something real to queue behind. **The priest and
+  warlock have the same shape and have not been measured.** If a class ever looks sluggish
+  coming out of a channel, check which primitive its `Queue` took before looking anywhere
+  else.
 - Shared resource/timing helpers (core, v1.1.8+): `Aegis_SBR:SpellCost(name)` /
   `CanAfford(name)` read a spell's real cost off the spellbook **tooltip** (cached, dropped
   on `SPELLS_CHANGED`/`CHARACTER_POINTS_CHANGED`) instead of a hardcoded table, so a talent
