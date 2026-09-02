@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.12",
+    ver = "1.2.13",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1293,6 +1293,47 @@ function Aegis_SBR:CountEnemiesNear(yards)
 
     self.enemyCount = { yards = yards, n = n, t = now }
     return n
+end
+
+-- ============================================================
+-- Is the target casting?
+--
+-- 1.12 cannot see another unit's cast at all - there is no API and no cast bar
+-- to read. SuperWoW's UNIT_CASTEVENT can: it reports every registered cast with
+-- the caster's GUID, the spell id and the cast length in milliseconds, so a
+-- START recorded against a GUID plus its duration is a cast in progress.
+--
+-- Kept in the core rather than in a class because it answers the same question
+-- for every interrupt there will ever be, and because the event is already
+-- registered and dispatched here.
+--
+-- Instants never appear as a cast in progress (they arrive as CAST with no
+-- meaningful duration), which is correct: there is nothing to interrupt.
+-- ============================================================
+Aegis_SBR.enemyCastEnd = {}
+
+function Aegis_SBR:NoteEnemyCast(guid, ms)
+    if not guid then return end
+    local secs = tonumber(ms)
+    if not secs or secs <= 0 then return end
+    self.enemyCastEnd[guid] = GetTime() + (secs / 1000)
+end
+
+function Aegis_SBR:ClearEnemyCast(guid)
+    if guid then self.enemyCastEnd[guid] = nil end
+end
+
+-- True only when a cast is genuinely still running. Answers FALSE without
+-- SuperWoW, which is "cannot tell" - and here that is the safe direction: it
+-- withholds an interrupt rather than inventing one.
+function Aegis_SBR:TargetIsCasting()
+    if not UnitExists("target") then return false end
+    local _, guid = UnitExists("target")
+    if not guid then return false end
+    local t = self.enemyCastEnd[guid]
+    if not t then return false end
+    if GetTime() > t then self.enemyCastEnd[guid] = nil; return false end
+    return true
 end
 
 -- ============================================================
@@ -2669,6 +2710,10 @@ ev:SetScript("OnEvent", function()
         end
         if Aegis_SBR.ProbeOnTotem then Aegis_SBR:ProbeOnTotem(arg1) end
     elseif event == "UNIT_CASTEVENT" then
+        -- Somebody else's cast starting or ending. Recorded for every unit, not
+        -- just the target: you can be switched onto a mob mid-cast.
+        if arg3 == "START" then Aegis_SBR:NoteEnemyCast(arg1, arg5)
+        elseif arg3 == "CAST" or arg3 == "FAIL" then Aegis_SBR:ClearEnemyCast(arg1) end
         -- Only successful casts ("CAST"), and only if the active module wants them.
         if arg3 == "CAST" and Aegis_SBR.active and Aegis_SBR.active.OnCastEvent then
             local sname

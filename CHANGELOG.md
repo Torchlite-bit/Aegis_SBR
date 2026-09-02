@@ -4,6 +4,82 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.13 — Two reports, one guessed second
+
+### 🐛 Fixed — a target healed to full, then healed again
+
+And, from the same session: *Holy Shock firing above its threshold, mostly out of combat*. Two
+reports, one cause.
+
+After a heal, the target is credited with the incoming amount so it is not picked again before
+the new health arrives. That credit ran on a clock — `castTime + 1s`, described in the code
+itself as "latency slack". **The second was a guess.** A party member's health arrives on the
+server's own cadence, and out of combat that cadence is slow. When the credit expired first, the
+unit read at its **pre-heal** health, which produces both symptoms at once: it is picked again
+and healed into a full bar, and the same stale reading puts its percentage under the Holy Shock
+emergency line.
+
+The reporter's own note that it was *mostly out of combat* is the strongest evidence for this —
+that is exactly where the update cadence is slowest.
+
+The credit now ends on **evidence**: the moment the unit's health rises above what it was when
+the cast was committed, the client has caught up and its own value is the accurate one. The
+timer is demoted to a ceiling for the case where the rise never comes at all, and raised from one
+second to three because it is no longer doing the work. The same correction the cast-end handling
+got in v1.2.0, for the same reason — measure it, do not guess it.
+
+**Only a rise clears the credit.** Deliberately not "health changed", and emphatically not
+"health dropped below the commit baseline": that second guard existed once and re-healed every
+actively tanked target inside this very window, causing the overheal it was meant to prevent. The
+warning is in the code and it stays.
+
+*Scope, stated honestly: this covers a stale reading caused by **our own** heal, which is the
+reported sequence. A delay caused by another healer or by regeneration has no credit to hold —
+only HealComm can see those, and only when it is installed. `/sbr trace` carries `pct=` and
+`pend=`, so a log settles which one a future report is.*
+
+### ✨ Repentance learns which of its two spells it gets
+
+*Repentance* is two abilities under one name. Where the incapacitate lands it is a six second
+crowd control that any damage breaks — in a group, instantly — so on trash it buys a stun and
+nothing else. Where the target is **immune** to that control it becomes twenty seconds during
+which every melee attack the enemy makes costs it holy damage: a large gain on a boss, worthless
+on a mob that will not live to swing twenty times.
+
+Nothing says in advance which one a creature gives. So it is learned once per creature type and
+remembered between sessions, filed under the **creature template id** where ClassicAPI can read
+it (names are localised and collide) and under the name only as a fallback.
+
+**When a verdict may be recorded is the whole difficulty.** Only when the cast actually resolved,
+and the proof of that is **its cooldown having started** — Repentance is instant, so it cannot be
+interrupted, but it can fail to leave at all, and then it has taught us nothing. A resist resolves
+the cast but says nothing about immunity, so it voids the probe rather than answering it. Without
+that gate, "no immune message arrived" would be read as "not immune", and one out-of-range press
+would record a boss as ordinary trash forever.
+
+What is done with the answer:
+
+- **Immune** — cast on cooldown. It is a damage cooldown on that creature.
+- **Not immune** — only to stop a cast, the one thing the control is still worth a global
+  cooldown for.
+- **Unknown** — probe, but only where the answer could pay for itself: an elite, a boss, or a
+  measurably long-lived target (`repentProbeTTK`, 15s). The damage effect pays out over twenty
+  seconds of swings, so learning the answer on a mob that dies in five buys nothing and costs a
+  global cooldown per creature type. A target that is **currently casting** is always worth it,
+  known or not.
+
+### ✨ The core can see enemy casts
+
+1.12 cannot: there is no API and no cast bar to read for another unit. SuperWoW's
+`UNIT_CASTEVENT` can, and it was already registered here — a START against a caster GUID plus its
+duration is a cast in progress. `Aegis_SBR:TargetIsCasting()` is what Repentance uses above, and
+it is the piece every future interrupt needs.
+
+It answers **false** without SuperWoW, which is the safe direction here: it withholds an
+interrupt rather than inventing one.
+
+---
+
 ## v1.2.12 — Mage: a press that does nothing now says so
 
 **v1.2.11 blamed Nampower's queue. That was wrong** — the delay is present with Nampower

@@ -508,6 +508,10 @@ function M:NormalizeProfile(c)
     -- a real measurement where it works and no measurement at all where it does
     -- not, and a default that quietly needs a client setting is a trap.
     if c.consecMinTargets == nil then c.consecMinTargets = 0 end
+    -- Seconds of measured time-to-kill a NON-elite target must have before
+    -- Repentance is spent learning whether it is immune. Elites and bosses skip
+    -- this and are always worth the one cast.
+    if c.repentProbeTTK == nil then c.repentProbeTTK = 15 end
     if c.healFillerHoW == nil then c.healFillerHoW = false end
     if c.healFillerConsec == nil then c.healFillerConsec = false end
     if c.healFillerExo == nil then c.healFillerExo = false end
@@ -1081,7 +1085,14 @@ function M:CommitHeal(unit, amount, castTime, spell, deficit)
         local d0 = deficit or 0
         self.healWaste0 = (a0 > 0) and ((a0 - d0) / a0 * 100) or 0
         if self.healWaste0 < 0 then self.healWaste0 = 0 end
-        self.healUntil = GetTime() + (castTime or 0) + 1.0
+        -- Health at the moment of committing, so the credit below can end on
+        -- EVIDENCE rather than on a clock: the instant this rises, the client
+        -- has caught up and the real value is the accurate one.
+        self.healPreHP = UnitHealth(unit) or 0
+        -- Now only a ceiling, for the case where the rise never arrives at all
+        -- (the unit left, the cast was eaten). Three seconds rather than one,
+        -- because it is no longer the thing doing the work.
+        self.healUntil = GetTime() + (castTime or 0) + 3.0
         self.castingUntil = GetTime() + (castTime or 0)
         if Aegis_SBR.logging and spell then
             local amt = amount or 0
@@ -1140,13 +1151,32 @@ end
 -- guard re-healed any actively-tanked target during the post-cast latency
 -- window (real HP already below commit time, but the landed heal's HP update
 -- not yet arrived from the server), causing the exact overheal it was meant
--- to avoid. The window is bounded by healUntil (castTime + 1s of latency
--- slack) so a resisted/failed cast self-corrects quickly.
+-- to avoid.
+--
+-- WHEN THE CREDIT ENDS was a guessed second, and that second is what both of
+-- these reports are: "I healed someone full but the next heal was still on the
+-- same target", and "Holy Shock fires above the threshold, mostly out of
+-- combat". A party member's health arrives on the server's own cadence, which
+-- out of combat is slow. If the credit expires before the new value does
+-- arrive, the unit reads at its PRE-HEAL health - so it is picked again and
+-- healed into a full bar, and the same stale reading puts its percentage under
+-- the Holy Shock emergency line.
+--
+-- So the credit now ends on evidence: the moment the unit's health rises above
+-- what it was when we committed, the client has caught up and its own value is
+-- the accurate one. The timer is demoted to a ceiling for the case where the
+-- rise never comes.
+--
+-- Only a RISE clears it. Deliberately not "health changed", and not "health
+-- dropped below the commit baseline" - that second guard existed once and
+-- re-healed any actively tanked target during exactly this latency window,
+-- which is the overheal it was meant to prevent.
 function M:PendingFor(unit)
-    if self.healTarget and GetTime() < self.healUntil and UnitName(unit) == self.healTarget then
-        return self.healAmount
-    end
-    return 0
+    if not self.healTarget or UnitName(unit) ~= self.healTarget then return 0 end
+    if not self.healUntil or GetTime() >= self.healUntil then return 0 end
+    local hp = UnitHealth(unit)
+    if hp and self.healPreHP and hp > self.healPreHP then return 0 end
+    return self.healAmount
 end
 
 -- Units to consider for healing: raid1..N in a raid, else player + party1..N.
@@ -1225,6 +1255,119 @@ end
 -- Light, both 40yd) for an exact answer instead of CheckInteractDistance's
 -- ~28yd proxy, which under-filtered by 12yd. Falls back to the proxy only if
 -- neither heal is learned yet (very early leveling).
+-- ============================================================
+-- Repentance: two spells wearing one name
+--
+-- On a target the incapacitate LANDS, it is a six second crowd control that any
+-- damage breaks - which in a group is immediately, so on trash it buys a stun
+-- and nothing else. On a target IMMUNE to the crowd control it becomes something
+-- else entirely: twenty seconds during which every melee attack the enemy makes
+-- costs it holy damage. On a boss that is a large damage gain; on trash it is a
+-- wasted global cooldown.
+--
+-- Nothing tells us in advance which one we are about to get. So it is learned,
+-- once per creature type, and remembered.
+--
+-- WHEN A VERDICT MAY BE RECORDED is the whole difficulty, and the rule is: only
+-- when the cast actually resolved. Repentance is instant, so it cannot be
+-- interrupted - but it can fail to leave at all (out of range, dropped) and then
+-- it has taught us nothing. The proof that it resolved is that ITS COOLDOWN
+-- STARTED. A resist resolves the cast but says nothing about immunity, so it
+-- also voids the probe.
+--
+-- Without that gate, "no immune message arrived" would be read as "not immune",
+-- and a boss would be recorded as ordinary trash forever on the strength of one
+-- out-of-range press. That is the same mistake the warlock throttle and the
+-- hunter's reapply timer each made once.
+-- ============================================================
+local REPENT_VERDICT_MAX = 300
+-- How long after the cast the verdict is read. Long enough for the combat log
+-- line and the cooldown to have registered, short enough to be the same fight.
+local REPENT_PROBE_WAIT = 1.0
+
+-- What we file the verdict under. The creature template id where ClassicAPI can
+-- read it - that is what actually identifies a kind of mob - and the name only
+-- as a fallback, since names are localised and can collide.
+function M:RepentanceKey()
+    local id = Aegis_SBR.UnitCreatureID and Aegis_SBR:UnitCreatureID("target")
+    if id then return "id:" .. tostring(id) end
+    local nm = UnitName("target")
+    return nm and ("nm:" .. nm) or nil
+end
+
+function M:RepentanceMemory()
+    if not AegisDB then return nil end
+    if type(AegisDB.repentImmune) ~= "table" then AegisDB.repentImmune = {} end
+    return AegisDB.repentImmune
+end
+
+-- true (immune, so the damage effect), false (crowd control), or nil (unknown).
+function M:RepentanceVerdict()
+    local mem = self:RepentanceMemory()
+    local key = self:RepentanceKey()
+    if not mem or not key then return nil end
+    return mem[key]
+end
+
+function M:RepentanceRecord(key, immune)
+    local mem = self:RepentanceMemory()
+    if not mem or not key then return end
+    if mem[key] ~= nil then return end
+    -- Bounded the same way the hunter's immunity memory is: creature types are
+    -- finite, so hitting the cap means something is wrong, and relearning costs
+    -- one cast per type.
+    local n = 0
+    for _ in pairs(mem) do n = n + 1 end
+    if n >= REPENT_VERDICT_MAX then AegisDB.repentImmune = {}; mem = AegisDB.repentImmune end
+    mem[key] = immune and true or false
+end
+
+-- Read the verdict of a probe that has had time to resolve.
+function M:RepentanceResolve()
+    local pr = self.repentProbe
+    if not pr then return end
+    if (GetTime() - pr.t) < REPENT_PROBE_WAIT then return end
+    self.repentProbe = nil
+    -- Voided: a resist tells us nothing, and a cast that never left tells us
+    -- less than that.
+    if pr.voided then return end
+    if not pr.immune then
+        -- The cooldown is the proof the cast resolved. Not started means it
+        -- never happened, so nothing is recorded and the type stays unknown.
+        if Aegis_SBR:OwnCDReady("Repentance") then return end
+    end
+    self:RepentanceRecord(pr.key, pr.immune)
+end
+
+-- Should Repentance go out on this target at all?
+--
+--   immune      -> yes, it is a damage cooldown here
+--   not immune  -> only to stop a cast, which is the one thing the crowd control
+--                  is still worth a global cooldown for
+--   unknown     -> probe, but only where the answer could pay for itself
+--
+-- The probe is deliberately NOT run on everything. The damage effect pays out
+-- over twenty seconds of the enemy swinging; a trash mob that dies in five
+-- cannot pay for it even when immune, so learning the answer there buys nothing
+-- and costs a global cooldown per creature type.
+function M:RepentanceWanted(cfg)
+    local v = self:RepentanceVerdict()
+    if v == true then return true, nil end
+    if v == false then
+        return Aegis_SBR:TargetIsCasting(), nil
+    end
+    if Aegis_SBR:TargetIsCasting() then return true, nil end   -- worth it regardless
+    local cls = UnitClassification and UnitClassification("target")
+    local tough = (cls == "worldboss" or cls == "elite" or cls == "rareelite")
+    if not tough then
+        local ttk = Aegis_SBR:TargetTTK()
+        -- nil is "not known to be dying soon" and must not trigger a probe on
+        -- its own; only a measured, long life does.
+        if not (ttk and ttk >= (cfg.repentProbeTTK or 15)) then return false, nil end
+    end
+    return true, self:RepentanceKey()
+end
+
 -- Buffs that stop ALL damage.
 --
 -- These do NOT remove a paladin from the heal list. The bubble runs for ten
@@ -2690,10 +2833,31 @@ function M:Rotate(cfg)
     -- 3. Seal upkeep and judgement (damage/tank mode only; heal mode runs its
     -- own Seal of Wisdom upkeep via HealSeals above)
     if not cfg.healMode and self:HandleSeals(cfg) then return end
-    -- 5. Repentance (boss damage proc on Turtle) (damage/tank mode only)
+    -- 5. Repentance. On an immune target it is a damage cooldown; on everything
+    -- else it is a crowd control worth spending only to stop a cast. Which one
+    -- this creature gives is learned once and remembered - see RepentanceWanted.
+    --
+    -- Resolved OUTSIDE the readiness gate, and that is not tidiness: a probe is
+    -- read a second after the cast, when Repentance is by definition on its own
+    -- cooldown. Inside the gate the verdict would first be looked at a minute
+    -- later, with the cooldown free again - which this reads as "the cast never
+    -- happened" and discards. The probe would never resolve at all.
+    if not cfg.healMode then self:RepentanceResolve() end
     if not cfg.healMode and cfg.spells.repentance and self:IsReady("Repentance")
         and Aegis_SBR:SpellReaches("Repentance", "target") then
-        if self:Pick("Repentance", "control") then return end
+        local want, probeKey = self:RepentanceWanted(cfg)
+        if want then
+            local reason = probeKey and "learning the immunity"
+                or (self:RepentanceVerdict() and "damage on an immune target" or "stopping a cast")
+            if self:Pick("Repentance", reason) then
+                if probeKey then
+                    self:Later(function()
+                        self.repentProbe = { key = probeKey, t = GetTime() }
+                    end)
+                end
+                return
+            end
+        end
     end
 end
 
@@ -2899,6 +3063,30 @@ end
 -- A crit is flagged rather than filtered. It is ~1.5x and would otherwise read
 -- as the model underestimating by half.
 --
+-- The verdict on a Repentance probe, read out of the combat log.
+--
+-- "immune" is the answer we are actually after: it means the crowd control did
+-- not take and the damage effect did instead, which is the whole reason to keep
+-- casting this on that creature. "resist" and "miss" VOID the probe rather than
+-- answering it - the cast resolved and its cooldown started, but nothing landed
+-- and nothing was learned, so recording either verdict would be a guess.
+--
+-- Matched narrowly: only a line that names Repentance, and only while a probe is
+-- actually outstanding. A message about anything else cannot record a verdict.
+local repentFrame = CreateFrame("Frame")
+repentFrame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+repentFrame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")
+repentFrame:SetScript("OnEvent", function()
+    local pr = M.repentProbe
+    if not pr or not arg1 then return end
+    if not string.find(arg1, "Repentance", 1, true) then return end
+    if string.find(arg1, "immune") then
+        pr.immune = true
+    elseif string.find(arg1, "resist") or string.find(arg1, "miss") then
+        pr.voided = true
+    end
+end)
+
 -- prediction comes from CommitHeal's stored value; it is the amount for the
 -- cast that just resolved, since a heal cannot land before it is committed.
 local healLogFrame = CreateFrame("Frame")

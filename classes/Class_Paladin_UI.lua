@@ -286,7 +286,7 @@ function M:BuildBody(ui, parent)
 
     ui:Tip(self.spellCB.holyShield.cb,     "Holy Shield",     "Cast right after the strike, before seals.", "Fires whenever its own cooldown is ready.")
     ui:Tip(self.spellCB.hammerOfWrath.cb,  "Hammer of Wrath", "Execute, used only at or below 20 percent target HP.")
-    ui:Tip(self.spellCB.repentance.cb,     "Repentance",      "Cast on cooldown as a damage proc on Turtle.")
+    ui:Tip(self.spellCB.repentance.cb,     "Repentance",      "Two spells wearing one name: a 6s crowd control where it lands, and 20 seconds of holy damage on every melee swing where the target is IMMUNE to that control - which bosses generally are.", "Which one a creature gives cannot be known in advance, so it is learned once per creature type and remembered between sessions. Immune: cast on cooldown, it is a damage cooldown there. Not immune: only to stop a cast, since any damage breaks the control instantly in a group. The one probing cast is spent only on elites, bosses, or something measurably long-lived - the damage pays out over 20 seconds of swings, which a mob dying in five cannot do.")
     ui:Tip(self.spellCB.consecration.cb,   "Consecration (AoE)", "AoE filler, cast on cooldown while this is on (also /sbr aoe).", "Held during mana recovery unless the option below is on. The two rows under it can restrict it further: a minimum enemy count, and standing still.")
     -- One setting, two rows (Spells on the melee tabs, Damage fillers on the
     -- healer tab), so the text is written once.
