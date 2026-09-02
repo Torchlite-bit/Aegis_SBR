@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.15",
+    ver = "1.2.16",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -596,6 +596,44 @@ end
 function Aegis_SBR:HasBuff(name)
     local tl = self:ScanBuff(name)
     return tl ~= nil
+end
+
+-- First player buff whose RESOLVED NAME contains `frag`, or nil. The partial
+-- match HasBuff cannot do: HasBuff needs the exact name, so it cannot answer
+-- "is any Eclipse buff up" when the server's wording is not the one we guessed.
+--
+-- This exists because three modules hand-rolled that fallback with
+-- `UnitBuff("player", i)` and searched the result for a spell NAME - but
+-- UnitBuff's first return is the icon TEXTURE PATH, not a name (see
+-- Aegis_SBR_BuffUp.lua, which names it `tex` and builds a tooltip to get the
+-- name). Searching a file path for "Eclipse" or "Clearcast" matches only if
+-- the artist happened to put that word in the filename, so those fallbacks
+-- were dead. The warlock's copy searched for "Spell_Shadow_Twilight" and was
+-- the only correct one, which is what identified the pattern.
+--
+-- Names come from the same SuperWoW id -> SpellInfo path as ScanBuff, so a
+-- client without it simply finds nothing rather than misreporting.
+function Aegis_SBR:BuffNameContaining(frag)
+    if not frag or frag == "" then return nil end
+    if self.buffSnap and self.buffSnapT == GetTime() then
+        for nm in pairs(self.buffSnap) do
+            if string.find(nm, frag, 1, true) then return nm end
+        end
+        return nil
+    end
+    if not GetPlayerBuff then return nil end
+    for i = 0, 31 do
+        local ix = GetPlayerBuff(i, "HELPFUL")
+        if ix and ix ~= -1 then
+            local id = GetPlayerBuffID and GetPlayerBuffID(ix)
+            if id then
+                if id < -1 then id = id + 65536 end
+                local nm = SpellInfo and SpellInfo(id)
+                if nm and string.find(nm, frag, 1, true) then return nm end
+            end
+        end
+    end
+    return nil
 end
 
 function Aegis_SBR:BuffTime(name)
