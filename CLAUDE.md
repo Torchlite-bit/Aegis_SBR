@@ -327,6 +327,10 @@ calculators block automated access.
   design, because it looks correct in the source.
 
 ## House style
+- **Write short, neutral and factual.** Changelog entries, PR bodies, commit messages and code
+  comments state what changed, why, and what it affects. No jokes, no irony, no dramatic framing,
+  no rhetorical questions, no long prose where two sentences do. Keep measured numbers and
+  technical detail; cut the framing around them. Prefer a short list or a table to paragraphs.
 - **Never quote a play report verbatim.** Reports reach this project as relayed Discord
   messages, and none of it belongs in `CHANGELOG.md`, `README.md`, a code comment, or a PR
   body: the person was talking in a chat, not writing for publication. Paraphrase what the
