@@ -1495,6 +1495,14 @@ local CAST_REFUSED_SELF = {
     SPELL_FAILED_NO_POWER or "Not enough mana",
     ERR_OUT_OF_RAGE or "Not enough rage",
     ERR_OUT_OF_ENERGY or "Not enough energy",
+    -- The client is still busy with the previous cast or channel. Measured on an
+    -- arcane mage: after every Arcane Missiles channel the FIRST cast issued was
+    -- thrown away and only the second, one press later, took - mana unchanged
+    -- across the first, then dropping on the second, in all four cycles of a
+    -- captured log. Without this entry that refusal was unrecognised, so the
+    -- spell's throttle stayed stamped on a cast that never left.
+    SPELL_FAILED_SPELL_IN_PROGRESS or "Another action is in progress",
+    ERR_SPELL_COOLDOWN or "Spell is not ready yet",
 }
 
 -- Spells the client has just refused, by name, with the time it said so.
@@ -1536,7 +1544,25 @@ function Aegis_SBR:OnCastError(msg)
             if msg == CAST_REFUSED_SELF[i] then selfRefused = true; break end
         end
     end
-    if not (unitRefused or selfRefused) then return end
+    -- An UNRECOGNISED refusal used to return here and leave no trace anywhere:
+    -- the message was dropped, and RunRotation's UIErrorsFrame:Clear() then wiped
+    -- it off the screen, so neither the log nor the player ever learned why a
+    -- cast did not happen. That is the failure this file warns about in its own
+    -- rules - "an ability silently stops and nothing says why" - and it cost
+    -- several rounds on a mage report where every first cast after a channel was
+    -- being thrown away by the client.
+    --
+    -- It is deliberately only TRACED, not acted on. UI_ERROR_MESSAGE carries far
+    -- more than cast refusals (full health, bags full, quest text), so treating
+    -- every one as a refused cast would clear throttles that were correctly set.
+    -- Naming the message is what lets a real one be added to a list above.
+    if not (unitRefused or selfRefused) then
+        if self:Tracing() and self.lastSpell
+            and (GetTime() - (self.lastSpellAt or 0)) <= BLAME_WINDOW then
+            self:Trace("refused? " .. tostring(self.lastSpell) .. " :: " .. tostring(msg))
+        end
+        return
+    end
     local now = GetTime()
 
     -- The spell, for the throttles that must not treat a thrown-away cast as a
