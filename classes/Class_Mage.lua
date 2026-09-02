@@ -297,13 +297,11 @@ function M:Queue(name, reason)
         QueueSpellByName(name)
     end
     -- This module calls the primitives directly instead of going through the
-    -- core's Pick/PickQueue (that is the whole point of the direct/queue choice
-    -- above), so it must set the same bookkeeping those do. Without this,
-    -- OnCastError's refusal trace (v1.2.13) can never fire for a mage: it reads
-    -- self.lastSpell, which only Pick/PickQueue used to write. The exact bug
-    -- that made the arcane-missiles double-cast invisible a second time - a
-    -- captured log after v1.2.13 still showed no "refused?" line, because
-    -- nothing had told the core a cast was ever sent.
+    -- core's Pick/PickQueue (that is the point of the direct/queue choice above),
+    -- so it must do the bookkeeping those do. NoteSpellCast is what lets
+    -- OnCastError and SpellRefusedSince attribute a refusal to a spell; without
+    -- it, a genuine refusal on this path - out of range, line of sight, out of
+    -- mana - has nothing to blame and is dropped.
     Aegis_SBR:NoteSpellCast(name)
     -- Names the spell AND which primitive sent it, so a log answers "what did
     -- this press do" outright instead of by inference from what happened next.
