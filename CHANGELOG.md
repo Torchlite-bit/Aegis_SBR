@@ -4,60 +4,7 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
-## v1.2.13 — The client was refusing every first cast, and the message was being thrown away
-
-**The v1.2.12 tracing found it on the first log.** Every channel cycle, the rotation issued
-**two** casts and only the second one took:
-
-```
-7.20|cast Arcane Missiles     mana 86   <- thrown away by the client
-7.38|cast Arcane Missiles     mana 86   <- this one took
-7.58|chan=Y 0.1s              mana 73
-```
-
-Four cycles, identical every time — first cast at 0.28s / 0.33s / 0.34s / 0.30s before the
-channel actually started, mana unmoved across it. **The wasted press is the delay.** The
-rotation was doing everything right and reaching the cast; the client was rejecting it
-because it was still busy finishing the channel.
-
-### 🐛 Fixed — an unrecognised refusal left no trace anywhere
-
-`OnCastError` classified the client's message against two lists and **returned silently on
-anything else**. `RunRotation` then calls `UIErrorsFrame:Clear()`, which wipes the message
-off the screen. So a refusal the addon did not recognise was erased twice over: the addon
-never recorded it, and the player never saw it.
-
-Neither list covered "the client is still busy", which is exactly the refusal that was
-firing here — so the one message that explained the entire report was the one being
-discarded.
-
-This is the failure `CLAUDE.md` warns about in its own rules: *"a detection that cannot
-answer must never close a gate… the symptom is always the same: an ability silently stops
-and nothing says why."*
-
-- **Unrecognised refusals are now traced verbatim**, with the spell that was blamed:
-  `refused? Arcane Missiles :: <the client's own words>`. Deliberately **traced only, not
-  acted on** — `UI_ERROR_MESSAGE` carries far more than cast refusals (full health, bags
-  full, quest text), so treating every one as a refused cast would clear throttles that were
-  correctly set. Naming it is what allows a real one to be added to a list.
-- **"Another action is in progress" and "Spell is not ready yet" added** to the
-  self-refusal list, so a throttle is no longer stamped on a cast the client threw away.
-  Both via the client's own global constants with literal fallbacks, matching the existing
-  entries.
-
-### On the two wrong turns before this
-
-Worth recording, because both were shipped:
-
-- **v1.2.11 blamed Nampower's queue.** Wrong — the delay is present with Nampower
-  uninstalled, where that path is not even reachable.
-- **v1.2.12 fixed ten press-eating filler returns.** A real bug, and it stands, but the log
-  shows the press always reached the cast — so it was not this either.
-
-Both were guesses standing in for a measurement. The thing that actually resolved it was
-the v1.2.12 tracing: once a press could say what it did, one log answered a question three
-rounds of reasoning had not. **The diagnostic should have been built first.**
-## v1.2.13 — Two reports, one guessed second
+## v1.2.14 — Two reports, one guessed second
 
 ### 🐛 Fixed — a target healed to full, then healed again
 
@@ -133,6 +80,59 @@ interrupt rather than inventing one.
 
 ---
 
+## v1.2.13 — The client was refusing every first cast, and the message was being thrown away
+
+**The v1.2.12 tracing found it on the first log.** Every channel cycle, the rotation issued
+**two** casts and only the second one took:
+
+```
+7.20|cast Arcane Missiles     mana 86   <- thrown away by the client
+7.38|cast Arcane Missiles     mana 86   <- this one took
+7.58|chan=Y 0.1s              mana 73
+```
+
+Four cycles, identical every time — first cast at 0.28s / 0.33s / 0.34s / 0.30s before the
+channel actually started, mana unmoved across it. **The wasted press is the delay.** The
+rotation was doing everything right and reaching the cast; the client was rejecting it
+because it was still busy finishing the channel.
+
+### 🐛 Fixed — an unrecognised refusal left no trace anywhere
+
+`OnCastError` classified the client's message against two lists and **returned silently on
+anything else**. `RunRotation` then calls `UIErrorsFrame:Clear()`, which wipes the message
+off the screen. So a refusal the addon did not recognise was erased twice over: the addon
+never recorded it, and the player never saw it.
+
+Neither list covered "the client is still busy", which is exactly the refusal that was
+firing here — so the one message that explained the entire report was the one being
+discarded.
+
+This is the failure `CLAUDE.md` warns about in its own rules: *"a detection that cannot
+answer must never close a gate… the symptom is always the same: an ability silently stops
+and nothing says why."*
+
+- **Unrecognised refusals are now traced verbatim**, with the spell that was blamed:
+  `refused? Arcane Missiles :: <the client's own words>`. Deliberately **traced only, not
+  acted on** — `UI_ERROR_MESSAGE` carries far more than cast refusals (full health, bags
+  full, quest text), so treating every one as a refused cast would clear throttles that were
+  correctly set. Naming it is what allows a real one to be added to a list.
+- **"Another action is in progress" and "Spell is not ready yet" added** to the
+  self-refusal list, so a throttle is no longer stamped on a cast the client threw away.
+  Both via the client's own global constants with literal fallbacks, matching the existing
+  entries.
+
+### On the two wrong turns before this
+
+Worth recording, because both were shipped:
+
+- **v1.2.11 blamed Nampower's queue.** Wrong — the delay is present with Nampower
+  uninstalled, where that path is not even reachable.
+- **v1.2.12 fixed ten press-eating filler returns.** A real bug, and it stands, but the log
+  shows the press always reached the cast — so it was not this either.
+
+Both were guesses standing in for a measurement. The thing that actually resolved it was
+the v1.2.12 tracing: once a press could say what it did, one log answered a question three
+rounds of reasoning had not. **The diagnostic should have been built first.**
 ## v1.2.12 — Mage: a press that does nothing now says so
 
 **v1.2.11 blamed Nampower's queue. That was wrong** — the delay is present with Nampower
