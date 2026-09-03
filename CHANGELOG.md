@@ -4,6 +4,56 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.17 — a range check that threw instead of answering
+
+### 🐛 Fixed — Lua error on the Shaman after a Brainwashing Device spec switch
+
+Switching between Enhance Tank and Enhance DPS and then pressing `/sbr` threw
+`Class_Shaman.lua: Unable to determine spell id from spell name, possibly because it isn't
+in your spell book`, once per press.
+
+`IsSpellInRange` does not answer `-1` for a name it cannot resolve — it **throws**. The
+shaman's `InSpellRange` called it unprotected, so the error aborted the entire press:
+nothing below the failing gate ran. No shock, no shield upkeep, no totems, no filler, no
+auto-attack.
+
+Why those two specs and no others — the three names passed to this check by spec:
+
+| Spec | Names range-checked | Talent-granted? |
+|---|---|---|
+| Enhancement | Stormstrike, Lightning Strike, shock | first two |
+| Tank | Earthshaker Slam, Stormstrike, shock, Lightning Strike | first three |
+| Elemental | shock | no |
+| Restoration | — (no range check at all) | — |
+
+A shock is a trainer spell and survives a respec. Stormstrike and Lightning Strike are
+talent-granted, and the device unlearns and relearns them, so only the two specs that
+range-check them could reach the throw. That matches the report exactly, including
+restoration and elemental being clean.
+
+Two changes:
+
+- **`pcall` around every `IsSpellInRange` call** — the shaman's `InSpellRange`, the core's
+  `SpellReaches` (used by all four healers), and the ClassicAPI wrapper in
+  `Aegis_SBR_Capabilities.lua`. A throw now reads as "cannot tell", which the surrounding
+  code already treats as in range. On the normal path the return is byte-for-byte what it
+  was.
+- **`CHARACTER_POINTS_CHANGED` now drops the spellbook index.** It cleared `costCache` and
+  `radiusCache` and left `spellIndex` — the one cache that decides whether a spell exists
+  at all — to be dropped by `SPELLS_CHANGED` later. Until that arrived, `KnowsSpell`
+  answered "yes" for a spell the client could no longer resolve, which is what let the
+  gate reach the throw in the first place.
+
+The first change is the one that stops the error. The second removes the window that
+produced it, and makes every other `KnowsSpell` caller correct across a respec too.
+
+**Rule restated, third costume:** a detection that cannot answer must never close a gate —
+and it must never take the press down with it either. Range, movement, facing, weapon,
+caster and enemy count all have a value for "cannot tell"; an API that signals it by
+throwing needs the `pcall` to convert it back.
+
+---
+
 ## v1.2.16 — Carve in single target, and a buff fallback that never worked
 
 ### ✨ Hunter: Carve as a single-target filler (Survival melee)

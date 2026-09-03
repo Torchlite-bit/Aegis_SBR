@@ -366,7 +366,17 @@ function M:InSpellRange(spell)
     if not spell or spell == "" then return false end
     if not UnitExists("target") then return false end
     if not IsSpellInRange then return true end
-    local r = IsSpellInRange(spell, "target")
+    -- pcall because the API does not answer "cannot tell" for a name it fails
+    -- to resolve - it THROWS ("Unable to determine spell id from spell name").
+    -- Three of the names reaching here are talent-granted - Stormstrike,
+    -- Lightning Strike, Earthshaker Slam - and a Goblin Brainwashing Device
+    -- swap unlearns and relearns exactly those, so a press landing in that
+    -- window asks about a spell the client can no longer name. (The shocks are
+    -- trainer spells and survive a respec, which is why elemental and
+    -- restoration never saw this.) Unprotected the error aborted the whole
+    -- press - no shock, no shield upkeep, no totems, no filler, no swing.
+    local ok, r = pcall(IsSpellInRange, spell, "target")
+    if not ok then return true end
     -- The API answers 1 in range, 0 out of range, and -1 when it cannot judge
     -- (unknown spell, no range data). ONLY an explicit 0 may block: reading -1
     -- as "out of range" would silence an ability over a question the client

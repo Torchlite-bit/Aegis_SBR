@@ -199,7 +199,9 @@ function Aegis_SBR:SpellInRange(spell, unit)
     if not spell or spell == "" then return nil end
     unit = unit or "target"
     if not UnitExists(unit) then return nil end
-    return C_Spell.IsSpellInRange(spell, unit)
+    local ok, r = pcall(C_Spell.IsSpellInRange, spell, unit)
+    if not ok then return nil end
+    return r
 end
 
 -- ============================================================

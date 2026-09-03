@@ -397,3 +397,10 @@ calculators block automated access.
     starved Auto Shot — the Hunter looked like it had stopped attacking (2026-08-18).
     Suppression is safe however badly the two sources disagree: worst case is a missed cast,
     never a loop. Anything on the "adds casts" side needs a play-test on that class first.
+  - `IsSpellInRange` **throws** for a name it cannot resolve — it does not answer `-1`. Every
+    call needs a `pcall`, because a throw does not just close the gate, it aborts the rest of
+    the press. Fixed v1.2.17 after a shaman respec left `KnowsSpell` answering "yes" for a
+    talent-granted spell the client had already unlearned. Same release: a talent swap now
+    drops the spellbook index (`CHARACTER_POINTS_CHANGED` cleared only the derived caches and
+    left `spellIndex` to `SPELLS_CHANGED`, which arrives later). Assume any 1.12 API that
+    takes a spell NAME can throw when the name is not in the book.
