@@ -325,12 +325,22 @@ function M:QueueCast(name, reason)
 end
 
 -- Which Eclipse side is up on the player, if any: "lunar" empowers
--- Starfire, "solar" empowers Wrath. Exact buff names are tried first,
--- then a texture scan as a fallback (orange = solar, blue/plain = lunar).
--- If Turtle uses different names, /sbr debug with the proc up shows them;
--- they drop into this list in one place.
-M.ECLIPSE_LUNAR = { "Eclipse (Lunar)", "Lunar Eclipse", "Eclipse" }
-M.ECLIPSE_SOLAR = { "Eclipse (Solar)", "Solar Eclipse" }
+-- Starfire, "solar" empowers Wrath.
+--
+-- Turtle names the buff after the school it EMPOWERS, not the spell that
+-- granted it, and the two nukes sit in opposite schools - Starfire is Arcane,
+-- Wrath is Nature. So "Arcane Eclipse" (procced by Wrath, 30%) calls for
+-- Starfire, and "Nature Eclipse" (procced by Starfire, 50%) calls for Wrath.
+-- Both names read off /sbr debug on a Turtle moonkin with the proc up, at 11s
+-- and 12s remaining of a 15s window.
+--
+-- None of the five names guessed before that matched, and HasBuff needs the
+-- name exactly, so the whole reaction was dead: every press fell through to
+-- the P4 filler and the druid chain-cast Wrath for the entire fight. The
+-- retail-style wordings stay in the lists behind the Turtle ones - they cost
+-- one failed table lookup and cover a rename.
+M.ECLIPSE_LUNAR = { "Arcane Eclipse", "Eclipse (Lunar)", "Lunar Eclipse", "Eclipse" }
+M.ECLIPSE_SOLAR = { "Nature Eclipse", "Eclipse (Solar)", "Solar Eclipse" }
 function M:EclipseSide()
     for i = 1, table.getn(self.ECLIPSE_SOLAR) do
         if self:HasBuff(self.ECLIPSE_SOLAR[i]) then return "solar" end
@@ -347,13 +357,19 @@ function M:EclipseSide()
     -- on one of the five guessed names above being exactly right.
     local nm = Aegis_SBR:BuffNameContaining("Eclipse")
     if nm then
-        if string.find(nm, "Solar", 1, true) then return "solar" end
-        if string.find(nm, "Lunar", 1, true) then return "lunar" end
-        -- Named for Eclipse but with no side in the name: report the side we
-        -- cannot rule out rather than nil, since nil means "no proc" and would
-        -- silently drop the reaction entirely. Lunar/Starfire is the safer of
-        -- the two to guess - it is the bigger nuke, so a wrong guess costs a
-        -- cast ratio, where guessing solar re-casts the filler we already spam.
+        -- School word or side word, either way round: Nature empowers Wrath,
+        -- Arcane empowers Starfire.
+        if string.find(nm, "Solar", 1, true) or string.find(nm, "Nature", 1, true) then
+            return "solar"
+        end
+        if string.find(nm, "Lunar", 1, true) or string.find(nm, "Arcane", 1, true) then
+            return "lunar"
+        end
+        -- Named for Eclipse but naming neither a side nor a school: report the
+        -- side we cannot rule out rather than nil, since nil means "no proc"
+        -- and would silently drop the reaction entirely. Lunar/Starfire is the
+        -- safer guess - it is the bigger nuke, so being wrong costs a cast
+        -- ratio, where guessing solar re-casts the filler we already spam.
         return "lunar"
     end
     return nil

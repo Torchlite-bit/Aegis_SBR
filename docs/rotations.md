@@ -450,7 +450,15 @@ Regeneration reworked (rage→health).
 
 ### Balance / Moonkin (raid/dungeon DPS) `[T]`
 Turtle rework: **maintain Insect Swarm + Moonfire (DoTs augment your nukes) → alternate
-Wrath and Starfire**. Moonfire extended to 18s. Sylvan Blessing (near-100% mana regen while
+Wrath and Starfire**. Moonfire extended to 18s.
+
+**Eclipse, confirmed in play 2026-09-03** `[V]` — the alternation above is loose phrasing:
+it is proc-driven, not strict. Wrath has a 30% chance to grant **Arcane Eclipse**, Starfire
+a 50% chance to grant **Nature Eclipse**. Each buff empowers the school it is named for, so
+Arcane Eclipse calls for Starfire (Arcane) and Nature Eclipse calls for Wrath (Nature).
+Bonus is 10% + 60% of spell crit chance; 15s duration, 30s cooldown per effect, only one
+active at a time. Chain-cast one nuke to fish and react to the proc — which is what the
+module already does. Buff names read off `/sbr debug`; this settles audit item **D5**. Sylvan Blessing (near-100% mana regen while
 casting when chain-pulling). Omen of Clarity. Not top DPS; mana-inefficient. AoE via
 Hurricane (Gale Winds restores the slow).
 

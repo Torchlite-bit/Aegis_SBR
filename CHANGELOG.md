@@ -4,7 +4,7 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
-## v1.2.17 — a range check that threw instead of answering
+## v1.2.17 — a range check that threw, and an Eclipse nobody could name
 
 ### 🐛 Fixed — Lua error on the Shaman after a Brainwashing Device spec switch
 
@@ -51,6 +51,38 @@ produced it, and makes every other `KnowsSpell` caller correct across a respec t
 and it must never take the press down with it either. Range, movement, facing, weapon,
 caster and enemy count all have a value for "cannot tell"; an API that signals it by
 throwing needs the `pcall` to convert it back.
+
+### 🐛 Fixed — Balance druid never reacted to Eclipse
+
+Reported as chain-casting Wrath for a whole fight and never switching to Starfire. The
+reaction was gated on five guessed buff names, `HasBuff` matches the name **exactly**, and
+not one of them was right — so the gate never opened and every press fell through to the
+filler.
+
+`/sbr debug` with a proc up gives the real names. Turtle names the buff after the school it
+**empowers**, not the spell that granted it:
+
+| Proc | From | Chance | Empowers | Cast |
+|---|---|---|---|---|
+| Arcane Eclipse | Wrath | 30% | Arcane | **Starfire** |
+| Nature Eclipse | Starfire | 50% | Nature | **Wrath** |
+
+15s duration, 30s cooldown per effect, one active at a time; bonus is 10% + 60% of spell
+crit. Both names were observed live at 11s and 12s remaining.
+
+Guessing had been for `Eclipse (Lunar)` / `Solar Eclipse` and three more in that shape —
+the retail wording. Those stay in the lists behind the Turtle names, and the partial-name
+fallback now reads a school word as well as a side word, so `Nature` resolves the same way
+`Solar` does.
+
+**The rotation model needed no change.** Audit item **D5** asked whether Balance should
+alternate strictly or fish for procs; the mechanics confirm proc-fishing, which is what the
+module has always done. `docs/rotations.md` carried the loose "alternate Wrath and
+Starfire" phrasing and now records the real proc. D5 is closed.
+
+Note for anyone who ran **v1.2.16**: its partial-name fallback resolved every Eclipse to
+the Starfire side, so the druid reacted to both procs by casting Starfire — right for
+Arcane Eclipse, wrong for Nature. This is the completing half of that fix.
 
 ---
 
