@@ -87,14 +87,16 @@ M.templates = {
         useTigersFury = true, ffCat = true,
         powershift = false, psEnergy = 15,
         ffBear = true, useDemo = true, useMaul = true, aoeSwipe = false, useEnrage = true,
-        useMoonfire = true, useInsectSwarm = true, eclipse = true, nuke = "Wrath",
+        useMoonfire = true, useInsectSwarm = true, eclipse = true, eclipseStick = true,
+        nuke = "Wrath",
     },
     balance = {  -- caster / Moonkin: DoTs up, Eclipse weaving
         form = "caster", catStyle = "bleed", opener = "auto", cpFinish = 5,
         useTigersFury = true, ffCat = true,
         powershift = false, psEnergy = 15,
         ffBear = true, useDemo = true, useMaul = true, aoeSwipe = false, useEnrage = false,
-        useMoonfire = true, useInsectSwarm = true, eclipse = true, nuke = "Wrath",
+        useMoonfire = true, useInsectSwarm = true, eclipse = true, eclipseStick = true,
+        nuke = "Wrath",
     },
     tree = {  -- Restoration: heal in caster form (downranked HoTs + Healing Touch)
         form = "tree",
@@ -130,6 +132,7 @@ function M:NormalizeProfile(c)
     if c.useMoonfire == nil then c.useMoonfire = true end
     if c.useInsectSwarm == nil then c.useInsectSwarm = true end
     if c.eclipse == nil then c.eclipse = true end
+    if c.eclipseStick == nil then c.eclipseStick = true end
     if c.nuke == nil then c.nuke = "Wrath" end
     if c.useGrowl == nil then c.useGrowl = true end
     -- Restoration (heal) profile fields
@@ -528,11 +531,16 @@ end
 function M:RotateCaster(cfg)
     local side = cfg.eclipse and self:EclipseSide() or nil
 
+    -- Out of combat the weave restarts from the configured nuke, so a pull
+    -- always opens with the spell the profile asks for.
+    if not UnitAffectingCombat("player") then self.eclipseLast = nil end
+
     if self:Tracing() then
         self:Trace("caster nuke=" .. (cfg.nuke or "Wrath")
             .. " MF=" .. (cfg.useMoonfire and (self:DebuffUp("Moonfire") and "Y" or "n") or "-")
             .. " IS=" .. (cfg.useInsectSwarm and (self:DebuffUp("Insect Swarm") and "Y" or "n") or "-")
             .. " eclipse=" .. (side or "-")
+            .. " stick=" .. (self.eclipseLast or "-")
             .. " mana=" .. string.format("%.0f", self:ManaPct()))
     end
 
@@ -549,15 +557,37 @@ function M:RotateCaster(cfg)
     -- P3 Eclipse reaction: cast the empowered opposite nuke. Because casts
     -- are queued, the press during the current cast already lines this up
     -- for the instant the proc window opens.
+    --
+    -- eclipseLast remembers which nuke that was, for P4 below.
     if side == "lunar" and self:KnowsSpell("Starfire") then
-        if self:QueueCast("Starfire") then return end
+        if self:QueueCast("Starfire") then self.eclipseLast = "Starfire"; return end
     end
     if side == "solar" and self:KnowsSpell("Wrath") then
-        if self:QueueCast("Wrath") then return end
+        if self:QueueCast("Wrath") then self.eclipseLast = "Wrath"; return end
     end
 
-    -- P4 chain-cast the primary nuke to fish for the next proc
+    -- P4 fish for the next proc.
+    --
+    -- Which spell to fish WITH is the whole question, because each Eclipse has
+    -- its own 30s cooldown and only runs for 15 of them. Returning to the
+    -- configured nuke when a window closes spends those 15s casting at an
+    -- Eclipse that cannot proc yet: Starfire only ever procs Nature Eclipse,
+    -- and Nature Eclipse is precisely the one that just expired.
+    --
+    -- Staying on the nuke the window empowered lands on the right one every
+    -- time, and not by luck - the spell an Eclipse empowers is the spell that
+    -- procs the OTHER Eclipse. Nature Eclipse empowers Wrath, Wrath procs
+    -- Arcane; Arcane Eclipse empowers Starfire, Starfire procs Nature. So the
+    -- nuke left over from a window is always the one whose target is off
+    -- cooldown, and the two sides chain into each other.
+    --
+    -- Held to the Eclipse path on purpose: with the reaction off, or before the
+    -- first proc of a fight, eclipseLast is nil and the configured nuke stands.
     local nuke = cfg.nuke or "Wrath"
+    if cfg.eclipse and cfg.eclipseStick ~= false and self.eclipseLast
+        and self:KnowsSpell(self.eclipseLast) then
+        nuke = self.eclipseLast
+    end
     if not self:KnowsSpell(nuke) then nuke = "Wrath" end
     if self:QueueCast(nuke) then return end
 end

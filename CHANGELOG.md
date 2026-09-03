@@ -4,6 +4,35 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.18 — Balance keeps the weave going between procs
+
+### ✨ Balance druid: fish with the nuke the last proc empowered
+
+v1.2.17 made the Eclipse swap work, but the moment a window closed the rotation went
+straight back to the nuke set in the panel. With Starfire as the primary that meant:
+Starfire → Nature Eclipse → Wrath for 15s → back to Starfire.
+
+Those 15s were spent fishing at an Eclipse that could not proc. Each side has a **30s
+cooldown** and only runs for **15s**, and Starfire only ever procs Nature Eclipse — the one
+that had just expired. Half of every cycle was cast at a side on cooldown.
+
+The rotation now stays on the nuke the window empowered:
+
+| | Empowers | Which procs |
+|---|---|---|
+| Arcane Eclipse | Starfire | Nature Eclipse |
+| Nature Eclipse | Wrath | Arcane Eclipse |
+
+The spell an Eclipse empowers is the spell that procs the **other** Eclipse, so the nuke
+left over from a window is always aimed at the side that is off cooldown. The two chain
+into each other: Wrath → Arcane Eclipse → Starfire → Nature Eclipse → Wrath.
+
+**Primary nuke** now means the opener and the pre-first-proc filler; the weave takes over
+from the first proc and resets when you leave combat. Turn **Stay on the empowered nuke**
+off in the Balance panel for the old behaviour. On by default.
+
+---
+
 ## v1.2.17 — Shaman spec-switch error, and Eclipse detection for Balance
 
 ### 🐛 Shaman: error and a dead press after a Brainwashing Device spec switch

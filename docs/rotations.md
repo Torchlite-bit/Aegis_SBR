@@ -458,7 +458,14 @@ a 50% chance to grant **Nature Eclipse**. Each buff empowers the school it is na
 Arcane Eclipse calls for Starfire (Arcane) and Nature Eclipse calls for Wrath (Nature).
 Bonus is 10% + 60% of spell crit chance; 15s duration, 30s cooldown per effect, only one
 active at a time. Chain-cast one nuke to fish and react to the proc — which is what the
-module already does. Buff names read off `/sbr debug`; this settles audit item **D5**. Sylvan Blessing (near-100% mana regen while
+module already does. Buff names read off `/sbr debug`; this settles audit item **D5**.
+
+**Which nuke to fish with** (v1.2.18): the one the last window empowered, not a fixed
+primary. A side that has just expired is 15s from coming off cooldown, and the fixed-primary
+filler aims at exactly that side — Starfire only procs Nature Eclipse, which is the one that
+just ran out. The spell an Eclipse empowers is the spell that procs the other Eclipse, so
+carrying it forward always fishes at the available side and the two chain:
+Wrath → Arcane Eclipse → Starfire → Nature Eclipse → Wrath. Sylvan Blessing (near-100% mana regen while
 casting when chain-pulling). Omen of Clarity. Not top DPS; mana-inefficient. AoE via
 Hurricane (Gale Winds restores the slow).
 
