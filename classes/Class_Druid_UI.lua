@@ -47,6 +47,8 @@ function M:BuildBody(ui, parent)
     self.mfRow = L:Row{ key = "useMoonfire", label = "Moonfire", spell = "Moonfire", onToggle = set("useMoonfire") }
     self.isRow = L:Row{ key = "useInsectSwarm", label = "Insect Swarm", spell = "Insect Swarm", onToggle = set("useInsectSwarm") }
     self.eclipseRow = L:Row{ key = "eclipse", label = "Eclipse reaction", onToggle = set("eclipse") }
+    self.eclipseStickRow = L:Row{ key = "eclipseStick", label = "Stay on the empowered nuke",
+        sub = "fish with it, not the default", onToggle = set("eclipseStick") }
 
     self.restoSection = L:Header("Healing", "tree")
     self.htRow = L:Row{ label = "Heal below",
@@ -135,10 +137,11 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.swipeRow.cb, "Swipe (AoE)", "When on, Swipe leads the priority for multi-target threat.", "Manual toggle, also /sbr aoe. Enemies near you CAN be counted (see the paladin Consecration slider, which reads the nameplates the client draws) - it is simply not wired here yet, so this stays your call.")
     ui:Tip(self.enrageRow.cb, "Enrage", "Used in combat when rage is starved. Lowers your armor while active, so it is off by default.")
     ui:Tip(self.growlRow.cb, "Growl", "Taunts to grab threat on the pull and whenever the target is not focused on you. Faerie Fire (Feral) is the ranged opener that starts damage + threat from a distance.")
-    ui:Tip(self.nukeDD, "Primary nuke", "Chain-cast to fish for Eclipse procs.", "Casting Wraths empowers Starfire and vice versa, the rotation swaps automatically on the proc.")
+    ui:Tip(self.nukeDD, "Primary nuke", "Opens the fight and fishes for the first Eclipse proc.", "Casting Wraths empowers Starfire and vice versa, the rotation swaps automatically on the proc. With the setting below on, this is the opener rather than the constant filler.")
     ui:Tip(self.mfRow.cb, "Moonfire", "Kept up first. At low levels this plus the nuke IS the rotation.")
     ui:Tip(self.isRow.cb, "Insect Swarm", "Kept up right after Moonfire.")
     ui:Tip(self.eclipseRow.cb, "Eclipse reaction", "On a proc, cast the empowered opposite nuke. Casts are queued, so the swap lands the moment the window opens.", "If procs are not detected, run /sbr debug with the proc up and report the buff name.")
+    ui:Tip(self.eclipseStickRow.cb, "Stay on the empowered nuke", "When a window closes, keep casting the nuke it empowered instead of returning to the primary.", "Each Eclipse has a 30s cooldown but only runs 15s. The nuke a window empowers is the one that procs the OTHER Eclipse, so staying on it fishes at the side that is off cooldown. Turning this off restores the old behaviour: always fish with the primary nuke.")
     ui:Tip(self.htRow.slider, "Heal threshold", "An ally below this health counts as hurt and pulls a heal. Everything in this section keys off it.")
     ui:Tip(self.hpowRow.slider, "Heal power", "Your bonus healing (+heal) from gear. Used to size downranks so each heal just covers the deficit.", "Leave at 0 to let it heal by rank only.")
     ui:Tip(self.innervateRow.cb, "Innervate", "Cast on yourself when your own mana drops, to keep the fight going.", "Slider: use Innervate once your mana falls under this percent.")
@@ -199,6 +202,7 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.mfRow, buf.useMoonfire)
     ui:BindCheck(self.isRow, buf.useInsectSwarm)
     ui:BindCheck(self.eclipseRow, buf.eclipse)
+    ui:BindCheck(self.eclipseStickRow, buf.eclipseStick ~= false)
     -- Healing + Downtime cards (concept rows). Toggles mirror the rotation's
     -- defaults (most on unless explicitly disabled); each slider carries its
     -- value and is live only on-spec, with its toggle on and the spell learned.
