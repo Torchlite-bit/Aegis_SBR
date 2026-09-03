@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.16",
+    ver = "1.2.17",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -734,7 +734,11 @@ function Aegis_SBR:SpellReaches(spell, unit)
     if not spell or spell == "" then return true end
     if not unit or not UnitExists(unit) then return false end
     if not IsSpellInRange then return CheckInteractDistance(unit, 4) and true or false end
-    local r = IsSpellInRange(spell, unit)
+    -- pcall: an unresolvable name throws here rather than answering -1, and a
+    -- thrown error aborts the press outright - strictly worse than the -1 case
+    -- this function already treats as "in range".
+    local ok, r = pcall(IsSpellInRange, spell, unit)
+    if not ok then return true end
     if r == 0 then return false end
     return true
 end
@@ -2745,8 +2749,14 @@ ev:SetScript("OnEvent", function()
         Aegis_SBR:Banner()
         Aegis_SBR:HookGossip()
     elseif event == "CHARACTER_POINTS_CHANGED" then
-        Aegis_SBR.costCache = nil
-        Aegis_SBR.radiusCache = nil
+        -- The whole index, not just the two derived caches. A talent swap
+        -- unlearns and relearns talent-granted spells, so spellIndex - the one
+        -- cache that decides whether a spell exists at all - is precisely the
+        -- one that must not survive it. It used to: SPELLS_CHANGED was left to
+        -- cover it, and until that arrived KnowsSpell still answered "yes" for
+        -- a spell the client could no longer resolve.
+        Aegis_SBR:InvalidateSpellIndex()
+        Aegis_SBR.validCacheName = nil
         -- A talent change is also how the Goblin Brainwashing Device announces
         -- itself, since it announces itself no other way.
         Aegis_SBR:GobboApply()

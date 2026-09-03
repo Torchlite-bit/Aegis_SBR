@@ -4,6 +4,88 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.17 — a range check that threw, and an Eclipse nobody could name
+
+### 🐛 Fixed — Lua error on the Shaman after a Brainwashing Device spec switch
+
+Switching between Enhance Tank and Enhance DPS and then pressing `/sbr` threw
+`Class_Shaman.lua: Unable to determine spell id from spell name, possibly because it isn't
+in your spell book`, once per press.
+
+`IsSpellInRange` does not answer `-1` for a name it cannot resolve — it **throws**. The
+shaman's `InSpellRange` called it unprotected, so the error aborted the entire press:
+nothing below the failing gate ran. No shock, no shield upkeep, no totems, no filler, no
+auto-attack.
+
+Why those two specs and no others — the three names passed to this check by spec:
+
+| Spec | Names range-checked | Talent-granted? |
+|---|---|---|
+| Enhancement | Stormstrike, Lightning Strike, shock | first two |
+| Tank | Earthshaker Slam, Stormstrike, shock, Lightning Strike | first three |
+| Elemental | shock | no |
+| Restoration | — (no range check at all) | — |
+
+A shock is a trainer spell and survives a respec. Stormstrike and Lightning Strike are
+talent-granted, and the device unlearns and relearns them, so only the two specs that
+range-check them could reach the throw. That matches the report exactly, including
+restoration and elemental being clean.
+
+Two changes:
+
+- **`pcall` around every `IsSpellInRange` call** — the shaman's `InSpellRange`, the core's
+  `SpellReaches` (used by all four healers), and the ClassicAPI wrapper in
+  `Aegis_SBR_Capabilities.lua`. A throw now reads as "cannot tell", which the surrounding
+  code already treats as in range. On the normal path the return is byte-for-byte what it
+  was.
+- **`CHARACTER_POINTS_CHANGED` now drops the spellbook index.** It cleared `costCache` and
+  `radiusCache` and left `spellIndex` — the one cache that decides whether a spell exists
+  at all — to be dropped by `SPELLS_CHANGED` later. Until that arrived, `KnowsSpell`
+  answered "yes" for a spell the client could no longer resolve, which is what let the
+  gate reach the throw in the first place.
+
+The first change is the one that stops the error. The second removes the window that
+produced it, and makes every other `KnowsSpell` caller correct across a respec too.
+
+**Rule restated, third costume:** a detection that cannot answer must never close a gate —
+and it must never take the press down with it either. Range, movement, facing, weapon,
+caster and enemy count all have a value for "cannot tell"; an API that signals it by
+throwing needs the `pcall` to convert it back.
+
+### 🐛 Fixed — Balance druid never reacted to Eclipse
+
+Reported as chain-casting Wrath for a whole fight and never switching to Starfire. The
+reaction was gated on five guessed buff names, `HasBuff` matches the name **exactly**, and
+not one of them was right — so the gate never opened and every press fell through to the
+filler.
+
+`/sbr debug` with a proc up gives the real names. Turtle names the buff after the school it
+**empowers**, not the spell that granted it:
+
+| Proc | From | Chance | Empowers | Cast |
+|---|---|---|---|---|
+| Arcane Eclipse | Wrath | 30% | Arcane | **Starfire** |
+| Nature Eclipse | Starfire | 50% | Nature | **Wrath** |
+
+15s duration, 30s cooldown per effect, one active at a time; bonus is 10% + 60% of spell
+crit. Both names were observed live at 11s and 12s remaining.
+
+Guessing had been for `Eclipse (Lunar)` / `Solar Eclipse` and three more in that shape —
+the retail wording. Those stay in the lists behind the Turtle names, and the partial-name
+fallback now reads a school word as well as a side word, so `Nature` resolves the same way
+`Solar` does.
+
+**The rotation model needed no change.** Audit item **D5** asked whether Balance should
+alternate strictly or fish for procs; the mechanics confirm proc-fishing, which is what the
+module has always done. `docs/rotations.md` carried the loose "alternate Wrath and
+Starfire" phrasing and now records the real proc. D5 is closed.
+
+Note for anyone who ran **v1.2.16**: its partial-name fallback resolved every Eclipse to
+the Starfire side, so the druid reacted to both procs by casting Starfire — right for
+Arcane Eclipse, wrong for Nature. This is the completing half of that fix.
+
+---
+
 ## v1.2.16 — Carve in single target, and a buff fallback that never worked
 
 ### ✨ Hunter: Carve as a single-target filler (Survival melee)
