@@ -355,6 +355,10 @@ function Aegis_SBR:PickExtra(name)
         table.insert(Aegis_SBR.decidePlan.extras, name)
         return true
     end
+    -- Recorded like Pick does. This is a real cast that the client can refuse,
+    -- and leaving it unrecorded meant its refusal was blamed on whatever spell
+    -- came before it - the same misattribution auto-attack caused.
+    Aegis_SBR:NoteSpellCast(name)
     CastSpellByName(name)
     return true
 end
@@ -458,10 +462,24 @@ function Aegis_SBR:OnSwingMessage(msg)
     end
 end
 
+-- How many swings may be missed before the timer is called unknown. A running
+-- auto-attack re-anchors lastSwing every swingSpeed seconds and a miss, dodge
+-- or parry anchors it too, so missing this many in a row means nothing is
+-- swinging - not that the next swing is imminent.
+local SWING_STALE = 2.5
+
 -- Predicted seconds until the next white swing, or nil if unknown.
+--
+-- The modulo below is what makes the staleness test necessary: it keeps
+-- cycling forever from the last real swing, so after auto-attack stops it goes
+-- on reporting a perfectly plausible countdown. In a captured log the trace
+-- showed a healthy swing timer through stretches where no swing had landed for
+-- ten seconds, which is exactly the "auto-attack sometimes was not running"
+-- report it should have made visible.
 function Aegis_SBR:SwingTimeLeft()
     if not self.lastSwing or not self.swingSpeed or self.swingSpeed <= 0 then return nil end
     local elapsed = GetTime() - self.lastSwing
+    if elapsed > self.swingSpeed * SWING_STALE then return nil end
     return self.swingSpeed - math.mod(elapsed, self.swingSpeed)
 end
 
@@ -740,6 +758,40 @@ function Aegis_SBR:SpellReaches(spell, unit)
     local ok, r = pcall(IsSpellInRange, spell, unit)
     if not ok then return true end
     if r == 0 then return false end
+    return true
+end
+
+-- ============================================================
+-- Line of sight
+-- ============================================================
+-- The one answer 1.12 has no API for: IsSpellInRange measures distance and
+-- knows nothing about the pillar in between. Until now the only source was the
+-- client refusing a cast, which is a five second blacklist applied AFTER a
+-- press was already spent - and which recovers only when the window runs out,
+-- not when the corner is cleared.
+--
+-- UnitXP_SP3 answers it outright, and it is already a required dependency for
+-- the range window. Puppeteer draws its unit frames from this same call.
+--
+-- Armed only after the world exists. Puppeteer guards the same call against
+-- being made too early because it can crash the client; PLAYER_ENTERING_WORLD
+-- is strictly later than the ADDON_LOADED it uses.
+Aegis_SBR.sightReady = false
+local sightFrame = CreateFrame("Frame")
+sightFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+sightFrame:SetScript("OnEvent", function()
+    Aegis_SBR.sightReady = true
+end)
+
+-- True unless the client says outright that the unit is NOT in sight. Without
+-- UnitXP_SP3, before the world is up, or on a throw, it answers true - a
+-- detection that cannot answer must never close a gate.
+function Aegis_SBR:InSight(unit)
+    if not unit or not UnitExists(unit) then return true end
+    if not self.sightReady or not UnitXP then return true end
+    local ok, r = pcall(UnitXP, "inSight", "player", unit)
+    if not ok then return true end
+    if r == false or r == 0 then return false end
     return true
 end
 
@@ -1513,15 +1565,44 @@ function Aegis_SBR:CastBlocked(unit)
 end
 
 -- Compared against the client's own strings, so it holds in any locale. The
--- literals are only a fallback for a client that does not define them.
+-- literals are a fallback for a client that does not define a global - and, on
+-- Turtle, more than a fallback: in a captured tank log every one of 69 refusals
+-- went through the UNRECOGNISED branch below. The client answers a melee
+-- ability with the ERR_ family ("You are too far away!", "You are facing the
+-- wrong way!", "Ability is not ready yet.", "Can't do that while stunned")
+-- where these lists carried only the SPELL_FAILED_ wordings. Both are listed
+-- now, and the comparison is normalised so a trailing period cannot decide it.
+--
+-- Every entry must be non-nil: an undefined global in the middle of a table
+-- makes table.getn undefined in Lua 5.0, which is why each one carries `or`.
+local function NormErr(text)
+    if type(text) ~= "string" then return nil end
+    local t = string.lower(text)
+    t = string.gsub(t, "^%s+", "")
+    t = string.gsub(t, "[%s%.!]+$", "")
+    return t
+end
+
 -- Refusals that say something about the UNIT: it cannot be reached from here.
 -- These mark the unit as well as the spell.
+--
+-- Facing and movement used to be in this list and are not conditions of the
+-- UNIT at all - they are conditions of US. On a paladin who melees while
+-- healing that mattered: CastOn stamps the heal target as the last unit cast,
+-- and a facing error from the melee layer arriving within the blame window then
+-- marked the person being healed as unreachable. Healing needs line of sight,
+-- never a direction, so a facing refusal can never be about a heal target.
 local CAST_REFUSED = {
     SPELL_FAILED_LINE_OF_SIGHT or "Target not in line of sight",
     SPELL_FAILED_OUT_OF_RANGE or "Out of range",
     SPELL_FAILED_TOO_CLOSE or "Target too close",
-    SPELL_FAILED_UNIT_NOT_INFRONT or "Target needs to be in front of you",
-    SPELL_FAILED_MOVING or "Can't do that while moving",
+    ERR_OUT_OF_RANGE or "Out of range",
+    ERR_SPELL_OUT_OF_RANGE or "You are too far away!",
+    -- Observed verbatim on Turtle 1.12, where the globals above hold other
+    -- wordings for the same conditions.
+    "Out of range",
+    "You are too far away!",
+    "Target not in line of sight",
 }
 
 -- Refusals that say something about US, not about the target. These clear the
@@ -1537,6 +1618,14 @@ local CAST_REFUSED_SELF = {
     SPELL_FAILED_NO_POWER or "Not enough mana",
     ERR_OUT_OF_RAGE or "Not enough rage",
     ERR_OUT_OF_ENERGY or "Not enough energy",
+    -- Moved here from the unit list: both describe how WE are standing or
+    -- moving, so they void the spell's throttle and must not blacklist anybody.
+    SPELL_FAILED_UNIT_NOT_INFRONT or "You are facing the wrong way!",
+    SPELL_FAILED_MOVING or "Can't do that while moving",
+    ERR_BADATTACKFACING or "You are facing the wrong way!",
+    "You are facing the wrong way!",
+    -- Also observed verbatim on Turtle 1.12.
+    "Can't do that while stunned",
     -- The client is still busy with the previous cast or channel. Measured on an
     -- arcane mage: after every Arcane Missiles channel the FIRST cast issued was
     -- thrown away and only the second, one press later, took - mana unchanged
@@ -1544,7 +1633,24 @@ local CAST_REFUSED_SELF = {
     -- captured log. Without this entry that refusal was unrecognised, so the
     -- spell's throttle stayed stamped on a cast that never left.
     SPELL_FAILED_SPELL_IN_PROGRESS or "Another action is in progress",
+}
+
+-- Recognised, and deliberately acted on by NEITHER ledger.
+--
+-- A cooldown refusal does not reliably mean the cast was thrown away. Nampower
+-- queues a press that arrives during a global cooldown and fires it the instant
+-- the cooldown clears, so the client can answer "not ready yet" for a cast that
+-- then happens anyway. Voiding the spell's throttle on that would re-send a
+-- spell that is already in flight - the double cast these throttles exist to
+-- prevent.
+--
+-- Listed all the same, so it stops arriving in the unrecognised trace below and
+-- being mistaken for a refusal nobody has classified yet.
+local CAST_REFUSED_IGNORED = {
     ERR_SPELL_COOLDOWN or "Spell is not ready yet",
+    SPELL_FAILED_NOT_READY or "Ability is not ready yet",
+    "Ability is not ready yet",
+    "Spell is not ready yet",
 }
 
 -- Spells the client has just refused, by name, with the time it said so.
@@ -1577,13 +1683,22 @@ end
 
 function Aegis_SBR:OnCastError(msg)
     if not msg then return end
+    -- Normalised on both sides: the client's "Out of range." and a global's
+    -- "Out of range" are the same refusal, and exact equality answered no.
+    local norm = NormErr(msg)
+    if not norm then return end
     local unitRefused, selfRefused = false, false
     for i = 1, table.getn(CAST_REFUSED) do
-        if msg == CAST_REFUSED[i] then unitRefused = true; break end
+        if norm == NormErr(CAST_REFUSED[i]) then unitRefused = true; break end
     end
     if not unitRefused then
         for i = 1, table.getn(CAST_REFUSED_SELF) do
-            if msg == CAST_REFUSED_SELF[i] then selfRefused = true; break end
+            if norm == NormErr(CAST_REFUSED_SELF[i]) then selfRefused = true; break end
+        end
+    end
+    if not (unitRefused or selfRefused) then
+        for i = 1, table.getn(CAST_REFUSED_IGNORED) do
+            if norm == NormErr(CAST_REFUSED_IGNORED[i]) then return end
         end
     end
     -- An UNRECOGNISED refusal used to return here and leave no trace anywhere:
@@ -1615,8 +1730,17 @@ function Aegis_SBR:OnCastError(msg)
     end
 
     -- The unit, for the heal target selection. Only for refusals that are ABOUT
-    -- the unit.
-    if unitRefused and self.lastUnitCast and (now - (self.lastUnitCastAt or 0)) <= BLAME_WINDOW then
+    -- the unit, and only while the unit cast is the LAST thing we sent.
+    --
+    -- The second test is what keeps somebody else's refusal off a heal target.
+    -- A press casts on a unit, the rotation then sends a targetless or melee
+    -- ability, and the error belongs to that second one - but the unit stamp is
+    -- still standing, and without this it collected the blame. Auto-attack was
+    -- the worst case: it runs before the module every press and used to leave no
+    -- record at all, so its "too far away" landed on whatever came last.
+    if unitRefused and self.lastUnitCast
+        and (now - (self.lastUnitCastAt or 0)) <= BLAME_WINDOW
+        and (self.lastUnitCastAt or 0) >= (self.lastSpellAt or 0) then
         self.castBlocked[self.lastUnitCast] = now
         -- Spent: one refusal marks one unit, so the next error cannot be blamed
         -- on the same cast.
@@ -1635,6 +1759,10 @@ function Aegis_SBR:CastOnUnit(spell, unit, reason)
     end
     Aegis_SBR.pressSeq = (Aegis_SBR.pressSeq or 0) + 1
     Aegis_SBR:NoteUnitCast(unit)
+    -- The SPELL as well, so OnCastError can tell whether the unit cast is still
+    -- the most recent thing we sent. Without it lastSpellAt belongs to some
+    -- earlier press and the comparison there is meaningless.
+    Aegis_SBR:NoteSpellCast(spell)
     CastSpellByName(spell, unit)
     return true
 end
@@ -1824,7 +1952,17 @@ function Aegis_SBR:EnsureAutoAttack()
     if slot then
         -- Attack is on a bar: toggle it only when not already swinging, so this
         -- is a no-op if SCRM (or the player) already started the swing.
-        if not IsCurrentAction(slot) then UseAction(slot) end
+        if not IsCurrentAction(slot) then
+            -- Recorded, because the client answers this with the same "too far
+            -- away" and "facing the wrong way" a spell gets, and this runs
+            -- BEFORE the module every press. Unrecorded, those errors landed on
+            -- whatever spell happened to be last - in one log fourteen of them
+            -- on Seal of Wisdom, a self buff that can be neither.
+            -- "Attack" is not a spell any throttle is keyed on, so blaming it
+            -- costs nothing and keeps the blame off something real.
+            self:NoteSpellCast("Attack")
+            UseAction(slot)
+        end
     elseif AttackTarget then
         -- No Attack on any bar (common on Warriors who never place it, and on
         -- anyone running SuperCleveRoidMacros, which drives the swing with
@@ -1847,6 +1985,7 @@ function Aegis_SBR:EnsureAutoAttack()
         local id = self:TargetId()
         if id ~= self.attackToggledFor then
             self.attackToggledFor = id
+            self:NoteSpellCast("Attack")
             AttackTarget()
         end
     end
@@ -1970,9 +2109,45 @@ end
 -- counts - was reverted after a Hunter regression report (ranged attack stopped
 -- while in ranged mode). Cause not yet identified; do not re-apply without a
 -- reproduction. See docs/research-classicapi.md.
+-- CheckInteractDistance's smallest index is 3, the duel distance, and that is
+-- about 9.9 yards - roughly twice the reach of a melee ability. Everything
+-- gated on this therefore fired from too far out: in a captured tank log, 42 of
+-- the 46 distance refusals the client sent arrived on a press where this
+-- answered yes, and auto-attack is gated on it too.
+--
+-- A plain distance threshold cannot replace it. Our two distance sources do not
+-- measure the same thing (see Aegis_SBR_Range.lua): ClassicAPI measures centre
+-- to centre, UnitXP_SP3 adjusts for the hitbox. Melee reach is five yards plus
+-- the target's radius, so a fixed five-yard cut against a centre-to-centre
+-- number would report "not in melee" while standing inside a large mob - a
+-- worse failure than the one being fixed, and on exactly the boss fights where
+-- it matters most.
+--
+-- So the client is asked instead, about a real ability: IsSpellInRange knows
+-- both the ability's reach and the target's radius, and it is the same
+-- arithmetic behind the refusal message. A module opts in by defining
+-- MeleeProbe; one that does not keeps exactly today's behaviour, which is also
+-- what happens without ClassicAPI or when the call cannot judge.
+--
+-- Answered once per press: the paladin alone reaches this from ten places.
 function Aegis_SBR:InMeleeRange()
     if not UnitExists("target") then return false end
-    return CheckInteractDistance("target", 3) and true or false
+    local tok = self.pressToken
+    if tok and self.meleeTok == tok and self.meleeAns ~= nil then return self.meleeAns end
+
+    local ans = nil
+    local probe = self.active and self.active.MeleeProbe and self.active:MeleeProbe()
+    if probe and IsSpellInRange then
+        -- pcall for the same reason SpellReaches uses one: an unresolvable name
+        -- throws rather than answering -1, and a throw aborts the whole press.
+        local ok, r = pcall(IsSpellInRange, probe, "target")
+        if ok and r == 1 then ans = true
+        elseif ok and r == 0 then ans = false end
+    end
+    if ans == nil then ans = CheckInteractDistance("target", 3) and true or false end
+
+    if tok then self.meleeTok, self.meleeAns = tok, ans end
+    return ans
 end
 
 function Aegis_SBR:Throttle(text)
@@ -2470,6 +2645,11 @@ function Aegis_SBR:RunRotation()
         return
     end
 
+    -- Bumped here rather than just before Rotate, because the melee-range test
+    -- below is now memoised per press and the auto-attack gate is its first
+    -- caller. Under the old order that call answered from the PREVIOUS press.
+    self:NewPress()
+
     -- Keep the white swing going for melee classes. Runs whether or not
     -- SuperCleveRoidMacros is loaded: EnsureAutoAttack only toggles Attack when
     -- you are not already swinging, so it is a no-op if SCRM (or anything else)
@@ -2485,7 +2665,6 @@ function Aegis_SBR:RunRotation()
     -- finisher spends them and the cast event arrives with the counter already
     -- at zero. No-op unless the probe log is enabled.
     if self.ProbeNoteCombo then self:ProbeNoteCombo() end
-    self:NewPress()
     self:PerfStart()
     self.active:Rotate(cfg)
     self:PerfStop()

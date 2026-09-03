@@ -4,7 +4,135 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
-## v1.2.18 — Balance keeps the weave going between procs
+## v1.2.18 — what the client says when it refuses
+
+### 🐛 Fixed — none of the client's refusals were being recognised
+
+A captured 18-minute tank log carried 69 refusal messages. Every one went through the
+*unrecognised* branch: the addon compares against the `SPELL_FAILED_` wordings, and this
+client answers a melee ability with the `ERR_` family.
+
+| Message | Count |
+|---|---|
+| `Out of range.` | 28 |
+| `You are too far away!` | 18 |
+| `You are facing the wrong way!` | 12 |
+| `Ability is not ready yet.` | 7 |
+| `Can't do that while stunned` | 4 |
+
+Two ledgers depend on this. `castBlocked` stops a heal being aimed at somebody the client
+cannot reach; `spellRefused` is how the Hunter, Warlock and Druid tell a cast that happened
+from one the client threw away. Both were inert here.
+
+- Both string families are listed now, and the comparison is normalised, so a trailing
+  period cannot decide it.
+- **Facing and movement no longer blacklist a unit.** They sat in the list that marks the
+  *unit*, and neither is a condition of the unit — both describe the caster. Healing needs
+  line of sight, never a direction. On a paladin who melees while healing, a facing error
+  from the melee layer could mark the person being healed as unreachable.
+- **Cooldown refusals are recognised but acted on by neither ledger.** Nampower queues a
+  press that arrives during a global cooldown and fires it afterwards, so "not ready yet"
+  can precede a cast that happens anyway. Voiding the throttle there would re-send a spell
+  already in flight — the double cast the throttle exists to prevent.
+
+**Attribution.** A unit is marked only while the cast on it is the last thing sent.
+`CastOn`, `CastOnUnit` and `PickExtra` now record the spell name — they did not — and
+auto-attack records itself. It runs before the module on every press and left no trace, so
+its "too far away" landed on whatever spell came last: in the same log, fourteen refusals
+were charged to *Seal of Wisdom*, a self buff that can be neither out of range nor facing
+the wrong way.
+
+### 🐛 Fixed — melee abilities were attempted from twice their reach
+
+`InMeleeRange` was `CheckInteractDistance(target, 3)`: the duel distance, about 9.9 yards,
+against a melee reach of about 5. In the same log, **42 of the 46 distance refusals arrived
+on a press where this answered yes.** Auto-attack is gated on it too — Attack is toggled at
+9.9 yards, the client refuses, and no swing starts.
+
+A fixed distance threshold cannot replace it. The two distance sources do not measure the
+same thing (see `Aegis_SBR_Range.lua`): ClassicAPI is centre to centre, UnitXP_SP3 adjusts
+for the hitbox. Melee reach is five yards *plus the target's radius*, so a five-yard cut
+against a centre-to-centre number reports "not in melee" while standing inside a large mob
+— a worse failure, on exactly the fights where it matters most.
+
+The client is asked about a real ability instead. `IsSpellInRange` knows both the ability's
+reach and the target's radius, and it is the arithmetic behind the refusal message. A module
+opts in by naming a probe ability, and **only the paladin does so far** — Crusader Strike,
+else Holy Strike, whichever is learned. Without a probe, without ClassicAPI, or when the
+call cannot judge, the old distance test runs unchanged. Answered once per press.
+
+### ✨ Line of sight is read directly instead of learned from a refusal
+
+Line of sight is the one thing 1.12 has no API for: `IsSpellInRange` measures distance and
+knows nothing about the pillar in between. Until now the only source was the client refusing
+a cast — a blacklist applied *after* a press was already spent, and released when its five
+seconds run out rather than when the corner is cleared.
+
+UnitXP_SP3 answers it outright, and it is already a required dependency for the range
+window. Puppeteer draws its unit frames from the same call. Wired into the reachability test
+for Paladin, Druid, Priest and Shaman.
+
+Without UnitXP_SP3, before the world is up, or on a throw it answers *yes*, so the old
+learned blacklist stays the only effect — a detection that cannot answer never closes a
+gate.
+
+### 🐛 Fixed — Revenge never followed a block
+
+Reported on a protection warrior: *Revenge* fired after a dodge or a parry, never after a
+block. A blocked attack is not a miss. A **partial** block — the normal case — still lands,
+so the line carries a `(N blocked)` trailer on the HITS event; only a full block, where the
+block value covers the whole hit, reaches MISSES. The tracker registered MISSES alone, so it
+missed nearly every block a tank actually takes. *Shield Block*, used on cooldown to feed
+Revenge, was feeding nothing.
+
+Three further gaps in the same tracker:
+
+- **PvP was not covered at all.** A player attacker uses `CHAT_MSG_COMBAT_HOSTILEPLAYER_HITS`
+  and `_MISSES`; neither was registered, so in a battleground no block, dodge or parry opened
+  the window. The block trailer does not say *who* blocked, and these events also carry lines
+  about other people, so a self-hit line is required alongside it.
+- **English substrings.** The trigger words are compiled from the FrameXML format strings
+  now, so the tracker works on a non-English client. The English literals remain as a
+  fallback for a missing global.
+- **Silence closed the gate.** Until the log produces a trigger even once, "no window open"
+  is silence, not an answer. Revenge is attempted on its own cooldown instead, only while
+  already in Defensive Stance and no more often than the cooldown — so a guess can never
+  start a stance dance, and a refused cast cannot be retried on every press. The first
+  trigger read latches the parse and the fallback never runs again.
+
+### 🐛 Fixed — five gaps in the Druid module
+
+Corrections already made elsewhere, brought across:
+
+| | Fixed | From |
+|---|---|---|
+| Positioning | *Shred* falls back to *Claw*, *Ravage* to *Pounce*, when we are demonstrably not behind the target | Rogue, v1.2.7 |
+| Heal credit | Ends when the target's health rises, not on a clock; the timer is only a ceiling | Paladin, v1.2.14 |
+| Refusals | A refused cast voids the HoT stamp and the debuff ledger entry it would otherwise have written | Hunter, v1.2.10 |
+| Keys | `hotT` and `healPending` are keyed by GUID, not by name — two group members can share one | — |
+| Immunity | Bleed immunity is learned from the combat log, by creature id, and remembered between sessions | Hunter, Warlock |
+
+Only a definite "not behind" triggers the positional fallback: without UnitXP_SP3 there is
+no facing information, the test answers *cannot tell*, and *Shred* is used exactly as before.
+The learned immunity **adds to** the creature-type test rather than replacing it — that test
+covers the two always-immune types and compares against English strings, so it answers "never
+immune" everywhere else.
+
+### 🔧 Trace and tooltips
+
+- **The melee trace reaches the log.** `Aegis_SBR:Trace` writes only its first argument to
+  the press log, and the paladin's melee line passed `mana=`, `zeal=`, `style=`, `lean=` and
+  `afford=` as the second. Those fields reached the chat frame and never the disk, which is
+  why a report about *Crusader Strike* draining the mana could not be measured from an
+  18-minute capture. One argument now; the chat line is longer.
+- **The swing timer stops inventing a countdown.** `SwingTimeLeft` is a modulo from the last
+  white swing, so it kept cycling forever after auto-attack stopped and always showed a
+  plausible number. It answers *unknown* once more than 2.5 swings have been missed, which is
+  what makes a stalled swing visible in `swing=`.
+- **Two tooltips rewrote developer notes as player text.** The druid *Swipe* toggle described
+  an unimplemented feature and referred the reader to another class's panel; the hunter
+  *Mongoose Bite* tooltip ended on a note about a past bug.
+
 
 ### ✨ Balance druid: fish with the nuke the last proc empowered
 

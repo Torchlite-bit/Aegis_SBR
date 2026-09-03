@@ -37,6 +37,10 @@ local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 -- Reactive proc windows (seconds). Overpower and Revenge stay usable for
 -- about 5s after the triggering event.
 local REACT_WINDOW = 5.0
+-- How long the Revenge fallback waits between attempts while the combat log
+-- has not answered even once. Matched to Revenge's own cooldown, so the
+-- fallback can never cost more than one press per cooldown.
+local REVENGE_PROBE_GAP = 5.0
 -- Minimum gap between stance switches; stance changes have a ~1s internal
 -- cooldown, so we never thrash faster than this.
 local STANCE_CD = 1.0
@@ -382,6 +386,7 @@ function M:Rotate(cfg)
             .. " aoe=" .. (aoe and "Y" or "N")
             .. " op=" .. ((now < (self.overpowerExpiry or 0)) and "Y" or "N")
             .. " rev=" .. ((now < (self.revengeExpiry or 0)) and "Y" or "N")
+            .. " revseen=" .. (self.revengeSeen and "Y" or "N")
             .. " elite=" .. (isElite and "Y" or "N"))
     end
 
@@ -479,11 +484,33 @@ function M:Rotate(cfg)
 
     -- 1a. Revenge (Defensive). Mainly a tank reactive; only pursued while
     --     in Defensive, or stance-danced to it when home stance is Defensive.
-    if cfg.useRevenge and self:KnowsSpell("Revenge") and now < (self.revengeExpiry or 0)
+    --
+    --     Until the combat log has produced a trigger even once, "no window
+    --     open" is silence rather than an answer: the parse may be reading a
+    --     client whose wording it does not match. Silence must not close a
+    --     gate, so Revenge is attempted on its cooldown instead. The first
+    --     trigger read latches revengeSeen and this fallback never runs again.
+    --
+    --     Bounded twice: only while already in Defensive Stance, so a guess can
+    --     never start a stance dance, and no more often than REVENGE_PROBE_GAP,
+    --     so a refused cast - which starts no cooldown - cannot be retried on
+    --     every press and stall the rest of the chain.
+    local revOpen = now < (self.revengeExpiry or 0)
+    local revProbe = false
+    if not revOpen and not self.revengeSeen and self:InStance("Defensive Stance")
+        and (now - (self.revengeProbeAt or 0)) >= REVENGE_PROBE_GAP then
+        revOpen, revProbe = true, true
+    end
+    if cfg.useRevenge and self:KnowsSpell("Revenge") and revOpen
         and self:IsReady("Revenge") and rage >= RAGE["Revenge"] then
         if self:InStance("Defensive Stance") then
-            if self:Pick("Revenge", "block/dodge/parry window") then
-                self:Later(function() self.revengeExpiry = 0 end)
+            local why = revProbe and "no trigger read yet, trying on cooldown"
+                or "block/dodge/parry window"
+            if self:Pick("Revenge", why) then
+                self:Later(function()
+                    self.revengeExpiry = 0
+                    self.revengeProbeAt = GetTime()
+                end)
                 return
             end
         elseif cfg.stanceDance and cfg.homeStance == "defensive" then
@@ -660,18 +687,85 @@ end
 -- matching option is enabled. Overpower comes from the TARGET dodging our
 -- attack; Revenge from us blocking, dodging, or parrying an enemy attack.
 -- ============================================================
+-- The combat log is the only source for these windows and its wording is
+-- localised, so the FrameXML format strings are compiled into patterns instead
+-- of being matched as English substrings - which answer "never" on every other
+-- client. The English fallback covers only a missing global.
+local function ReactPattern(fmt, fallback)
+    if type(fmt) ~= "string" then return fallback end
+    local s = fmt
+    -- Placeholders first, through sentinels, so the escape pass below cannot
+    -- turn "%s" into the whitespace class.
+    s = string.gsub(s, "%%%d+%$s", "\1")
+    s = string.gsub(s, "%%%d+%$d", "\2")
+    s = string.gsub(s, "%%s", "\1")
+    s = string.gsub(s, "%%d", "\2")
+    s = string.gsub(s, "([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+    s = string.gsub(s, "\1", ".-")
+    s = string.gsub(s, "\2", "%%d+")
+    return s
+end
+
+local function MatchesAny(text, pats)
+    for i = 1, table.getn(pats) do
+        if pats[i] and string.find(text, pats[i]) then return true end
+    end
+    return false
+end
+
+-- A blocked attack is NOT a miss. A partial block - the normal case - still
+-- lands, so its line carries a "(N blocked)" trailer on the HITS event; only a
+-- full block, where the block value covers the whole hit, reaches MISSES.
+-- Reading MISSES alone therefore misses nearly every block a tank takes, which
+-- is why Revenge followed a dodge or a parry but never a block.
+local BLOCK_TRAILER_PAT = ReactPattern(BLOCK_TRAILER, "blocked")
+
+-- "X attacks. You block/dodge/parry." Self-explicit, so these stay safe on the
+-- hostile-player events, which also carry lines about other people.
+local REVENGE_MISS_PATS = {
+    ReactPattern(VSBLOCKOTHERSELF, "You block"),
+    ReactPattern(VSDODGEOTHERSELF, "You dodge"),
+    ReactPattern(VSPARRYOTHERSELF, "You parry"),
+}
+
+-- The block trailer does not say who blocked, so a self-hit line is required
+-- alongside it before a partial block counts.
+local SELF_HIT_PATS = {
+    ReactPattern(COMBATHITOTHERSELF,           "hits you for"),
+    ReactPattern(COMBATHITCRITOTHERSELF,       "crits you for"),
+    ReactPattern(COMBATHITSCHOOLOTHERSELF,     "hits you for"),
+    ReactPattern(COMBATHITCRITSCHOOLOTHERSELF, "crits you for"),
+}
+
 local reactFrame = CreateFrame("Frame")
-reactFrame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")             -- our attacks that were avoided
-reactFrame:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES") -- enemy attacks we avoided
+reactFrame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")              -- our attacks that were avoided
+reactFrame:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES")  -- enemy attacks we fully avoided
+reactFrame:RegisterEvent("CHAT_MSG_COMBAT_CREATURE_VS_SELF_HITS")    -- enemy attacks we partially blocked
+reactFrame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILEPLAYER_MISSES")     -- the same two in PvP: a player
+reactFrame:RegisterEvent("CHAT_MSG_COMBAT_HOSTILEPLAYER_HITS")       -- attacker uses its own events
 reactFrame:SetScript("OnEvent", function()
+    if not arg1 then return end
+
+    -- Overpower: our own attack, avoided by the target. Unchanged.
     if event == "CHAT_MSG_COMBAT_SELF_MISSES" then
-        if arg1 and string.find(string.lower(arg1), "dodge") then
+        if string.find(string.lower(arg1), "dodge") then
             M.overpowerExpiry = GetTime() + REACT_WINDOW
         end
-    elseif event == "CHAT_MSG_COMBAT_CREATURE_VS_SELF_MISSES" then
-        local s = arg1 and string.lower(arg1)
-        if s and (string.find(s, "block") or string.find(s, "dodge") or string.find(s, "parry")) then
-            M.revengeExpiry = GetTime() + REACT_WINDOW
-        end
+        return
+    end
+
+    local trigger
+    if event == "CHAT_MSG_COMBAT_CREATURE_VS_SELF_HITS"
+        or event == "CHAT_MSG_COMBAT_HOSTILEPLAYER_HITS" then
+        trigger = string.find(arg1, BLOCK_TRAILER_PAT) and MatchesAny(arg1, SELF_HIT_PATS)
+    else
+        trigger = MatchesAny(arg1, REVENGE_MISS_PATS)
+    end
+
+    if trigger then
+        M.revengeExpiry = GetTime() + REACT_WINDOW
+        -- Latched: the parse works on this client, so the rotation fallback is
+        -- never needed again this session.
+        M.revengeSeen = true
     end
 end)

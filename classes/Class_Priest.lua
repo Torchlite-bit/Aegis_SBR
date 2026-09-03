@@ -434,6 +434,11 @@ function M:Reachable(u)
     -- your own line of sight, and a stale mark would drop you from your own
     -- heal list.
     if Aegis_SBR:CastBlocked(u) then return false end
+    -- Line of sight, asked outright instead of learned from a refusal that costs
+    -- a press and then holds for five seconds. Answers true whenever it cannot
+    -- know - no UnitXP_SP3, or too early in the session - so nobody is dropped
+    -- from the heal list on ignorance.
+    if not Aegis_SBR:InSight(u) then return false end
     if self:KnowsSpell("Heal") then return Aegis_SBR:SpellReaches("Heal", u)
     elseif self:KnowsSpell("Flash Heal") then return Aegis_SBR:SpellReaches("Flash Heal", u)
     elseif self:KnowsSpell("Renew") then return Aegis_SBR:SpellReaches("Renew", u) end
@@ -555,6 +560,10 @@ function M:CastOn(spell, unit, reason)
         return
     end
     Aegis_SBR:NoteUnitCast(unit)
+    -- The spell too: OnCastError compares the two stamps to decide whether a
+    -- refusal about a unit really belongs to this cast or to something the
+    -- rotation sent afterwards.
+    Aegis_SBR:NoteSpellCast(spell)
     CastSpellByName(spell, unit)
 end
 

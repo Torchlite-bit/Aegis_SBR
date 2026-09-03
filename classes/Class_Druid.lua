@@ -230,6 +230,26 @@ function M:CastSafe(name, reason)
     return true
 end
 
+-- Did the client refuse the cast we just sent for this debuff? A refusal means
+-- the ledger entry above records something that never happened, and for Rip that
+-- is up to twelve seconds in which the bleed counts as applied while the target
+-- carries nothing.
+--
+-- Compared by timestamp rather than by ordering: the error message and the
+-- ledger write can land in either order within one frame.
+function M:DebuffAttemptRefused(name)
+    if not Aegis_SBR.SpellRefusedSince then return false end
+    local rec = Aegis_SBR.debuffLedger
+        and Aegis_SBR.debuffLedger[(self:TargetId() or "?") .. "|" .. name]
+    if not rec or not rec.expires then return false end
+    -- The ledger stores an expiry; the attempt itself was one duration earlier.
+    -- Without a duration there is no attempt time to compare against, and a
+    -- zero would match every refusal ever recorded.
+    local dur = M.OWNED_DEBUFF_DUR[name]
+    if not dur then return false end
+    return Aegis_SBR:SpellRefusedSince(name, rec.expires - dur)
+end
+
 -- The shapeshift form currently active, by name, or nil in caster form.
 function M:CurrentForm()
     for i = 1, GetNumShapeshiftForms() do
@@ -274,9 +294,42 @@ M.OWNED_DEBUFF_DUR = {
 -- and their own bleeds, so reading somebody else's as ours means applying
 -- nothing at all for as long as they keep theirs running.
 function M:DebuffUp(spellName)
+    -- An immune target never carries the debuff, so "not up" stays true forever
+    -- and the upkeep is retried on every press. Reported as the Rend bug in
+    -- v1.1.4 and again in the cat rotation; this is the same answer for the
+    -- cases the creature-type test cannot see.
+    if self:LearnedImmune(spellName) then return true end
     if not self:TargetDebuffUp(spellName, self.debuffTex[spellName]) then return false end
     if not self.OWNED_DEBUFF_DUR[spellName] then return true end   -- shared
+    if self:DebuffAttemptRefused(spellName) then return false end
     return Aegis_SBR:DebuffMine(spellName, self:TargetId())
+end
+
+-- Abilities the client refuses unless you are behind the target, with what to
+-- use instead. Shred is the whole builder in the shred style, so without this a
+-- druid standing in front spends every press on a refusal and the rotation does
+-- nothing at all.
+--
+-- Only a DEFINITE no falls back: without UnitXP_SP3 there is no facing
+-- information, PositionAllows answers "cannot tell", and the ability is used
+-- exactly as before.
+local BEHIND_FALLBACK = {
+    ["Shred"]  = "Claw",
+    ["Ravage"] = "Pounce",
+}
+
+function M:BehindOK(name)
+    if not BEHIND_FALLBACK[name] then return true end
+    return Aegis_SBR:PositionAllows("behind")
+end
+
+-- The ability to actually use, after the positional requirement. Returns nil
+-- when neither the ability nor its replacement is known.
+function M:PositionalPick(name)
+    if self:BehindOK(name) then return name end
+    local alt = BEHIND_FALLBACK[name]
+    if alt and self:KnowsSpell(alt) then return alt end
+    return nil
 end
 
 -- Affordable and learned. UnitMana("player") reads the active power, so
@@ -307,8 +360,77 @@ function M:TargetIsBleedImmune()
         self.bleedTypeId = id
         self.bleedImmune = (t == "Mechanical" or t == "Elemental")
     end
-    return self.bleedImmune
+    if self.bleedImmune then return true end
+    -- Learned, for what the type test cannot answer: a mob that is immune
+    -- without being Mechanical or Elemental, and every mob at all on a
+    -- non-English client, where the comparison above never matches.
+    return self:LearnedImmune("Rip") or self:LearnedImmune("Rake")
 end
+
+-- ============================================================
+-- Learned immunity
+--
+-- The type test above is a prior, not the answer: it covers the two creature
+-- types that are always bleed-immune and nothing else, and it is written against
+-- English strings so it answers "never immune" everywhere else. The combat log
+-- knows the rest - the client says outright when a spell failed because the
+-- target was immune - and that is the same source the hunter and the warlock
+-- already read.
+--
+-- Filed under the creature TEMPLATE id where ClassicAPI can read it, since that
+-- is what identifies a kind of mob; the name only as a fallback. Persisted, so
+-- the cost of learning is one cast per creature type ever rather than one per
+-- session.
+--
+-- Bounded like the hunter's table: creature types are finite, so reaching the
+-- cap means something is wrong, and relearning is cheap.
+-- ============================================================
+local IMMUNE_MEMORY_MAX = 300
+
+function M:ImmuneMemory()
+    if not AegisDB then return nil end
+    if type(AegisDB.druidImmune) ~= "table" then AegisDB.druidImmune = {} end
+    return AegisDB.druidImmune
+end
+
+function M:ImmuneKey(spell)
+    local id = Aegis_SBR.UnitCreatureID and Aegis_SBR:UnitCreatureID("target")
+    if id then return "id:" .. tostring(id) .. "|" .. spell end
+    local nm = UnitName("target")
+    return nm and ("nm:" .. nm .. "|" .. spell) or nil
+end
+
+function M:LearnedImmune(spell)
+    local mem = self:ImmuneMemory()
+    local key = mem and self:ImmuneKey(spell)
+    return (key and mem[key]) and true or false
+end
+
+function M:RememberImmune(spell)
+    local mem = self:ImmuneMemory()
+    local key = mem and self:ImmuneKey(spell)
+    if not key or mem[key] then return end
+    local n = 0
+    for _ in pairs(mem) do n = n + 1 end
+    if n >= IMMUNE_MEMORY_MAX then AegisDB.druidImmune = {}; mem = AegisDB.druidImmune end
+    mem[key] = true
+end
+
+-- The client says when a spell failed because the target was immune. Matched
+-- narrowly: only a line naming one of the debuffs this module maintains, and
+-- only while that debuff is the one we just sent.
+local druidImmuneFrame = CreateFrame("Frame")
+druidImmuneFrame:RegisterEvent("CHAT_MSG_SPELL_SELF_DAMAGE")
+druidImmuneFrame:SetScript("OnEvent", function()
+    if not arg1 or not string.find(arg1, "immune") then return end
+    -- Only when the line names the CURRENT target, so a message about something
+    -- else cannot record an immunity against this one.
+    local tname = UnitName("target")
+    if not (tname and string.find(arg1, tname, 1, true)) then return end
+    for name in pairs(M.OWNED_DEBUFF_DUR) do
+        if string.find(arg1, name, 1, true) then M:RememberImmune(name); return end
+    end
+end)
 
 -- Queue a cast-time spell through SuperWoW so spamming the macro never
 -- clips the cast in progress; the press during a cast queues the next
@@ -384,8 +506,10 @@ end
 function M:ResolveOpener(cfg)
     local o = cfg.opener or "auto"
     if o == "none" then return nil end
+    -- Ravage needs to be behind the target; Pounce below does not, so it is the
+    -- natural fallback and the chain already leads there.
     if o == "Ravage" or (o == "auto" and self:KnowsSpell("Ravage")) then
-        if self:CanPay("Ravage") then return "Ravage" end
+        if self:CanPay("Ravage") and self:BehindOK("Ravage") then return "Ravage" end
     end
     if o == "Pounce" or o == "auto" then
         if self:CanPay("Pounce") then return "Pounce" end
@@ -451,9 +575,10 @@ function M:RotateCat(cfg)
         if self:CanPay("Rake") and self:CastSafe("Rake") then return end
     end
 
-    -- P5 builder
-    local builder = bleed and "Claw" or "Shred"
-    if self:CanPay(builder) then
+    -- P5 builder. Shred is refused from anywhere but behind, so it falls back to
+    -- Claw rather than spending the press on a refusal.
+    local builder = self:PositionalPick(bleed and "Claw" or "Shred")
+    if builder and self:CanPay(builder) then
         if self:CastSafe(builder) then return end
     end
 
@@ -666,33 +791,78 @@ M.RG_MANA = { 120, 160, 215, 280, 350, 415, 480, 545, 600, 675 }
 M.RJ_TOTAL = { 32, 56, 116, 180, 244, 304, 388, 488, 608, 752, 888, 932 }
 M.RJ_MANA  = { 25, 40, 75, 105, 135, 160, 195, 235, 280, 335, 390, 415 }
 
+-- A stable key for one unit. The GUID where SuperWoW supplies one, the name
+-- only as a fallback: two group members can share a name, and a pet certainly
+-- can, and both bookkeeping tables below then answer for the wrong one.
+function M:UnitKey(unit)
+    if not unit then return "?" end
+    local _, guid = UnitExists(unit)
+    return guid or UnitName(unit) or "?"
+end
+
 -- Incoming-heal bookkeeping so a queued heal is subtracted from the deficit
 -- and the next press does not pile onto an already-covered target.
 M.healPending = {}
 function M:CommitHeal(unit, amount, castTime)
-    local n = UnitName(unit) or "?"
-    self.healPending[n] = { amt = amount or 0, t = GetTime() + (castTime or 1.5) }
+    self.healPending[self:UnitKey(unit)] = {
+        amt = amount or 0,
+        -- Health at commit time, so the credit can end on evidence rather than
+        -- on a clock - see PendingFor.
+        pre = UnitHealth(unit) or 0,
+        t = GetTime() + (castTime or 1.5) + 2.0,
+    }
 end
+
+-- The credit ends when the unit's health RISES above what it was when the cast
+-- was committed: at that moment the client has caught up and its own value is
+-- the accurate one.
+--
+-- It used to end on a timer alone, which is the defect the paladin was reported
+-- for and fixed in v1.2.14: a group member's health arrives on the server's
+-- cadence, and out of combat that cadence is slow, so the credit expired while
+-- the unit still read at its PRE-HEAL health - and it was picked and healed
+-- again into a full bar.
+--
+-- Only a rise clears it. Not "health changed", and not "health dropped below the
+-- baseline": that second test re-heals any actively tanked target inside this
+-- same window.
 function M:PendingFor(unit)
-    local n = UnitName(unit) or "?"
-    local rec = self.healPending[n]
+    local k = self:UnitKey(unit)
+    local rec = self.healPending[k]
     if not rec then return 0 end
-    if GetTime() > rec.t then self.healPending[n] = nil; return 0 end
+    if GetTime() > rec.t then self.healPending[k] = nil; return 0 end
+    local hp = UnitHealth(unit)
+    if hp and rec.pre and hp > rec.pre then self.healPending[k] = nil; return 0 end
     return rec.amt or 0
 end
 
 -- Per-unit HoT reapply timer (apply, then re-apply a little before it ends).
+--
+-- Stamped on the ATTEMPT, because a heal-over-time on a friendly unit cannot be
+-- read back the way a debuff on the target can. That makes it the same trap the
+-- hunter's reapply throttle was: a cast the client refused - out of range, no
+-- line of sight, not enough mana - marks the HoT as running for its full
+-- duration while the target carries nothing. For Rejuvenation that is twelve
+-- seconds.
+--
+-- So a refusal voids the stamp. The refusal is compared by timestamp rather
+-- than by ordering, since the error message and the stamp can land in either
+-- order within one frame.
 M.hotT = {}
 function M:NoteHoT(unit, spell)
-    local n = UnitName(unit) or "?"
-    self.hotT[n] = self.hotT[n] or {}
-    self.hotT[n][spell] = GetTime()
+    local k = self:UnitKey(unit)
+    self.hotT[k] = self.hotT[k] or {}
+    self.hotT[k][spell] = GetTime()
 end
 function M:HoTActive(unit, spell, dur)
-    local n = UnitName(unit) or "?"
-    local rec = self.hotT[n]
+    local rec = self.hotT[self:UnitKey(unit)]
     if not rec or not rec[spell] then return false end
-    return (GetTime() - rec[spell]) < dur
+    if (GetTime() - rec[spell]) >= dur then return false end
+    if Aegis_SBR.SpellRefusedSince and Aegis_SBR:SpellRefusedSince(spell, rec[spell]) then
+        rec[spell] = nil
+        return false
+    end
+    return true
 end
 
 function M:GroupUnits()
@@ -721,6 +891,11 @@ function M:Reachable(u)
     -- your own line of sight, and a stale mark would drop you from your own
     -- heal list.
     if Aegis_SBR:CastBlocked(u) then return false end
+    -- Line of sight, asked outright instead of learned from a refusal that costs
+    -- a press and then holds for five seconds. Answers true whenever it cannot
+    -- know - no UnitXP_SP3, or too early in the session - so nobody is dropped
+    -- from the heal list on ignorance.
+    if not Aegis_SBR:InSight(u) then return false end
     if self:KnowsSpell("Healing Touch") then return Aegis_SBR:SpellReaches("Healing Touch", u)
     elseif self:KnowsSpell("Rejuvenation") then return Aegis_SBR:SpellReaches("Rejuvenation", u) end
     return CheckInteractDistance(u, 4) and true or false
@@ -846,6 +1021,10 @@ function M:CastOn(spell, unit, reason)
         return
     end
     Aegis_SBR:NoteUnitCast(unit)
+    -- The spell too: OnCastError compares the two stamps to decide whether a
+    -- refusal about a unit really belongs to this cast or to something the
+    -- rotation sent afterwards.
+    Aegis_SBR:NoteSpellCast(spell)
     CastSpellByName(spell, unit)
 end
 

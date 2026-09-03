@@ -623,6 +623,19 @@ end
 -- Which strikes the profile enables, and whether they are actually learned.
 -- Gating on the two toggles (not just KnowsSpell) is what makes "only Holy
 -- Strike" or "only Crusader Strike" mean exactly that.
+-- The ability the core asks the client about when it needs to know whether we
+-- are in melee range (see Aegis_SBR:InMeleeRange). Defining this is what opts
+-- the class into the exact test; the first ability actually LEARNED is used, so
+-- IsSpellInRange never gets a name it would throw on, and a paladin too low to
+-- know either strike keeps the old distance test.
+local MELEE_PROBES = { "Crusader Strike", "Holy Strike" }
+function M:MeleeProbe()
+    for i = 1, table.getn(MELEE_PROBES) do
+        if self:KnowsSpell(MELEE_PROBES[i]) then return MELEE_PROBES[i] end
+    end
+    return nil
+end
+
 function M:HSOn(cfg) return cfg.spells.holyStrike     and self:KnowsSpell("Holy Strike")     end
 function M:CSOn(cfg) return cfg.spells.crusaderStrike and self:KnowsSpell("Crusader Strike") end
 
@@ -1401,6 +1414,11 @@ function M:Reachable(u)
     -- your own line of sight, and a stale mark would drop you from your own
     -- heal list.
     if Aegis_SBR:CastBlocked(u) then return false end
+    -- Line of sight, asked outright instead of learned from a refusal that costs
+    -- a press and then holds for five seconds. Answers true whenever it cannot
+    -- know - no UnitXP_SP3, or too early in the session - so nobody is dropped
+    -- from the heal list on ignorance.
+    if not Aegis_SBR:InSight(u) then return false end
     if self:KnowsSpell("Flash of Light") then return Aegis_SBR:SpellReaches("Flash of Light", u)
     elseif self:KnowsSpell("Holy Light") then return Aegis_SBR:SpellReaches("Holy Light", u) end
     return CheckInteractDistance(u, 4)
@@ -1881,6 +1899,10 @@ function M:CastOn(spell, unit)
         return
     end
     Aegis_SBR:NoteUnitCast(unit)
+    -- The spell too: OnCastError compares the two stamps to decide whether a
+    -- refusal about a unit really belongs to this cast or to something the
+    -- rotation sent afterwards.
+    Aegis_SBR:NoteSpellCast(spell)
     CastSpellByName(spell, unit)
 end
 
@@ -2645,8 +2667,17 @@ function M:Rotate(cfg)
                 .. " seen=" .. ((self.debuffSeenAt and (GetTime() - self.debuffSeenAt) < 1.5) and "Y" or "N")
                 .. " dmg=" .. (cfg.seals.damage ~= "" and cfg.seals.damage or "-")
                 .. " range=" .. (self:InMeleeRange() and "Y" or "N")
-                .. " swing=" .. (self:SwingTimeLeft() and string.format("%.2fs", self:SwingTimeLeft()) or "-"),
-            "hsOn=" .. (self:HSOn(cfg) and "Y" or "N")
+                .. " swing=" .. (self:SwingTimeLeft() and string.format("%.2fs", self:SwingTimeLeft()) or "-")
+                -- ONE argument, not two, for the same reason the heal trace gives:
+                -- Aegis_SBR:Trace writes only its FIRST argument to the press log,
+                -- and everything below - mana, zeal, the strike style, what is
+                -- affordable - is exactly what has to be readable when a tester
+                -- sends their SavedVariables in. Split across two arguments it
+                -- reached the chat frame and never the disk, which is why a report
+                -- about Crusader Strike draining the mana could not be measured
+                -- from an eighteen minute capture. A long wrapped chat line is the
+                -- cheaper price.
+                .. "  hsOn=" .. (self:HSOn(cfg) and "Y" or "N")
                 .. " csOn=" .. (self:CSOn(cfg) and "Y" or "N")
                 .. " style=" .. (cfg.strikeStyle or "autodps")
                 .. " HS(k=" .. (self:KnowsSpell("Holy Strike") and "Y" or "N")
