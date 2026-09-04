@@ -54,6 +54,30 @@ ever being measured. It cost eleven seconds of a two and a half minute session. 
 measured now — a decaying maximum of observed confirmation times — and the worst case fell
 from 3.0s to 1.3s.
 
+### 🐛 Fixed — Warlock: an interrupted channel left the rotation standing still
+
+Reported from play: interrupt the warlock mid-channel and he goes on doing nothing, as though
+the channel were still running.
+
+The channel guard was released by `SPELLCAST_CHANNEL_STOP` and, since earlier in this release,
+by the channel's own expected length. `SPELLCAST_INTERRUPTED` and `SPELLCAST_FAILED` fell into
+a branch that cleared pending DoTs and left the channel flags untouched — on the assumption
+that a broken channel announces itself through CHANNEL_STOP, which is precisely the event this
+client does not reliably send. So a Dark Harvest broken after one second still held the
+rotation for its full 7.8 seconds.
+
+Three ways out now instead of one:
+
+- **Interrupted or failed** ends the channel state immediately.
+- **Movement** ends it too. That is not an addition but the same fact from the other side:
+  `Queue` already refuses to *start* a channel while moving. Checked actively rather than
+  waited for, for the same reason as above; `Moving()` answers "standing still" when it cannot
+  measure, so it can never break a running channel by mistake.
+- **The expected length**, unchanged.
+
+Dark Harvest keeps a second protection window of its own against a cooldown race. It had the
+same blind spot and is released with it.
+
 ### 🐛 Fixed — Warlock: Drain Life started while DoTs were missing
 
 The channel is five seconds in which no global cooldown is spent, so a DoT that expires

@@ -135,6 +135,27 @@ wlChannelFrame:SetScript("OnEvent", function()
         -- A cast ended, one way or another. Nothing is left in the queue to
         -- protect, so no DoT should still be waiting on one.
         M.dotPending = {}
+        -- And a channel that was INTERRUPTED is over too. This branch used to
+        -- leave the channel flags alone, on the assumption that a broken channel
+        -- would still announce itself through CHANNEL_STOP - which is exactly the
+        -- event this client is unreliable about. So the rotation went on holding
+        -- still for the channel's whole expected length after it had already been
+        -- broken. Reported as the warlock standing there doing nothing.
+        --
+        -- FAILED is included: a channel refused at the moment it should have
+        -- started never runs, and waiting out its length is the same mistake.
+        if event == "SPELLCAST_INTERRUPTED" or event == "SPELLCAST_FAILED" then
+            if M.channeling and Aegis_SBR.Tracing and Aegis_SBR:Tracing() then
+                Aegis_SBR:Trace("channel " .. event .. " after "
+                    .. string.format("%.1fs", GetTime() - (M.chanStart or GetTime())))
+            end
+            M.channeling = false
+            M.chanSpell = nil
+            -- Dark Harvest keeps its own protection window on top of this one,
+            -- for the cooldown race described at that guard. It has the same
+            -- blind spot and needs the same release.
+            M.dhEnd = nil
+        end
     end
 end)
 
@@ -1209,19 +1230,30 @@ function M:Rotate(cfg)
         local held = GetTime() - self.chanStart
         local expect = self:ChannelLength(self.chanSpell)
         local limit = expect and (expect + CHANNEL_GRACE) or 16
-        if held < limit then
+
+        -- Moving breaks a channel outright - it is why Queue refuses to START
+        -- one while moving, and the same fact ends one that is already running.
+        -- Checked here rather than waited for, because the client announces a
+        -- broken channel through an event this one does not reliably send.
+        local why = nil
+        if Aegis_SBR:Moving() then
+            why = "broken by movement"
+        elseif held < limit then
             if self:Tracing() then
                 self:Trace(string.format("STALL channel %.1fs of %.1fs (%s)",
                     held, limit, self.chanSpell or "unknown"))
             end
             return
+        else
+            why = "released on time, no stop event"
         end
-        -- Released on time rather than on the event. Cleared here too, or every
-        -- following press would re-enter this branch and re-decide the same way.
+        -- Cleared here, or every following press would re-enter this branch and
+        -- re-decide the same way.
         self.channeling = false
         self.chanSpell = nil
+        self.dhEnd = nil
         if self:Tracing() then
-            self:Trace(string.format("channel released at %.1fs, no stop event", held))
+            self:Trace(string.format("channel %s after %.1fs", why, held))
         end
     end
 
