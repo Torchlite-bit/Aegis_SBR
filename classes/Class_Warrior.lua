@@ -37,6 +37,43 @@ local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 -- Reactive proc windows (seconds). Overpower and Revenge stay usable for
 -- about 5s after the triggering event.
 local REACT_WINDOW = 5.0
+
+-- Overpower's window, LEARNED rather than assumed.
+--
+-- The tooltip gives the cooldown (5s) and says the ability is usable "after the
+-- target dodges", but not for how long. Vanilla's answer is five seconds - and
+-- five seconds measured from the DODGE, where all we can see is the combat-log
+-- line about it, which arrives later. Our window therefore sits later than the
+-- real one and its tail is spent firing into a window the server has closed.
+-- That is what "Overpower misses or fires late" describes.
+--
+-- A fixed trim was the first answer here and it was a guess about somebody
+-- else's latency. This measures instead: when the client refuses an Overpower
+-- that was sent at age X, the window was already shut at X, so it is set just
+-- below X. Shrink only, never grow - a refusal is evidence, an acceptance is
+-- not - and never below the floor, which would make the ability unusable.
+local OVERPOWER_WINDOW = 5.0
+local OVERPOWER_WINDOW_MIN = 2.5
+local OVERPOWER_LEARN_BACKOFF = 0.3
+M.opWindow = OVERPOWER_WINDOW
+
+-- Slam's cast time, for the "do not clip the next swing" test below.
+--
+-- 2.5s, read off the Turtle tooltip - NOT the 1.12 value of 1.5s. That is a
+-- large difference for this test: against a 3.4s two-hander a 2.5s cast only
+-- fits in the first nine tenths of a second after a swing, where a 1.5s one
+-- fits nearly half the time. Assuming stock values here would have let Slam
+-- clip most of the swings it was supposed to protect.
+--
+-- Improved Slam takes 0.3s per rank off it, 2 ranks, so a fully talented Arms
+-- warrior casts it in 1.9s. Both numbers come from the talent tooltip read at
+-- rank 0/2, which is what makes 2.5 the BASE rather than one player's current
+-- value - so subtracting the rank here is correct and does not double-count.
+-- (The talent shortens Slam's global cooldown by the same amount; that matters
+-- for the rotation's pacing but not for the swing test below.)
+local SLAM_CAST_BASE = 2.5
+local SLAM_CAST_PER_RANK = 0.3
+local TALENT_IMP_SLAM = "Improved Slam"
 -- How long the Revenge fallback waits between attempts while the combat log
 -- has not answered even once. Matched to Revenge's own cooldown, so the
 -- fallback can never cost more than one press per cooldown.
@@ -80,11 +117,12 @@ local RAGE = {
     ["Rend"]          = 10,
     ["Battle Shout"]        = 10,
     ["Demoralizing Shout"]  = 10,
-    -- Master Strike (Arms talent): cost UNVERIFIED on Turtle, estimated in line
-    -- with the other talented strikes. Deliberately on the forgiving side, as the
-    -- table intends. If it feels like it skips casts (or attempts and fails),
-    -- this single number is the tuning knob - report the tooltip cost.
-    ["Master Strike"] = 25,
+    -- Master Strike: 20 rage, tooltip confirmed on Turtle. Was estimated at 25.
+    ["Master Strike"] = 20,
+    -- Concussion Blow costs NOTHING on Turtle and generates 10 rage on use
+    -- (tooltip confirmed). Zero rather than absent so the intent is explicit:
+    -- there is no cost to check, not "we never looked".
+    ["Concussion Blow"] = 0,
 }
 
 -- Stances an ability may be used from (vanilla 1.12). nil = any stance.
@@ -128,6 +166,7 @@ M.spellAlias = {
     battleshout = "useBattleShout", bshout = "useBattleShout",
     demoshout = "useDemoShout", demo = "useDemoShout",
     masterstrike = "useMasterStrike", mstrike = "useMasterStrike",
+    concussionblow = "useConcussionBlow", cblow = "useConcussionBlow",
 }
 
 -- Templates: starting presets, copied into the char's saved profiles once.
@@ -208,6 +247,10 @@ function M:NormalizeProfile(c)
         -- until the player opts in; it then fires on cooldown below the spec's
         -- primary strike.
         useMasterStrike = false,
+        -- Concussion Blow (Protection talent): off until opted into, like every
+        -- other talent-gated extra here. KnowsSpell keeps it inert until the
+        -- point is actually spent.
+        useConcussionBlow = false,
     }
     for k, v in pairs(b) do
         if c[k] == nil then c[k] = v end
@@ -313,6 +356,86 @@ local WEAPON_REQ = {
     ["Shield Bash"]  = "shield",
 }
 
+-- Slam's cast time with the talent folded in.
+-- Did the client refuse the Overpower we just sent? Then the window was
+-- already closed at that age, and the next one should stop sooner.
+--
+-- Only a refusal within the blame window counts, and only once per attempt.
+-- The reading is weak by nature - UI_ERROR_MESSAGE says plenty of things - but
+-- it is only consulted in the moment after we sent this exact ability, and the
+-- consequence of a false positive is a marginally tighter window rather than a
+-- wrong cast.
+function M:OverpowerLearnTick()
+    if not self.opSentAt then return end
+    if GetTime() - self.opSentAt > 2 then
+        self.opSentAt, self.opSentAge = nil, nil
+        return
+    end
+    if not Aegis_SBR.SpellRefusedAnySince then return end
+    if not Aegis_SBR:SpellRefusedAnySince("Overpower", self.opSentAt) then return end
+
+    local age = self.opSentAge
+    self.opSentAt, self.opSentAge = nil, nil
+    if not age then return end
+    local w = age - OVERPOWER_LEARN_BACKOFF
+    if w < OVERPOWER_WINDOW_MIN then w = OVERPOWER_WINDOW_MIN end
+    if w < self.opWindow then
+        self.opWindow = w
+        if self:Tracing() then
+            self:Trace(string.format("overpower window -> %.1fs (refused at %.1fs)", w, age))
+        end
+    end
+end
+
+function M:SlamCastTime()
+    local t = SLAM_CAST_BASE - SLAM_CAST_PER_RANK * self:TalentRank(TALENT_IMP_SLAM)
+    if t < 0.5 then t = 0.5 end
+    return t
+end
+
+-- The strike Slam should be waiting for, or nil.
+--
+-- Slam sits below the primary strikes already, so the ORDER was never the
+-- problem: Try refuses an unaffordable cast, and Slam is the cheapest thing in
+-- the list, so a press with Mortal Strike ready but three rage short fell
+-- straight through to Slam. Reported as Slam always taking preference.
+--
+-- Only a strike that is genuinely READY and merely unaffordable counts. One on
+-- cooldown is not something to wait for - that is exactly the gap Slam is meant
+-- to fill.
+local SLAM_YIELD_TO = { "Shield Slam", "Bloodthirst", "Mortal Strike", "Whirlwind" }
+
+function M:StrikeWaitingOnRage(cfg)
+    local enabled = {
+        ["Shield Slam"]   = cfg.useShieldSlam,
+        ["Bloodthirst"]   = cfg.useBloodthirst,
+        ["Mortal Strike"] = cfg.useMortalStrike,
+        ["Whirlwind"]     = cfg.useWhirlwind,
+    }
+    for i = 1, table.getn(SLAM_YIELD_TO) do
+        local n = SLAM_YIELD_TO[i]
+        if enabled[n] and self:KnowsSpell(n) and self:IsReady(n)
+            and (not STANCE_REQ[n] or self:InAnyStance(STANCE_REQ[n]))
+            and (not WEAPON_REQ[n] or Aegis_SBR:WeaponAllows(WEAPON_REQ[n]))
+            and self:Rage() < (RAGE[n] or 0) then
+            return n
+        end
+    end
+    return nil
+end
+
+-- Would a Slam started now push the next white swing back?
+--
+-- Slam does not reset the swing timer on this client, it delays it, so being
+-- wrong here costs a fraction of a swing rather than a whole one - which is why
+-- an estimate is good enough. An UNKNOWN swing timer answers yes, in line with
+-- the rest of the addon: a detection that cannot answer must not close a gate.
+function M:SlamFitsBeforeSwing()
+    local left = Aegis_SBR:SwingTimeLeft()
+    if not left then return true end
+    return left >= self:SlamCastTime()
+end
+
 function M:Try(name, reason)
     if WEAPON_REQ[name] and not Aegis_SBR:WeaponAllows(WEAPON_REQ[name]) then return false end
     if self:CanCast(name, RAGE[name], STANCE_REQ[name]) then
@@ -354,6 +477,53 @@ end
 -- failing closed would silently disable Rend against ordinary mobs. Note the
 -- comparison is against English strings - UnitCreatureType is localised, so this
 -- degrades to "never immune" on a non-enUS client, which is the safe direction.
+-- Can this target carry Demoralizing Shout at all?
+--
+-- Reported: targeting a totem made the rotation re-cast the shout on every
+-- press. The upkeep is gated on "the debuff is not on the target", and a totem
+-- has no attack power to reduce, so the debuff never lands and that test is
+-- true forever. Same shape as the Rend-on-a-bleed-immune-target loop below.
+--
+-- Two answers, in order:
+--
+--   * The creature type, which settles the reported case immediately. It is an
+--     English comparison like the bleed test below it, so it is a fast path
+--     rather than the whole answer.
+--   * What actually happened. Two casts on this target that left the debuff
+--     off and it is written off, whatever the client calls it. That covers the
+--     immune targets nobody has enumerated, and every non-English client.
+--
+-- Reset on a target change, so nothing is carried to the next mob.
+local SHOUT_STRIKES = 2
+local SHOUT_SETTLE = 1.5
+
+function M:TargetTakesShout()
+    local id = Aegis_SBR:TargetId()
+    if id ~= self.shoutId then
+        self.shoutId = id
+        self.shoutTries = 0
+        self.shoutCastAt = nil
+        self.shoutOK = (UnitCreatureType("target") ~= "Totem")
+    end
+    if not self.shoutOK then return false end
+
+    -- A cast has had time to land and the debuff is still not there.
+    if self.shoutCastAt and (GetTime() - self.shoutCastAt) > SHOUT_SETTLE then
+        self.shoutCastAt = nil
+        if not Aegis_SBR:TargetDebuffUp("Demoralizing Shout", "Ability_Warrior_WarCry") then
+            self.shoutTries = (self.shoutTries or 0) + 1
+            if self.shoutTries >= SHOUT_STRIKES then
+                self.shoutOK = false
+                if self:Tracing() then
+                    self:Trace("demo shout: target never takes it, stopping")
+                end
+                return false
+            end
+        end
+    end
+    return true
+end
+
 function M:TargetIsBleedImmune()
     local id = Aegis_SBR:TargetId()
     if id ~= self.bleedTypeId then
@@ -387,6 +557,16 @@ function M:Rotate(cfg)
             .. " op=" .. ((now < (self.overpowerExpiry or 0)) and "Y" or "N")
             .. " rev=" .. ((now < (self.revengeExpiry or 0)) and "Y" or "N")
             .. " revseen=" .. (self.revengeSeen and "Y" or "N")
+            -- Demoralizing Shout, because its upkeep loop on a target that
+            -- cannot take the debuff was reported from play and left no trace
+            -- at all: "up" is whether the debuff is on the target, "takes" is
+            -- whether this target can hold it. takes=N with the shout enabled
+            -- is the guard doing its job.
+            .. " demo=" .. (cfg.useDemoShout and (
+                (Aegis_SBR:TargetDebuffUp("Demoralizing Shout", "Ability_Warrior_WarCry")
+                    and "up" or "no")
+                .. "/" .. (self:TargetTakesShout() and "takes" or "immune")) or "off")
+            .. " ctype=" .. (UnitCreatureType and (UnitCreatureType("target") or "?") or "?")
             .. " elite=" .. (isElite and "Y" or "N"))
     end
 
@@ -482,6 +662,8 @@ function M:Rotate(cfg)
         end
     end
 
+    self:OverpowerLearnTick()
+
     -- 1a. Revenge (Defensive). Mainly a tank reactive; only pursued while
     --     in Defensive, or stance-danced to it when home stance is Defensive.
     --
@@ -528,12 +710,32 @@ function M:Rotate(cfg)
         and self:IsReady("Overpower") and rage >= RAGE["Overpower"] then
         if self:InStance("Battle Stance") then
             if self:Pick("Overpower", "target dodged") then
-                self:Later(function() self.overpowerExpiry = 0 end)
+                self:Later(function()
+                    -- Kept, not cleared, so a refusal arriving next frame can
+                    -- still be attributed to this attempt and its age.
+                    self.opSentAt = GetTime()
+                    self.opSentAge = self.overpowerAt and (GetTime() - self.overpowerAt) or nil
+                    self.overpowerExpiry = 0
+                end)
                 return
             end
         elseif cfg.stanceDance then
             if self:SwitchStance("Battle Stance") then return end
         end
+    end
+
+    -- 1c2. Whirlwind FIRST while in AoE mode. It sits at 1e below for the
+    --      single-target rage dump, which is the right place for that job - but
+    --      against several targets it hits all of them and Mortal Strike hits
+    --      one, so letting the primary strike take the press there is a plain
+    --      loss. Reported as Mortal Strike still going first in AoE.
+    --
+    --      Only in AoE, and the copy below still handles the rage dump: if this
+    --      does not fire (cooldown, rage, wrong stance) the press falls through
+    --      exactly as before.
+    if aoe and cfg.useWhirlwind
+        and self:CanCast("Whirlwind", RAGE["Whirlwind"], STANCE_REQ["Whirlwind"]) then
+        if self:Pick("Whirlwind", "AoE, ahead of the primary strike") then return end
     end
 
     -- 1d. Primary strike on cooldown. Usually only one of these is known /
@@ -550,6 +752,27 @@ function M:Rotate(cfg)
     --      STANCE_REQ (unverified), so it is not stance-gated - report back if it
     --      turns out to be Battle/Berserker only.
     if cfg.useMasterStrike and self:Try("Master Strike", "filler strike") then return end
+
+    -- 1d0b. Concussion Blow (Protection talent, opt-in - off by default). Placed
+    --       directly below the primary strike for the same reason Master Strike
+    --       is: enabling it must never displace Shield Slam, and it fills the
+    --       windows where the primary is cooling down.
+    --
+    --       Turtle tooltip: instant, 20s cooldown, 5yd, 190 damage, 3s stun,
+    --       "high amount of threat", penetrates 100% of armor, and it COSTS
+    --       NOTHING while generating 10 rage.
+    --
+    --       That last part is the argument for putting it HIGHER than this. It
+    --       is free threat that pays for the next Shield Slam, so spending a
+    --       global cooldown on it costs only the global cooldown, and bosses
+    --       being stun-immune removes the usual reason to hold a stun back.
+    --       It stays below the primary strike anyway, because that is still the
+    --       larger threat and the change is not mine to make on a tank I cannot
+    --       play - moving it one block up is a two-line edit if the answer is
+    --       yes.
+    --
+    --       No stance entry: none is confirmed.
+    if cfg.useConcussionBlow and self:Try("Concussion Blow", "stun on cooldown") then return end
 
     -- 1d1. Battle Shout upkeep (party attack-power buff). Refreshed only when it
     --      is missing or about to expire, and BELOW the strikes so it never
@@ -570,8 +793,12 @@ function M:Rotate(cfg)
     --       when it is not on the target. Any stance; skipped during execute.
     if cfg.useDemoShout and not inExecute
         and self:CanCast("Demoralizing Shout", RAGE["Demoralizing Shout"], nil)
+        and self:TargetTakesShout()
         and not Aegis_SBR:TargetDebuffUp("Demoralizing Shout", "Ability_Warrior_WarCry") then
-        if self:Pick("Demoralizing Shout", "not on target") then return end
+        if self:Pick("Demoralizing Shout", "not on target") then
+            self:Later(function() self.shoutCastAt = GetTime() end)
+            return
+        end
     end
 
     -- 1d2. Rend bleed upkeep (toggle; a leveling tool, off by default). Battle
@@ -609,9 +836,26 @@ function M:Rotate(cfg)
         if self:Pick("Sunder Armor", "stack upkeep") then return end
     end
 
-    -- 1h. Slam filler (Arms). Has a cast time and resets the swing timer,
-    --     so it suits 2H builds and may feel awkward with heavy spam.
-    if cfg.useSlam and self:Try("Slam", "filler") then return end
+    -- 1h. Slam filler (Arms), behind two gates it did not have before.
+    --
+    --      It yields to a primary strike that is ready and only short of rage -
+    --      being the cheapest ability in the list, it used to take those presses
+    --      and leave Mortal Strike or Whirlwind waiting.
+    --
+    --      And it stands down when its cast would run past the next white swing.
+    --      Slam delays the swing rather than resetting it here, so this is worth
+    --      an estimate but not worth being strict about: an unknown swing timer
+    --      lets it through.
+    if cfg.useSlam then
+        local waiting = self:StrikeWaitingOnRage(cfg)
+        if waiting then
+            if self:Tracing() then self:Trace("slam held: " .. waiting .. " is ready, waiting on rage") end
+        elseif not self:SlamFitsBeforeSwing() then
+            if self:Tracing() then self:Trace("slam held: would clip the next swing") end
+        elseif self:Try("Slam", "filler") then
+            return
+        end
+    end
 
     -- 1i. Drift back to the home stance when nothing reactive is pending.
     if cfg.stanceDance and cfg.homeStance ~= "none" then
@@ -749,7 +993,10 @@ reactFrame:SetScript("OnEvent", function()
     -- Overpower: our own attack, avoided by the target. Unchanged.
     if event == "CHAT_MSG_COMBAT_SELF_MISSES" then
         if string.find(string.lower(arg1), "dodge") then
-            M.overpowerExpiry = GetTime() + REACT_WINDOW
+            -- Both: the expiry the rotation gates on, and the moment itself, so
+            -- the age of an attempt can be worked out afterwards.
+            M.overpowerAt = GetTime()
+            M.overpowerExpiry = M.overpowerAt + M.opWindow
         end
         return
     end

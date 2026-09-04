@@ -22,6 +22,7 @@ local SPELL_OF = {
     useBloodrage = "Bloodrage", useShieldBlock = "Shield Block",
     useBattleShout = "Battle Shout", useDemoShout = "Demoralizing Shout",
     useMasterStrike = "Master Strike",
+    useConcussionBlow = "Concussion Blow",
     stanceDance = nil, aoeMode = nil, popCDs = nil, autoCDElite = nil,
 }
 
@@ -47,6 +48,7 @@ function M:BuildBody(ui, parent)
     row("useBloodthirst", "Bloodthirst")
     row("useShieldSlam", "Shield Slam")
     row("useMasterStrike", "Master Strike")
+    row("useConcussionBlow", "Concussion Blow")
     row("useWhirlwind", "Whirlwind")
     row("useSlam", "Slam")
     row("useCharge", "Charge opener")
@@ -98,8 +100,10 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.cb.useMortalStrike.cb, "Mortal Strike", "Arms primary strike, used on cooldown.")
     ui:Tip(self.cb.useBloodthirst.cb,  "Bloodthirst",   "Fury primary strike, used on cooldown.")
     ui:Tip(self.cb.useShieldSlam.cb,   "Shield Slam",   "Protection primary strike. Requires a shield equipped.")
+    ui:Tip(self.cb.useConcussionBlow.cb, "Concussion Blow", "Protection talent, opt-in and off by default. When enabled it fires on cooldown, placed just below your spec's primary strike so it never delays Shield Slam.", "Free - it costs no rage and generates 10 on use - instant, 20s cooldown, 3s stun, and it ignores armor. Appears once talented; the row greys out until then. Being free threat that funds your next Shield Slam, there is a case for placing it higher than it currently sits; say so and it moves.")
     ui:Tip(self.cb.useMasterStrike.cb, "Master Strike", "Arms talent, opt-in and off by default (it is mainly a PvP pick). When enabled it fires on cooldown, placed just below your spec's primary strike so it never delays Mortal Strike / Bloodthirst / Shield Slam.", "Appears once talented; the row greys out until then.")
-    ui:Tip(self.cb.useWhirlwind.cb,    "Whirlwind",     "Berserker stance. On cooldown in AoE, or as a single-target rage dump above the Whirlwind rage value.")
+    ui:Tip(self.cb.useSlam.cb, "Slam", "Filler with a cast time, for 2H builds.", "Held back in two cases: while a primary strike (Mortal Strike, Bloodthirst, Shield Slam, Whirlwind) is off cooldown and only short of rage - Slam is the cheapest ability here and used to take those presses - and when its cast would run past your next white swing. That cast is 2.5s, or 1.9s with Improved Slam, so against a slow two-hander the second gate is tight by nature. An unreadable swing timer lets Slam through.")
+    ui:Tip(self.cb.useWhirlwind.cb,    "Whirlwind",     "Berserker stance. On cooldown in AoE, or as a single-target rage dump above the Whirlwind rage value.", "In AoE it is now checked BEFORE your primary strike: it hits everything in range where Mortal Strike hits one, so letting the primary take that press was a loss.")
     ui:Tip(self.cb.useSlam.cb,         "Slam",          "2H filler. Has a cast time and resets your swing, so it can feel awkward with heavy spam.")
     ui:Tip(self.cb.useCharge.cb,       "Charge opener", "Leveling opener: Charge the target from range on the pull (Battle Stance, out of combat only). Stance-dances to Battle if needed.", "The client blocks Charge once you are in combat, so it only fires on the initial gap-close.")
     ui:Tip(self.cb.useRend.cb,         "Rend bleed",    "Keeps Rend up on the target (Battle or Defensive stance). A leveling tool - off by default, since it is rarely used at endgame.", "Skipped during Execute so rage goes to Execute instead.")

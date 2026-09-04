@@ -61,9 +61,21 @@ local STING_QUEUE_HOLD = 1.5
 -- mana% (it always fires while moving, when Auto Shot cannot).
 local ARCANE_MANA_FLOOR = 50
 
--- The mana-regenerating aspect (Turtle). First known name is used; gated by
--- KnowsSpell so an unknown name is simply inert.
-M.MANA_ASPECTS = { "Aspect of the Viper", "Aspect of the Beast" }
+-- The mana-regenerating aspect. Turtle teaches Aspect of the Viper at level 56;
+-- below that there is nothing to swap to and this whole branch stays inert,
+-- which KnowsSpell takes care of.
+--
+-- "Aspect of the Beast" used to sit in this list as a second guess at what
+-- Turtle might call the mana aspect. It is a different spell entirely - it makes
+-- the hunter untrackable and returns no mana at all - and it is learned at 32,
+-- twenty-four levels before Viper. So from 32 onwards it was the first KNOWN
+-- name in the list and became the mana aspect: mana dipped under the threshold,
+-- Beast went up in place of Hawk or Wolf, and because it regenerates nothing the
+-- mana never climbed back over the return threshold. Reported as the automatic
+-- Hawk/Wolf choice having stopped working at level 32, which is exactly what it
+-- was. A name nobody has confirmed does not belong in a list that is searched by
+-- "first one known".
+M.MANA_ASPECTS = { "Aspect of the Viper" }
 
 -- Stings are mutually exclusive (one debuff slot). Durations are only the
 -- reapply interval on clients without SuperWoW name resolution.
