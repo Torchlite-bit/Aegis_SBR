@@ -4,6 +4,145 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.19 — measured instead of assumed
+
+Five reports across three classes. The pattern in most of them is the same: something
+was decided from a number nobody had checked, or from a cast being *sent* rather than
+having *happened*.
+
+### 🐛 Fixed — Hunter: the mana aspect became Aspect of the Beast at level 32
+
+Reported as the automatic Hawk / Wolf choice having stopped working. The mana-aspect list
+was `{ "Aspect of the Viper", "Aspect of the Beast" }` and was searched for the first
+**known** name. Aspect of the Beast is learned at 32, Viper at 56, so for twenty-four
+levels Beast was that first known name.
+
+It is a different spell entirely — it makes the hunter untrackable and returns no mana —
+so once mana dipped under the threshold it replaced Hawk or Wolf and, regenerating nothing,
+never let mana climb back over the return threshold.
+
+The changelog for the release that added it said the name was a guess to be confirmed. It
+has now been confirmed as wrong and removed.
+
+- The mana aspect is *Aspect of the Viper* and nothing else. Below 56 there is nothing to
+  swap to, and the row now says so and is greyed out rather than being a switch that
+  silently does nothing.
+- **Combat aspect** switched off stops the rotation touching your aspect at all — the way
+  to run one it has no use for, such as Aspect of the Beast, and keep it. The tooltip says
+  so now; the capability was always there and was not findable.
+
+### 🐛 Fixed — Warlock: the rotation stalled after every channel
+
+Reported as choppy play. A captured session showed the rotation holding still for **42% of
+its length**, and — measured in every one of nine channels — for roughly nine tenths of a
+second *after the channel's last tick*.
+
+`SPELLCAST_CHANNEL_STOP` arrives late on this client, and often not at all: with the fix in
+place, **21 channels in the next capture were released by time because no stop event ever
+came**. The only other release was a sixteen second ceiling meant for a lost event, not for
+the normal case.
+
+The guard now ends at whichever comes first: the event, or the length the channel was
+always going to have. That length was already computed for Dark Harvest, talent included —
+it was simply never used here. Drain Life and Health Funnel use their base length, since
+whether Rapid Deterioration shortens them is not established and guessing short clips a
+channel.
+
+Same shape, second instance: the wait for a DoT cast to be confirmed was a flat two seconds,
+described in its own comment as "comfortably above normal ack latency" without the latency
+ever being measured. It cost eleven seconds of a two and a half minute session. It is
+measured now — a decaying maximum of observed confirmation times — and the worst case fell
+from 3.0s to 1.3s.
+
+### 🐛 Fixed — Warlock: Drain Life started while DoTs were missing
+
+The channel is five seconds in which no global cooldown is spent, so a DoT that expires
+during it loses its ticks *and* costs the saved global cooldown to re-apply. Dark Harvest
+has topped its DoTs up before channelling since v1.2.6; Drain Life did not.
+
+The first attempt at this treated a **missing** DoT as acceptable, on the reasoning that the
+ladder below would apply it — but the channel returns when it starts, so the ladder never
+ran that press. Corrected: a DoT that is not up blocks the channel, and the press applies it
+instead. Three sources are consulted in order — a remaining time, whether it is visibly ours
+on the target, and our own reapply stamp — so an unresolvable curse is covered too.
+
+Below half the configured health threshold nothing waits: Drain Life there is not a filler.
+
+### ✨ Warlock: curse icons are learned rather than guessed
+
+Only Curse of Agony had a confirmed icon, and the table said why: a guessed fragment makes
+the detection *look* available, never matches, and re-casts the curse every three seconds
+for the rest of the fight.
+
+So it is learned. Cast the curse, look at what appeared on the target that was not there
+before, and accept the answer only when exactly one new icon showed up. Stored per character.
+A learned icon that stays invisible after three of our own casts is dropped again.
+
+This matters for the one case a timestamp can never cover: a curse that was **dispelled**
+still has four minutes left on our own clock.
+
+### 🐛 Fixed — Warrior: Slam took the presses meant for the primary strike
+
+Reported from play. Slam already sat below Mortal Strike and Whirlwind, so the order was
+never the problem — `Try` refuses an unaffordable cast, and Slam is the cheapest ability in
+the list, so a press with Mortal Strike **ready but three rage short** fell straight through
+to it.
+
+Slam now yields to a strike that is ready and only short of rage. One on cooldown is not
+something to wait for — that is the gap Slam exists to fill.
+
+It also stands down when its cast would run past the next white swing. Turtle's Slam is
+**2.5s**, not the 1.5s of stock 1.12, less 0.3s per rank of Improved Slam — a difference
+large enough that assuming the stock value would have let Slam clip most of the swings the
+test is meant to protect. An unreadable swing timer lets it through.
+
+### 🐛 Fixed — Warrior: Mortal Strike went before Whirlwind in AoE
+
+A plain ordering error: Whirlwind sat below the primary strike. Against several targets it
+hits all of them where Mortal Strike hits one. It is now checked first **in AoE mode only**;
+the single-target rage dump keeps its old place.
+
+### 🐛 Fixed — Warrior: Demoralizing Shout looped on a totem
+
+Reported from play. The upkeep is gated on "the debuff is not on the target", and a totem has
+no attack power to reduce — so the debuff never lands and that test is true forever, one cast
+per press.
+
+Two answers: the creature type, which settles the reported case, and what actually happened —
+two casts on one target that leave the debuff off and it is written off for that target,
+whatever the client calls the type. The second covers every immune target nobody has
+enumerated, and every non-English client.
+
+### ✨ Warrior: Overpower's window is measured
+
+Reported as Overpower missing or firing late. The window starts when we read the combat-log
+line, not when the target dodged, so it sits later than the real one and its tail fires into
+a window the server has closed.
+
+The first answer here was a fixed trim, which is a guess about somebody else's latency. It
+now starts at the real five seconds and shortens on evidence: when the client refuses an
+Overpower sent at age X, the window was shut at X, so it is set just below. Shrink only — a
+refusal is evidence, an acceptance is not — and never below a floor.
+
+This needed a second, weaker refusal ledger in the core. `spellRefused` is deliberately
+narrow because it clears throttles; `spellRefusedAny` answers only "did the client complain
+about this spell just now", which is enough for a caller that already knows what it sent.
+
+### ✨ Warrior: Concussion Blow
+
+Added on the Master Strike model: opt-in, off by default, inert until talented. Turtle's
+values, from the tooltip — instant, 20s cooldown, 3s stun, ignores armor, and it **costs
+nothing while generating 10 rage**.
+
+That last part is an argument for placing it higher than it currently sits, since it is free
+threat that funds the next Shield Slam. It stays below the primary strike for now, which is
+the conservative choice; moving it up is a two-line change once somebody who plays the class
+says which they want.
+
+Master Strike's rage cost was corrected from an estimated 25 to the tooltip's 20.
+
+---
+
 ## v1.2.18 — what the client says when it refuses
 
 ### 🐛 Fixed — none of the client's refusals were being recognised

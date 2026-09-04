@@ -47,8 +47,10 @@ function M:BuildBody(ui, parent)
     self.carveRow = L:Row{ key = "useCarve", label = "Carve (melee AoE)", spell = "Carve", onToggle = set("useCarve") }
 
     L:Header("Aspect")
-    self.aspectRow = L:Row{ key = "useAspect", label = "Combat aspect", sub = "Hawk/Wolf", onToggle = set("useAspect") }
-    self.manaAspRow = L:Row{ key = "useManaAspect", label = "Viper below", onToggle = set("useManaAspect"),
+    self.aspectRow = L:Row{ key = "useAspect", label = "Combat aspect",
+        sub = "automatic Hawk / Wolf - switch off to choose your own", onToggle = set("useAspect") }
+    self.manaAspRow = L:Row{ key = "useManaAspect", label = "Viper below",
+        spell = "Aspect of the Viper", onToggle = set("useManaAspect"),
         slider = { key = "manaAspectPct", min = 0, max = 90, step = 5, suffix = "%", onChange = set("manaAspectPct") } }
     self.manaBackRow = L:Row{ label = "Back to combat at",
         slider = { key = "manaAspectBackPct", min = 5, max = 100, step = 5, suffix = "%", onChange = set("manaAspectBackPct") } }
@@ -94,8 +96,8 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.wingRow.cb, "Wing Clip", "Optional melee slow / kite tool.")
     ui:Tip(self.lacerateRow.cb, "Lacerate", "Melee bleed, kept rolling on the target in melee mode.")
     ui:Tip(self.carveRow.cb, "Carve", "Melee AoE strike. Leads the melee priority when AoE mode is on (/sbr aoe).")
-    ui:Tip(self.aspectRow.cb, "Combat aspect", "Keeps Aspect of the Hawk up in ranged mode, Aspect of the Wolf in melee mode.")
-    ui:Tip(self.manaAspRow.cb, "Mana aspect swap", "Swap to Aspect of the Viper when mana drops below the first value, then back to your combat aspect (Hawk ranged / Wolf melee) once mana recovers to the second value.")
+    ui:Tip(self.aspectRow.cb, "Combat aspect", "Keeps Aspect of the Hawk up in ranged mode, Aspect of the Wolf in melee mode.", "Switch it OFF and the rotation never touches your aspect at all - the mana swap below included - so you can pick one yourself and it stays. That is the way to run an aspect the rotation has no use for, such as Aspect of the Beast.")
+    ui:Tip(self.manaAspRow.cb, "Mana aspect swap", "Swap to Aspect of the Viper when mana drops below the first value, then back to your combat aspect (Hawk ranged / Wolf melee) once mana recovers to the second value.", "Needs Aspect of the Viper, which is learned at level 56. Before that there is nothing to swap to and this does nothing - no other aspect returns mana.")
     ui:Tip(self.manaAspRow.slider, "Viper below", "Drop to Aspect of the Viper when your mana falls under this percent.")
     ui:Tip(self.manaBackRow.slider, "Back to combat at", "Swap back to Aspect of the Hawk/Wolf once mana recovers to this percent. Set it above the 'Viper below' value.")
     ui:Tip(self.petRow.cb, "Pet attack", "Sends your pet onto the target each press.")
@@ -160,16 +162,24 @@ function M:RefreshBody(ui, buf)
     end
     ui:BindCheck(self.aimedOpenerRow, buf.useAimedOpener)
 
+    -- The mana swap needs Aspect of the Viper, which Turtle teaches at level 56.
+    -- The checkbox row carries the spell name, so the shared BindCheck above
+    -- already greys it with "(not learned)" and hides its slider. Only the
+    -- second row needs doing by hand: it has no checkbox of its own, so nothing
+    -- would otherwise tell it that the pair it belongs to is inactive.
+    local viperOK = self:KnowsSpell("Aspect of the Viper")
+    ui:Color(self.manaBackRow.label, viperOK and ui.COL.white or ui.COL.grey)
+
     -- mana aspect sliders follow the swap checkbox: swap-to-Viper (low) and
     -- swap-back-to-combat (high).
     local map = buf.manaAspectPct or 30
     self.manaAspRow.slider:SetValue(map)
     if self.manaAspRow.slider.valText then self.manaAspRow.slider.valText:SetText(map .. "%") end
-    ui:SliderEnable(self.manaAspRow.slider, buf.useManaAspect and true or false)
+    ui:SliderEnable(self.manaAspRow.slider, (viperOK and buf.useManaAspect) and true or false)
     local mback = buf.manaAspectBackPct or (map + 15)
     self.manaBackRow.slider:SetValue(mback)
     if self.manaBackRow.slider.valText then self.manaBackRow.slider.valText:SetText(mback .. "%") end
-    ui:SliderEnable(self.manaBackRow.slider, buf.useManaAspect and true or false)
+    ui:SliderEnable(self.manaBackRow.slider, (viperOK and buf.useManaAspect) and true or false)
 
     -- Mend Pet threshold slider follows the Mend Pet checkbox.
     local mhp = buf.mendPetHp or 50

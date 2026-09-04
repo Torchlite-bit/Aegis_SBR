@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.18",
+    ver = "1.2.19",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1664,6 +1664,25 @@ local CAST_REFUSED_IGNORED = {
 -- unapplied for that long. Reported exactly that way.
 Aegis_SBR.spellRefused = {}
 
+-- Every refusal, including the ones no list above recognises.
+--
+-- spellRefused is deliberately narrow: it drives throttle decisions, so only a
+-- refusal we understand may clear one. This second ledger asks a weaker
+-- question - "did the client complain about this spell just now" - which is
+-- enough for a caller that only wants to know whether an attempt failed, and
+-- wrong for anything that acts on WHY.
+--
+-- UI_ERROR_MESSAGE carries far more than cast refusals, so a caller has to
+-- already have reason to believe its own cast is the subject. The warrior's
+-- Overpower window is the one user: it sends the ability, then looks here.
+Aegis_SBR.spellRefusedAny = {}
+
+function Aegis_SBR:SpellRefusedAnySince(name, t)
+    if not name or not t then return false end
+    local r = self.spellRefusedAny[name]
+    return (r and r >= t) and true or false
+end
+
 -- Was this spell refused at or after the moment `t` - the moment a throttle was
 -- stamped? Timestamps rather than ordering, because the error and the stamp can
 -- land in either order within one frame and both must give the same answer.
@@ -1713,6 +1732,13 @@ function Aegis_SBR:OnCastError(msg)
     -- more than cast refusals (full health, bags full, quest text), so treating
     -- every one as a refused cast would clear throttles that were correctly set.
     -- Naming the message is what lets a real one be added to a list above.
+    -- Recorded before the classification below decides whether to ACT on it,
+    -- so a refusal nobody has categorised is still visible to a caller that
+    -- knows what it just sent.
+    if self.lastSpell and (GetTime() - (self.lastSpellAt or 0)) <= BLAME_WINDOW then
+        self.spellRefusedAny[self.lastSpell] = GetTime()
+    end
+
     if not (unitRefused or selfRefused) then
         if self:Tracing() and self.lastSpell
             and (GetTime() - (self.lastSpellAt or 0)) <= BLAME_WINDOW then
