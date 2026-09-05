@@ -4,6 +4,32 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.21 — the last of the wand
+
+### 🐛 Fixed — Warlock: the wand still appeared between Dark Harvest channels
+
+With *Dark Harvest* as the filler and *Drain Life* set as the between-channels filler, a wand
+shot was still slipped in now and then — which is not what the panel says.
+
+This one was mine, from v1.2.20. The rule I wrote required a gap channel to fit **entirely**
+before Dark Harvest came back, and that is too strict: Dark Harvest cycles every 30s and
+channels for 7.5, Drain Life runs 4.7, so four fit and the remaining ~3.7 seconds went to the
+wand.
+
+The trade is not close. Waiting costs almost the whole value of a Drain Life; overrunning
+costs Dark Harvest a few seconds of delay, once per cycle. A channel tick is worth more than
+a wand shot.
+
+So the limit is on the **overrun** rather than on fitting — a channel may run up to three
+seconds past Dark Harvest's return. Drain Life therefore always goes ahead in practice; the
+only window left is shorter than a wand shot. *Drain Soul* keeps the guard it needs: fifteen
+seconds sitting on top of the cooldown is a different trade entirely, and it still stands
+down.
+
+`DH_OVERRUN_MAX` is one number in one place, and setting it to 0 restores the old behaviour.
+
+---
+
 ## v1.2.20 — the wand was never the answer
 
 ### 🐛 Fixed — Warlock: the wand was woven in between channels

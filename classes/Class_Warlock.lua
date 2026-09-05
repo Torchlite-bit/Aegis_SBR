@@ -359,6 +359,12 @@ M.GAP_FILLERS = { "Shoot", "Shadow Bolt", "Drain Life", "Drain Soul" }
 -- nobody there to press it.
 local DS_CHANNEL_BASE = 6
 
+-- How far a gap channel may run past Dark Harvest's return before it is held
+-- back. Roughly two global cooldowns: enough that Drain Life always goes ahead
+-- (it is shorter than the gap it fills anyway, bar the last moments), tight
+-- enough that Drain Soul's fifteen seconds never sit on top of the cooldown.
+local DH_OVERRUN_MAX = 3.0
+
 M.templates = {
     starter = {  -- usable from level 1: the filler is the wand, which falls
                  -- back to Shadow Bolt when no wand is equipped, so a fresh
@@ -1625,7 +1631,24 @@ function M:Rotate(cfg)
                 self:QueueDot(lapsing, self:TargetId())
                 return
             end
-            if self:OwnCDLeft("Dark Harvest") >= len then
+            -- How far this channel would run past Dark Harvest's return.
+            --
+            -- Requiring it to fit ENTIRELY was the first rule here and it was
+            -- too strict. Dark Harvest cycles every 30s and channels for 7.5;
+            -- Drain Life is 4.7. Four fit in the gap, and the ~3.7s left over
+            -- went to the wand - which is what "the wand still gets woven in
+            -- despite the setting" is.
+            --
+            -- The trade is not close. Waiting costs almost the whole value of a
+            -- Drain Life; overrunning costs Dark Harvest a few seconds of delay,
+            -- once per cycle. A channel tick beats a wand shot.
+            --
+            -- The guard still matters for Drain Soul, which runs 15s and could
+            -- hold Dark Harvest up for half its cooldown. So the limit is on the
+            -- OVERRUN rather than on fitting: a short channel goes ahead, a long
+            -- one stands down.
+            local overrun = len - self:OwnCDLeft("Dark Harvest")
+            if overrun <= DH_OVERRUN_MAX then
                 if self:Queue(gap, "gap channel") then return end
                 -- Refused, and Queue refuses a channel only for movement.
                 if self:HasWand() and not self:Wanding() then
@@ -1633,11 +1656,9 @@ function M:Rotate(cfg)
                     return
                 end
             elseif self:Tracing() then
-                self:Trace(string.format("gap channel held: Dark Harvest back in %.1fs of %.1fs",
-                    self:OwnCDLeft("Dark Harvest"), len))
+                self:Trace(string.format(
+                    "gap channel held: would overrun Dark Harvest by %.1fs", overrun))
             end
-            -- Dark Harvest is due back before this channel would end. Anything
-            -- started now would still be running when it comes up.
             gap = "Shoot"
         end
         if gap == "Shadow Bolt" and self:KnowsSpell("Shadow Bolt") then
