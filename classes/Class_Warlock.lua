@@ -639,16 +639,26 @@ end
 -- The talent matters more here than anywhere else: Rapid Deterioration cuts
 -- these durations, and a guard that waited for the UNSHORTENED length would sit
 -- idle for exactly the time the talent saves - turning a damage talent into
--- dead air. It is applied only where the module has confirmed it in game (Dark
--- Harvest 8 -> 7.52 at rank 2, and Drain Soul the same way); Drain Life and
--- Health Funnel use their base length, because whether the talent touches them
--- has not been established and guessing SHORT is the direction that clips a
--- channel.
+-- dead air.
+--
+-- Drain Life was left out of this when the guard was written, because whether
+-- the talent reached it had not been established. It has been now, from a
+-- captured log rather than a respec: Drain Life ticks once a second, and across
+-- 33 intervals in 8 channels the median gap was 0.950s. Ungated it would be
+-- 1.000s and nothing would sit below it; at the talent's 6% it is 0.940s. Not
+-- one measured gap exceeded 0.98. The talent's own text agrees - it names
+-- "damage over time AND CHANNELED Affliction spells" and says it reduces their
+-- duration.
+--
+-- Health Funnel stays on its base length: it is not an Affliction spell, so the
+-- talent has nothing to say about it, and guessing SHORT is the direction that
+-- clips a channel.
 local CHANNEL_BASE = {
     ["Drain Life"]    = 5,
     ["Health Funnel"] = 10,
 }
 local CHANNEL_TALENTED = {
+    ["Drain Life"]   = true,
     ["Drain Soul"]   = true,
     ["Dark Harvest"] = true,
 }

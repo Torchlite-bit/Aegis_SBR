@@ -75,6 +75,31 @@ normal builder rather than being spent on a refusal.
 wrong, a client without SuperWoW simply behaves as it did before: nothing is ever wrongly made
 free, only missed.*
 
+### 🔧 Two numbers corrected from the client's own data
+
+`TalentStage`'s generated rank data reads Talent.dbc directly, which makes it a better source
+than a tooltip screenshot for anything the tooltip rounds.
+
+- **Improved Slam is 0.25s per rank, not 0.3.** The in-game talent tooltip shows 0.3; the DBC
+  says "by 0.25 sec" at rank 1 and "by 0.5 sec" at rank 2. A fully talented Slam is 2.0s, not
+  the 1.9s the swing test was working from.
+- **Rapid Deterioration does shorten Drain Life.** v1.2.19 left it on its base length with the
+  reason stated: whether the talent reached it had not been established. It has been now,
+  without a respec — Drain Life ticks once a second, and across 33 intervals in 8 logged
+  channels the median gap was **0.950s**. Ungated it would be 1.000s and nothing would fall
+  below it; at the talent's 6% it is 0.940s. Not one measured gap exceeded 0.98. The talent's
+  own text agrees, naming "damage over time **and channeled** Affliction spells".
+
+  The channel guard therefore releases at 4.7s rather than 5.0s, which is 0.3s of dead time
+  per channel — and with Drain Life as a filler it channels back to back.
+
+  Health Funnel stays on its base length: it is not an Affliction spell, so the talent has
+  nothing to say about it.
+
+Also: *Kill Command* and *Lock and Load* leave the hunter's "best-effort names" note, both
+confirmed against the same data. Kill Command's description is corrected with them — it is
+reactive, usable only after the hunter lands a critical strike, not an on-cooldown ability.
+
 ### 🐛 Fixed — Hunter: Bestial Wrath was cast without a pet
 
 It shared the "Pop cooldowns" gate with Rapid Fire as though the two were the same kind of

@@ -65,14 +65,19 @@ M.opWindow = OVERPOWER_WINDOW
 -- fits nearly half the time. Assuming stock values here would have let Slam
 -- clip most of the swings it was supposed to protect.
 --
--- Improved Slam takes 0.3s per rank off it, 2 ranks, so a fully talented Arms
--- warrior casts it in 1.9s. Both numbers come from the talent tooltip read at
--- rank 0/2, which is what makes 2.5 the BASE rather than one player's current
--- value - so subtracting the rank here is correct and does not double-count.
+-- Improved Slam takes 0.25s per rank off it, 2 ranks, so a fully talented Arms
+-- warrior casts it in 2.0s. 2.5 is the BASE - the spell tooltip was read with
+-- the talent at 0/2 - so subtracting the rank here is correct and does not
+-- double-count.
+--
+-- 0.25, not the 0.3 the in-game talent tooltip shows: that is a rounded
+-- display. The exact figures come from the client's own Talent.dbc by way of
+-- TalentStage's generated rank data - "by 0.25 sec" at rank 1, "by 0.5 sec" at
+-- rank 2.
 -- (The talent shortens Slam's global cooldown by the same amount; that matters
 -- for the rotation's pacing but not for the swing test below.)
 local SLAM_CAST_BASE = 2.5
-local SLAM_CAST_PER_RANK = 0.3
+local SLAM_CAST_PER_RANK = 0.25
 local TALENT_IMP_SLAM = "Improved Slam"
 -- How long the Revenge fallback waits between attempts while the combat log
 -- has not answered even once. Matched to Revenge's own cooldown, so the
