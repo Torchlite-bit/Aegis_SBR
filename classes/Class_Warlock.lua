@@ -639,16 +639,26 @@ end
 -- The talent matters more here than anywhere else: Rapid Deterioration cuts
 -- these durations, and a guard that waited for the UNSHORTENED length would sit
 -- idle for exactly the time the talent saves - turning a damage talent into
--- dead air. It is applied only where the module has confirmed it in game (Dark
--- Harvest 8 -> 7.52 at rank 2, and Drain Soul the same way); Drain Life and
--- Health Funnel use their base length, because whether the talent touches them
--- has not been established and guessing SHORT is the direction that clips a
--- channel.
+-- dead air.
+--
+-- Drain Life was left out of this when the guard was written, because whether
+-- the talent reached it had not been established. It has been now, from a
+-- captured log rather than a respec: Drain Life ticks once a second, and across
+-- 33 intervals in 8 channels the median gap was 0.950s. Ungated it would be
+-- 1.000s and nothing would sit below it; at the talent's 6% it is 0.940s. Not
+-- one measured gap exceeded 0.98. The talent's own text agrees - it names
+-- "damage over time AND CHANNELED Affliction spells" and says it reduces their
+-- duration.
+--
+-- Health Funnel stays on its base length: it is not an Affliction spell, so the
+-- talent has nothing to say about it, and guessing SHORT is the direction that
+-- clips a channel.
 local CHANNEL_BASE = {
     ["Drain Life"]    = 5,
     ["Health Funnel"] = 10,
 }
 local CHANNEL_TALENTED = {
+    ["Drain Life"]   = true,
     ["Drain Soul"]   = true,
     ["Dark Harvest"] = true,
 }
@@ -989,6 +999,25 @@ end
 -- seconds. A DoT with no confident estimate (DotRemaining returns nil) never
 -- counts, matching the "unknown is not urgent" stance used for the Dark
 -- Harvest pre-check.
+-- The DoT that would lapse during a channel of `len` seconds, or nil.
+--
+-- The channel guard stops the rotation for the channel's whole length, so
+-- anything due inside it has to go out BEFORE it starts. Returning the spell
+-- rather than a yes/no lets the caller top it up, which is what Dark Harvest
+-- has done since v1.2.6 - the other channels used to ride the wand until the
+-- danger passed instead, which is the behaviour being removed here.
+function M:DotLapsingWithin(order, len, dotsSuppressed)
+    if dotsSuppressed then return nil end
+    for i = 1, table.getn(order) do
+        local sp = order[i][1]
+        if self:KnowsSpell(sp) then
+            local remain = self:DotRemaining(sp)
+            if remain and remain < len then return sp, remain end
+        end
+    end
+    return nil
+end
+
 function M:DotExpiringSoonBy(order, within)
     for i = 1, table.getn(order) do
         local sp = order[i][1]
@@ -1569,23 +1598,47 @@ function M:Rotate(cfg)
         -- Dark Harvest is on cooldown: fill the gap with the configured choice.
         local gap = cfg.dhGapFiller or "Shoot"
 
-        -- Drain Soul is a channel, and the guard at the top of Rotate stops the
-        -- rotation acting for its whole length. Starting one is therefore only
-        -- safe when nothing needs attention during it: no enabled DoT may lapse,
-        -- and Dark Harvest must not come off cooldown mid-channel and sit there
-        -- unpressed. Both fall back to the wand rather than blocking the press.
-        if gap == "Drain Soul" and self:KnowsSpell("Drain Soul") then
-            local dsLen = self:DSChannelLength()
-            local dhLeft = self:OwnCDLeft("Dark Harvest")
-            local dotSafe = not self:DotExpiringSoonBy(order, dsLen)
-            if dotSafe and dhLeft >= dsLen then
-                if self:Queue("Drain Soul", "filler channel") then return end
+        -- A CHANNEL in the gap - Drain Life or Drain Soul. The guard at the top
+        -- of Rotate stops the rotation for the channel's whole length, so two
+        -- things have to be true before one starts: no enabled DoT may lapse
+        -- inside it, and Dark Harvest must not come off cooldown mid-channel and
+        -- sit there unpressed.
+        --
+        -- What CHANGED is what happens when they are not true. Both used to fall
+        -- back to the wand - "ride the wand until it is safe" - and Drain Life
+        -- was not checked at all, so it channelled straight over a lapsing DoT
+        -- and over Dark Harvest's return. Reported as the wand still being woven
+        -- in at full mana with Drain Life set as the gap filler.
+        --
+        -- Now a DoT that would lapse is topped up instead, which is what the
+        -- press was needed for anyway, and the wand is left for the one case
+        -- where there is genuinely nothing else: Dark Harvest due back sooner
+        -- than the channel would take.
+        if M.CHANNELED[gap] and self:KnowsSpell(gap) then
+            local len = (gap == "Drain Soul") and self:DSChannelLength()
+                or (self:ChannelLength(gap) or 0)
+            local lapsing = self:DotLapsingWithin(order, len, dotsSuppressed)
+            if lapsing then
+                if self:Tracing() then
+                    self:Trace("gap channel held: " .. lapsing .. " would lapse during it")
+                end
+                self:QueueDot(lapsing, self:TargetId())
+                return
             end
-            gap = "Shoot"   -- not safe right now, ride the wand until it is
-        end
-
-        if gap == "Drain Life" and self:KnowsSpell("Drain Life") then
-            if self:Queue("Drain Life", "filler, self healing") then return end
+            if self:OwnCDLeft("Dark Harvest") >= len then
+                if self:Queue(gap, "gap channel") then return end
+                -- Refused, and Queue refuses a channel only for movement.
+                if self:HasWand() and not self:Wanding() then
+                    self:Shoot("wanding, moving")
+                    return
+                end
+            elseif self:Tracing() then
+                self:Trace(string.format("gap channel held: Dark Harvest back in %.1fs of %.1fs",
+                    self:OwnCDLeft("Dark Harvest"), len))
+            end
+            -- Dark Harvest is due back before this channel would end. Anything
+            -- started now would still be running when it comes up.
+            gap = "Shoot"
         end
         if gap == "Shadow Bolt" and self:KnowsSpell("Shadow Bolt") then
             self:Queue("Shadow Bolt", "filler nuke")
@@ -1598,7 +1651,7 @@ function M:Rotate(cfg)
                 return
             end
             if self:Wanding() then return end
-            self:Shoot("wanding")
+            self:Shoot(gap == "Shoot" and "wanding, gap filler" or "wanding, gap unavailable")
         elseif self:KnowsSpell("Shadow Bolt") then
             self:Queue("Shadow Bolt", "filler nuke")
         end
@@ -1633,11 +1686,47 @@ function M:Rotate(cfg)
         elseif self:KnowsSpell("Shadow Bolt") then
             self:Queue("Shadow Bolt", "filler nuke")
         end
+    elseif filler and M.CHANNELED[filler] then
+        -- A CHANNEL as the configured filler, which is a different job from the
+        -- Dark Harvest branch above: Dark Harvest has a cooldown, so there is a
+        -- gap between channels that something has to fill. Drain Life and the
+        -- others have none. There is no gap - the right behaviour is to start
+        -- the next one as soon as the last ends, and to stop only when a DoT
+        -- needs the press.
+        --
+        -- Reported: with Drain Life as the filler the rotation wove the wand in
+        -- between channels. It fell into the generic branch below, whose only
+        -- answer to "cannot channel right now" was the wand.
+        --
+        -- A DoT that would lapse DURING the channel is topped up first rather
+        -- than waited out on the wand - the same rule Dark Harvest has used
+        -- since v1.2.6, and for the same reason: the channel guard stops the
+        -- rotation for its whole length, so anything due inside it has to go out
+        -- before it starts.
+        local len = self:ChannelLength(filler) or 0
+        if not dotsSuppressed then
+            for i = 1, table.getn(order) do
+                local sp = order[i][1]
+                if self:KnowsSpell(sp) then
+                    local remain = self:DotRemaining(sp)
+                    if remain and remain < len then
+                        if self:Tracing() then
+                            self:Trace(string.format("filler channel held: %s has %.1fs of %.1fs",
+                                sp, remain, len))
+                        end
+                        self:QueueDot(sp, self:TargetId())
+                        return
+                    end
+                end
+            end
+        end
+        if self:Queue(filler, "filler channel") then return end
+        -- Refused, and the only thing Queue refuses a channel for is movement.
+        -- The wand is the one ranged attack that costs nothing to give up.
+        if self:HasWand() and not self:Wanding() then self:Shoot("wanding, moving") end
     elseif filler then
         if self:Queue(filler, "filler") then return end
-        -- A channel refused because we are moving. Wand instead of standing
-        -- there: it is the one ranged attack that costs nothing to give up.
-        if self:HasWand() and not self:Wanding() then self:Shoot("wanding, moving") end
+        if self:HasWand() and not self:Wanding() then self:Shoot("wanding, filler refused") end
     end
 end
 

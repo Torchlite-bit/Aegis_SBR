@@ -26,6 +26,9 @@ function M:BuildBody(ui, parent)
 
     L:Header("Cat Form (DPS)", "cat")
     self.styleDD = L:Dropdown("catStyle", "Style", 170, set("catStyle"))
+    self.autoBleedRow = L:Row{ label = "Bleed above",
+        slider = { key = "autoBleedSecs", min = 5, max = 60, step = 5, suffix = "s",
+                   onChange = set("autoBleedSecs") } }
     self.openerDD = L:Dropdown("opener", "Opener", 170, set("opener"))
     self.tfRow = L:Row{ key = "useTigersFury", label = "Tiger's Fury", spell = "Tiger's Fury", onToggle = set("useTigersFury") }
     self.ffCatRow = L:Row{ key = "ffCat", label = "Faerie Fire", spell = "Faerie Fire (Feral)", onToggle = set("ffCat") }
@@ -124,7 +127,8 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.cureRow.cb, "Cure afflictions", "Remove curses, poisons, diseases and magic from the group with whatever your class has for it - here: Poison (Abolish or Cure Poison) and Curse (Remove Curse).", "Off by default. A dispel costs a global cooldown that would otherwise be a heal, and only what you can actually remove is ever considered.")
     ui:Tip(self.curePctRow.slider, "Cure first above", "The crossover between curing and healing, read off the WORST-HURT member. Above it the affliction comes first; below it the heal does.", "At 90 the group is cleansed first and topped up from 90 to 100 afterwards - the right order when the affliction is doing more damage than the missing tenth of a bar. 0 makes curing always yield, 100 makes it always come first.")
 
-    ui:Tip(self.styleDD, "Cat style", "Claw & Bleed keeps Rake and Rip rolling (pairs with bleed-energy talents). Shred & Powershift builds with Shred and finishes with Ferocious Bite.", "Use Shred for bleed-immune bosses (MC/BWL). Swap mid-fight with /sbr style.")
+    ui:Tip(self.styleDD, "Cat style", "Claw & Bleed keeps Rake and Rip rolling (pairs with bleed-energy talents). Shred & Powershift builds with Shred and finishes with Ferocious Bite. Automatic picks between them per target.", "Automatic asks two questions in order: can this target bleed at all, and is it going to live long enough for the bleeds to pay for themselves. Shred has the stronger opener and is the answer for anything immune or dying quickly; bleeds pull ahead on a long fight, largely because each tick returns energy. Swap mid-fight with /sbr style bleed|shred|auto.")
+    ui:Tip(self.autoBleedRow.slider, "Bleed above", "In the Automatic style, a target expected to live at least this long is worth bleeding. Below it, Shred.", "Read from the time-to-kill estimate; when that cannot be measured the target being an elite or a boss stands in for it. 20s is where the player who worked this out puts the two rotations level - it is a slider because that is a model rather than a measurement, so move it if your own logs say otherwise.")
     ui:Tip(self.openerDD, "Stealth opener", "Used on the first press while Prowl is up.", "Auto picks Ravage if known (needs behind), else Pounce.")
     ui:Tip(self.tfRow.cb, "Tiger's Fury", "Recast just before the buff falls off.")
     ui:Tip(self.ffCatRow.cb, "Faerie Fire (Feral)", "Free armor debuff, kept up first in the priority.")
@@ -169,10 +173,12 @@ end
 function M:RefreshBody(ui, buf)
 
     local styleOpts = {
+        { label = "Automatic",          value = "auto"  },
         { label = "Claw & Bleed",       value = "bleed" },
         { label = "Shred & Powershift", value = "shred" },
     }
-    local styleLabel = { bleed = "Claw & Bleed", shred = "Shred & Powershift" }
+    local styleLabel = { auto = "Automatic", bleed = "Claw & Bleed",
+                         shred = "Shred & Powershift" }
     local scur = buf.catStyle or "bleed"
     ui:SetDropdown(self.styleDD, styleOpts, scur, styleLabel[scur] or scur, ui.COL.white)
 
@@ -261,14 +267,27 @@ function M:RefreshBody(ui, buf)
     if ncur ~= "Wrath" and not self:KnowsSpell(ncur) then nshown, nc = ncur .. " (not learned)", ui.COL.red end
     ui:SetDropdown(self.nukeDD, nOpts, ncur, nshown, nc)
 
-    -- powershift is only meaningful in the Shred style
-    if (buf.catStyle or "bleed") == "shred" then
+    -- The crossover only means anything in the automatic style; in the two
+    -- manual ones the choice has already been made by hand.
+    local autoOn = (buf.catStyle or "bleed") == "auto"
+    local abs = buf.autoBleedSecs or 20
+    self.autoBleedRow.slider:SetValue(abs)
+    if self.autoBleedRow.slider.valText then
+        self.autoBleedRow.slider.valText:SetText(abs .. "s")
+    end
+    ui:SliderEnable(self.autoBleedRow.slider, autoOn)
+    self.autoBleedRow.label:SetText(autoOn and "Bleed above" or "Bleed above - Automatic style only")
+    ui:Color(self.autoBleedRow.label, autoOn and ui.COL.white or ui.COL.grey)
+
+    -- powershift is meaningful in the Shred style, and in Automatic, which
+    -- falls back to Shred on a bleed-immune or short-lived target.
+    if (buf.catStyle or "bleed") ~= "bleed" then
         self.psRow.cb:Enable()
         self.psRow.label:SetText("Powershift"); ui:Color(self.psRow.label, ui.COL.white)
         ui:SliderEnable(self.psRow.slider, true)
     else
         self.psRow.cb:Disable()
-        self.psRow.label:SetText("Powershift - Shred style only"); ui:Color(self.psRow.label, ui.COL.grey)
+        self.psRow.label:SetText("Powershift - not in the Bleed style"); ui:Color(self.psRow.label, ui.COL.grey)
         ui:SliderEnable(self.psRow.slider, false)
     end
 

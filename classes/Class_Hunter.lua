@@ -209,6 +209,13 @@ M.templates = {
 function M:NormalizeProfile(c)
     local b = {
         mode = "ranged",
+        -- Bestial Wrath has its own switch rather than riding on "Pop
+        -- cooldowns" with Rapid Fire: one is a hunter cooldown and the other is
+        -- a pet cooldown, and a hunter without a pet out wants the first and not
+        -- the second. ON by default, because it was part of that shared gate
+        -- before and switching it off here would quietly take away a cooldown
+        -- people already had.
+        useBestialWrath = true,
         useHuntersMark = true, sting = "Serpent Sting",
         useSteadyShot = true, useArcaneShot = true, useMultiShot = false,
         useAimedShot = false, aimedOnlyOnProc = true,
@@ -908,7 +915,23 @@ function M:Rotate(cfg)
     local popBurst = cfg.popCDs or (cfg.autoCDElite and isElite)
     if popBurst and inCombat then
         if self:KnowsSpell("Rapid Fire") and self:IsReady("Rapid Fire") then self:PickExtra("Rapid Fire") end
-        if self:KnowsSpell("Bestial Wrath") and self:IsReady("Bestial Wrath") then self:PickExtra("Bestial Wrath") end
+        -- Bestial Wrath is a PET cooldown, not a hunter one, and it used to
+        -- share this gate with Rapid Fire as though the two were the same kind
+        -- of thing. Turtle's tooltip settles it: it grants the pet Scent of
+        -- Blood for 18 seconds, which is the talent's own proc - 40% additional
+        -- damage, dealt by the pet. With no pet out, or a dead one, the whole
+        -- cooldown is spent on nothing and comes back in two minutes.
+        --
+        -- Its own toggle on top of that, so a hunter who wants Rapid Fire
+        -- automated is not made to take the pet cooldown with it.
+        --
+        -- A dead pet still EXISTS as a unit, so both tests are needed; that is
+        -- the same trap the warlock's PetHPPct documents.
+        if cfg.useBestialWrath and self:KnowsSpell("Bestial Wrath")
+            and self:IsReady("Bestial Wrath")
+            and UnitExists("pet") and not UnitIsDead("pet") then
+            self:PickExtra("Bestial Wrath")
+        end
     end
     -- Kill Command is rotational for BM: fire on cooldown in combat (off GCD).
     if cfg.useKillCommand and inCombat and self:KnowsSpell("Kill Command") and self:IsReady("Kill Command") then

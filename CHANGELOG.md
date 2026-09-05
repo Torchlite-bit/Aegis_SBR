@@ -4,6 +4,115 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.20 — the wand was never the answer
+
+### 🐛 Fixed — Warlock: the wand was woven in between channels
+
+Two reports, the same mistake in two places. With a channel set as the filler — Drain Life,
+say — the rotation applied its DoTs, then fired the wand several times, then channelled, then
+went back to the wand.
+
+The logic was written for **Dark Harvest**, which has a cooldown: between two channels there
+is a gap, and something has to fill it. Drain Life and Drain Soul have no cooldown. There is
+no gap. The right behaviour is to start the next channel the moment the last one ends, and to
+stop only when a DoT needs the press.
+
+Both places did the opposite. A channel that could not start *right now* fell through to the
+wand — the old comment said so in as many words, *"not safe right now, ride the wand until it
+is"* — and the two channels had drifted apart on top of that: Drain Soul was checked against
+lapsing DoTs and Dark Harvest's return, Drain Life was checked against nothing at all and
+channelled straight over both.
+
+A DoT that would lapse during the channel is now **topped up first**, which is what the press
+was needed for anyway. That is the rule Dark Harvest has followed since v1.2.6, applied to
+the others at last. The two copies of the logic are one function.
+
+The wand is left for the one case where there is genuinely nothing better: Dark Harvest due
+back sooner than the channel would take, where starting a five second channel with the
+cooldown two seconds out would leave it idle. Everything else that ends on the wand now says
+why in the trace — `wanding, moving`, `wanding, gap filler`, or the DoT that held the channel.
+
+### ✨ Druid: an Automatic cat style, and Clearcasting is finally read
+
+A detailed case from a player who modelled Turtle's feral talents: Shred wins the opener,
+bleeds pull ahead from roughly twenty seconds and keep the lead, largely because Ancient
+Brutality returns 5 energy per bleed tick — Rake every 3s and Rip every 2s is over four energy
+a second on top of the base ten. The Powershift build's long-fight numbers assume mana nobody
+has: 24.5% of base per re-shift is several full bars a minute.
+
+**The DPS figures are his model, not our measurement**, and he says himself the coefficients
+want confirming. What does not depend on them is the order of the questions, which is what is
+implemented — and the crossover is a slider rather than a constant for exactly that reason.
+
+A third style, **Automatic**, on top of the two manual ones, which are unchanged:
+
+1. A free Shred from Clearcasting → Shred.
+2. Target cannot bleed → Shred.
+3. Expected to live longer than the crossover (**Bleed above**, default 20s) → Bleed.
+4. No time-to-kill reading → elite or boss stands in for it.
+
+Bleed immunity is asked separately from elite/boss on purpose. A boss flag says something
+about how long a fight lasts and nothing about whether the thing can bleed; using one for the
+other is how a rotation ends up applying Rip to a construct for two minutes.
+
+### 🐛 Fixed — Druid: a free Shred was refused for costing energy
+
+Three separate places, all from the same report, and all true:
+
+- `CanPay` read a static cost table, so at low energy it rejected a Shred that Clearcasting
+  had just made cost nothing.
+- The builder was nailed to the style — `bleed and "Claw" or "Shred"` — so the bleed build
+  spent the proc on the cheaper ability.
+- Powershift fired at low energy even with a free Shred available, burning mana and a global
+  cooldown to solve a problem the proc had already solved.
+
+The rule holds in **either** style, as the reporter put it: Clearcasting plus a usable Shred
+takes priority over the normal builder, and you never re-shift while a free Shred is there.
+It stays positional — a proc that cannot be used from where you are standing falls back to the
+normal builder rather than being spent on a refusal.
+
+*The proc is detected by buff name first and icon second. If the icon fragment turns out to be
+wrong, a client without SuperWoW simply behaves as it did before: nothing is ever wrongly made
+free, only missed.*
+
+### 🔧 Two numbers corrected from the client's own data
+
+`TalentStage`'s generated rank data reads Talent.dbc directly, which makes it a better source
+than a tooltip screenshot for anything the tooltip rounds.
+
+- **Improved Slam is 0.25s per rank, not 0.3.** The in-game talent tooltip shows 0.3; the DBC
+  says "by 0.25 sec" at rank 1 and "by 0.5 sec" at rank 2. A fully talented Slam is 2.0s, not
+  the 1.9s the swing test was working from.
+- **Rapid Deterioration does shorten Drain Life.** v1.2.19 left it on its base length with the
+  reason stated: whether the talent reached it had not been established. It has been now,
+  without a respec — Drain Life ticks once a second, and across 33 intervals in 8 logged
+  channels the median gap was **0.950s**. Ungated it would be 1.000s and nothing would fall
+  below it; at the talent's 6% it is 0.940s. Not one measured gap exceeded 0.98. The talent's
+  own text agrees, naming "damage over time **and channeled** Affliction spells".
+
+  The channel guard therefore releases at 4.7s rather than 5.0s, which is 0.3s of dead time
+  per channel — and with Drain Life as a filler it channels back to back.
+
+  Health Funnel stays on its base length: it is not an Affliction spell, so the talent has
+  nothing to say about it.
+
+Also: *Kill Command* and *Lock and Load* leave the hunter's "best-effort names" note, both
+confirmed against the same data. Kill Command's description is corrected with them — it is
+reactive, usable only after the hunter lands a critical strike, not an on-cooldown ability.
+
+### 🐛 Fixed — Hunter: Bestial Wrath was cast without a pet
+
+It shared the "Pop cooldowns" gate with Rapid Fire as though the two were the same kind of
+thing. Turtle's tooltip settles it: Bestial Wrath grants the pet *Scent of Blood* for 18
+seconds, which is that talent's own proc — 40% additional damage, dealt by the pet. With no
+pet out, or a dead one, the whole two-minute cooldown was spent on nothing.
+
+It now needs a live pet, and has its own switch, so a hunter who wants Rapid Fire automated is
+not made to take the pet cooldown with it. On by default, since it was part of that shared
+gate before and turning it off here would quietly remove a cooldown people already had.
+
+---
+
 ## v1.2.19 — measured instead of assumed
 
 Five reports across three classes. The pattern in most of them is the same: something
