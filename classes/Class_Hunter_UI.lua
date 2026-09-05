@@ -72,6 +72,8 @@ function M:BuildBody(ui, parent)
     L:Header("Cooldowns")
     self.cdRow = L:Row{ key = "popCDs", label = "Pop cooldowns", onToggle = set("popCDs") }
     self.cdEliteRow = L:Row{ key = "autoCDElite", label = "Auto on elite", onToggle = set("autoCDElite") }
+    self.bwRow = L:Row{ key = "useBestialWrath", label = "Bestial Wrath",
+        spell = "Bestial Wrath", onToggle = set("useBestialWrath") }
 
     -- Last section on every tab: which Goblin Brainwashing Device slot this
     -- tab answers to. Untagged, so it shows on all of them and always reports
@@ -106,7 +108,8 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.mendRow.slider, "Mend Pet below", "Pet health percent under which Mend Pet is cast.")
     ui:Tip(self.kcRow.cb, "Kill Command", "Beast Mastery: fired on cooldown while in combat.")
     ui:Tip(self.baitedRow.cb, "Baited Shot", "Fired in the short window after your pet lands a critical strike.")
-    ui:Tip(self.cdRow.cb, "Pop cooldowns", "Use Rapid Fire (and Bestial Wrath when known) every press.")
+    ui:Tip(self.cdRow.cb, "Pop cooldowns", "Use your burst cooldowns every press: Rapid Fire, and Bestial Wrath if its own switch below is on.")
+    ui:Tip(self.bwRow.cb, "Bestial Wrath", "Included when cooldowns fire, and only then - this switch decides whether the pet cooldown comes along with Rapid Fire.", "Skipped without a live pet. It grants the pet Scent of Blood for 18 seconds, which is that talent's own proc: 40% additional damage, dealt by the pet. With no pet out the whole two-minute cooldown is spent on nothing.")
     ui:Tip(self.cdEliteRow.cb, "Auto on elite", "Pop the cooldowns only against elite and boss targets.")
 end
 
@@ -152,6 +155,7 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.baitedRow, buf.useBaitedShot)
     ui:BindCheck(self.cdRow, buf.popCDs)
     ui:BindCheck(self.cdEliteRow, buf.autoCDElite)
+    ui:BindCheck(self.bwRow, buf.useBestialWrath)
 
     -- "Aimed only on Lock and Load" follows the Aimed Shot checkbox.
     self.aimedProcRow.cb:SetChecked(buf.aimedOnlyOnProc and true or false)

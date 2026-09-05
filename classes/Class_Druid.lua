@@ -108,7 +108,8 @@ M.templates = {
     },
 }
 
-M.styleAlias = { bleed = "bleed", claw = "bleed", shred = "shred", powershift = "shred" }
+M.styleAlias = { bleed = "bleed", claw = "bleed", shred = "shred", powershift = "shred",
+                 auto = "auto", automatic = "auto" }
 M.formAlias  = { cat = "cat", bear = "bear", caster = "caster", moonkin = "caster", balance = "caster",
                  tree = "tree", resto = "tree", restoration = "tree", heal = "tree" }
 
@@ -121,6 +122,11 @@ function M:NormalizeProfile(c)
     if c.ffCat == nil then c.ffCat = true end
     if c.powershift == nil then c.powershift = false end
     if c.psEnergy == nil then c.psEnergy = 15 end
+    -- Crossover for the automatic style: a target expected to live at least
+    -- this long is worth bleeding. 20s is where the model behind the request
+    -- puts the two rotations level; it is a slider because that number is a
+    -- model, not a measurement.
+    if c.autoBleedSecs == nil then c.autoBleedSecs = 20 end
     if c.ffBear == nil then c.ffBear = true end
     if c.useDemo == nil then c.useDemo = true end
     if c.useMaul == nil then c.useMaul = true end
@@ -334,10 +340,82 @@ end
 
 -- Affordable and learned. UnitMana("player") reads the active power, so
 -- in Cat Form this is energy and in Bear Form it is rage.
+-- Omen of Clarity's proc. The next eligible ability costs nothing, which in cat
+-- form means a free Shred - full direct damage for no energy, while the bleeds
+-- go on ticking and feeding energy back.
+--
+-- Matched by name first and by icon second, because a name needs SuperWoW to
+-- resolve and the icon does not. The fragment is the one the client uses for
+-- the buff; if it turns out to be wrong the name path still answers on any
+-- client that can resolve names, and the cost check below simply behaves as it
+-- did before - no cast is ever WRONGLY made free, only missed.
+local CLEARCAST_TEX = "Spell_Shadow_ManaBurn"
+
+function M:Clearcasting()
+    if self:HasBuff("Clearcasting") then return true end
+    for i = 1, 32 do
+        local b = UnitBuff("player", i)
+        if b and string.find(b, CLEARCAST_TEX) then return true end
+    end
+    return false
+end
+
+-- Costs are read from a static table, which is right until a proc makes an
+-- ability free. Reported: at low energy the rotation refused a Shred that
+-- Clearcasting had just made cost nothing.
+--
+-- Only the FIRST eligible ability is free, so this cannot hand out a discount
+-- twice: the proc is consumed by whatever is cast next, and the buff is gone
+-- on the following press.
 function M:CanPay(name)
     if not self:KnowsSpell(name) then return false end
+    if self:Clearcasting() then return true end
     local cost = COST[name] or 0
     return UnitMana("player") >= cost
+end
+
+-- Which cat style this particular fight calls for.
+--
+-- The two manual styles answer immediately and are unchanged: "bleed" and
+-- "shred" mean exactly what they meant before. "auto" decides per target, on a
+-- case put by a player who modelled it against Turtle's talents:
+--
+--   * Shred has the strongest opener and wins anything dying in the first ten
+--     seconds or so.
+--   * Bleed pulls ahead from roughly twenty seconds and does not give the lead
+--     back, mostly because Ancient Brutality returns 5 energy per bleed tick -
+--     Rake every 3s and Rip every 2s is over four energy a second on top of the
+--     base ten, which turns into more Claws and more finishers.
+--   * Powershift Shred's advantage over a long fight assumes mana nobody has:
+--     at 24.5% of base per re-shift it needs several times a full bar to keep
+--     up for a minute.
+--
+-- The DPS figures behind that are HIS model, not our measurement, and he says
+-- himself that the coefficients want confirming. What does not depend on the
+-- exact numbers is the ORDER of the questions, which is what this implements -
+-- and the crossover is a slider rather than a constant for the same reason.
+--
+-- Bleed immunity is asked separately from elite/boss on purpose. A boss flag is
+-- a proxy for how long the fight lasts; it says nothing about whether the thing
+-- can bleed, and using one for the other is how a rotation ends up applying Rip
+-- to a construct for two minutes.
+function M:BleedThisFight(cfg)
+    local style = cfg.catStyle
+    if style == "shred" then return false end
+    if style ~= "auto" then return true end
+
+    -- Cannot bleed: Shred, whatever else is true.
+    if self:TargetIsBleedImmune() then return false end
+
+    -- Long enough for the bleeds to pay for themselves? Time-to-kill is the
+    -- direct answer where it has one. Unknown TTK falls back to the target
+    -- being an elite or a boss, which is the proxy - stated as such.
+    local ttk = Aegis_SBR.TargetTTK and Aegis_SBR:TargetTTK() or nil
+    local need = cfg.autoBleedSecs or 20
+    if ttk then return ttk >= need end
+
+    local cls = UnitClassification and UnitClassification("target") or nil
+    return (cls == "elite" or cls == "rareelite" or cls == "worldboss") and true or false
 end
 
 -- Rake and Rip are bleeds, and Mechanical / Elemental mobs are immune to
@@ -520,7 +598,7 @@ end
 function M:RotateCat(cfg)
     local energy = UnitMana("player")
     local cp = GetComboPoints("player", "target")
-    local bleed = (cfg.catStyle ~= "shred")
+    local bleed = self:BleedThisFight(cfg)
     -- Gates the bleed UPKEEPS only. Deliberately NOT folded into `bleed`
     -- above: that variable also picks the builder, and turning Claw into
     -- Shred on an immune target would change which ability fires, which is
@@ -575,9 +653,25 @@ function M:RotateCat(cfg)
         if self:CanPay("Rake") and self:CastSafe("Rake") then return end
     end
 
-    -- P5 builder. Shred is refused from anywhere but behind, so it falls back to
-    -- Claw rather than spending the press on a refusal.
-    local builder = self:PositionalPick(bleed and "Claw" or "Shred")
+    -- P5 builder.
+    --
+    -- A Clearcasting proc overrides the style's normal builder: a free Shred is
+    -- full direct damage for no energy, and the bleeds keep ticking and feeding
+    -- energy while it lands. That holds in EITHER style - the bleed build was
+    -- picking Claw through the proc, which throws the discount at the cheaper
+    -- ability.
+    --
+    -- Still positional. Shred is refused from anywhere but behind, so a proc we
+    -- cannot use from where we stand falls back to the normal builder rather
+    -- than being spent on a refusal.
+    local builder
+    local freeShred = self:Clearcasting() and self:KnowsSpell("Shred")
+        and self:BehindOK("Shred")
+    if freeShred then
+        builder = "Shred"
+    else
+        builder = self:PositionalPick(bleed and "Claw" or "Shred")
+    end
     if builder and self:CanPay(builder) then
         if self:CastSafe(builder) then return end
     end
@@ -586,7 +680,11 @@ function M:RotateCat(cfg)
     -- Fury is NOT running (a shift would throw the buff away). Shifting out
     -- lands in caster form; the next press shifts straight back into Cat,
     -- which forces a fresh energy bar. Needs mana for the re-shift.
-    if cfg.powershift and not bleed and energy < (cfg.psEnergy or 15) then
+    --
+    -- Never while a free Shred is available. Shifting out costs mana and a
+    -- global cooldown to solve an energy problem the proc has already solved.
+    if cfg.powershift and not bleed and energy < (cfg.psEnergy or 15)
+        and not (self:Clearcasting() and self:KnowsSpell("Shred") and self:BehindOK("Shred")) then
         if not self:HasBuff("Tiger's Fury") then
             self:CastSafe("Cat Form")   -- recasting the active form shifts OUT
             return
@@ -1224,9 +1322,11 @@ function M:HandleCommand(cmd, t)
         local style = self.styleAlias[string.lower(t[2] or "")]
         if cfg and style then
             cfg.catStyle = style
-            msgOut("cat style = " .. (style == "bleed" and "Claw & Bleed" or "Shred & Powershift") .. ".")
+            local shown = { auto = "Automatic", bleed = "Claw & Bleed",
+                            shred = "Shred & Powershift" }
+            msgOut("cat style = " .. (shown[style] or style) .. ".")
         else
-            msgOut("usage: /sbr style <bleed|shred>", 1, 0.5, 0.3)
+            msgOut("usage: /sbr style <auto|bleed|shred>", 1, 0.5, 0.3)
         end
         return true
     end
