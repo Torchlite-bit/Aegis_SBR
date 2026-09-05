@@ -4,6 +4,21 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.22 — wand only when the channel cannot be paid for
+
+### 🐛 Fixed — Warlock: wand shots at full mana with a channel filler
+
+With a channel set as the filler, mana is now the **only** reason the wand runs. Movement was
+an exception and is no longer one: a moving warlock keeps its DoTs up and waits instead of
+wanding.
+
+The stray-wand stop is throttled to one attempt per 1.5s. `Shoot` toggles auto-repeat and
+`IsAutoRepeatAction` does not update within a press, so consecutive stops read the wand as
+still running and toggled it back on — every second toggle a shot, one of which interrupted
+a starting *Drain Life*.
+
+---
+
 ## v1.2.21 — the last of the wand
 
 ### 🐛 Fixed — Warlock: the wand still appeared between Dark Harvest channels

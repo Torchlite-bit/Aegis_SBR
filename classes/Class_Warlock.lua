@@ -1220,14 +1220,62 @@ function M:ApplyDot(spellName, texFrag, interval)
     return "cast"
 end
 
+-- Is the wand allowed to start right now?
+--
+-- With a CHANNEL configured as the filler, the only exception is mana: if the
+-- channel is affordable, the wand does not run. Enforced here rather than at
+-- the call sites because eight paths can ask for a wand shot.
+function M:WandAllowed()
+    local cfg = Aegis_SBR:GetActiveProfile()
+    if not cfg then return true end
+    local f = cfg.filler
+    if not (f and M.CHANNELED[f] and self:KnowsSpell(f)) then return true end
+    return not Aegis_SBR:CanAfford(f)
+end
+
+-- Stop a wand auto-repeat that is running and should not be. Shoot starts a
+-- repeat that keeps firing on its own, so refusing to start it does nothing
+-- about one begun earlier - by the low-mana valve, or before the filler was
+-- changed.
+--
+-- Shoot TOGGLES, and IsAutoRepeatAction does not update within a press, so an
+-- unthrottled stop reads the wand as still running and toggles it back on. One
+-- attempt, then a gap long enough for the client to catch up.
+--
+-- Only called with no channel running: the guards at the top of Rotate return
+-- before this point.
+local WAND_STOP_GAP = 1.5
+
+function M:StopStrayWand()
+    if not self:Wanding() then
+        self.wandStopAt = nil
+        return
+    end
+    if self:WandAllowed() then return end
+    if self.wandStopAt and (GetTime() - self.wandStopAt) < WAND_STOP_GAP then return end
+    self.wandStopAt = GetTime()
+    if self:Tracing() then self:Trace("stopping a stray wand auto-repeat") end
+    CastSpellByName("Shoot")   -- toggles the repeat OFF
+end
+
 -- Start or stop the wand. Shoot toggles auto-repeat, so casting it while it
 -- is already running is how the rotation stops it - both directions are a real
 -- press and are reported as such.
+--
+-- A refusal here that is still followed by a wand shot means the shot did not
+-- come from this addon.
 function M:Shoot(reason)
     if Aegis_SBR.deciding then
         local p = Aegis_SBR.decidePlan
         p.spell = "Shoot"; p.reason = reason
         return true
+    end
+    if not self:WandAllowed() then
+        if self:Tracing() then
+            self:Trace("wand refused (" .. tostring(reason) .. "): "
+                .. tostring(Aegis_SBR:GetActiveProfile().filler) .. " is affordable")
+        end
+        return false
     end
     CastSpellByName("Shoot")
     return true
@@ -1315,6 +1363,9 @@ function M:Rotate(cfg)
 
     -- Resolve a pending icon observation before anything else reads CurseTex.
     self:CurseLearnTick()
+
+    -- Past the channel guards, so nothing is running that this could clip.
+    self:StopStrayWand()
 
     local nightfall = cfg.nightfall or self:HasNightfall()
 
