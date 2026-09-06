@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.22",
+    ver = "1.2.23",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1633,6 +1633,16 @@ local CAST_REFUSED_SELF = {
     -- captured log. Without this entry that refusal was unrecognised, so the
     -- spell's throttle stayed stamped on a cast that never left.
     SPELL_FAILED_SPELL_IN_PROGRESS or "Another action is in progress",
+    -- The cast was cut off before it went out. Measured on a warlock at low
+    -- mana: the wand valve had the wand auto-repeating, the rotation cast
+    -- Corruption into it, and the shot in flight killed the cast - the client
+    -- answered "Interrupted" and Corruption was still missing on the next press.
+    --
+    -- Unrecognised, it landed in neither ledger, so the DoT throttle stayed
+    -- stamped on a cast that never happened and the DoT was skipped for the
+    -- whole three second interval. Same failure as the entry above it, from a
+    -- different cause.
+    SPELL_FAILED_INTERRUPTED or "Interrupted",
 }
 
 -- Recognised, and deliberately acted on by NEITHER ledger.

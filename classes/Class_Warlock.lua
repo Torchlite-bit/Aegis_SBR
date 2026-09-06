@@ -82,6 +82,35 @@ local DH_TICK_BOOST = 0.30
 -- next press on the same dead attempt. Adjust here if Turtle changes the cost.
 local DH_MANA = 230
 
+-- How long a spell that has been SENT has to reach the client before the
+-- rotation stops believing in it.
+--
+-- Measured across sessions, the delay from send to the client acting on it runs
+-- 0.24s to 1.27s - the rest of the global cooldown plus the round trip. 1.5s
+-- covers the range with a little room.
+--
+-- NOTHING may be sent inside this window. Nampower's queue holds exactly ONE
+-- spell, so a second send does not join a line - it replaces what is there, and
+-- the first spell simply never happens.
+--
+-- Measured, t=336.63: a Nightfall Shadow Bolt sent, the next three presses ran
+-- the whole rotation again and queued over it, and the player's mana never moved
+-- - the bolt was thrown away by the addon that had just asked for it. The same
+-- shape was reported for Corruption, visible in Nampower's own queue display as
+-- a spell that appears for one press and is gone the next.
+local SEND_GRACE = 1.5
+
+-- And having failed once, do not send again immediately. The same ten seconds
+-- carried three sends inside three seconds, which bought a global cooldown and
+-- some mana each time and nothing else.
+local DH_RETRY_BACKOFF = 3.0
+
+-- A channel start belongs to the last CHANNEL this module sent, not the last
+-- spell - the queue routinely holds a channel behind an instant, so the two are
+-- different. Beyond this window the association is too old to trust and the
+-- channel came from somewhere else.
+local CHANNEL_ATTRIB_WINDOW = 5.0
+
 -- Once an enabled DoT is due to fall off within this many seconds, the wand
 -- filler stops (or does not start) feeding new shots. Reacting only after the
 -- DoT is actually gone risks the recast racing a wand shot already in
@@ -105,8 +134,23 @@ M.chanStart = 0
 -- only once the icon clears.
 M.stConsumed = false
 M.stConsumedAt = 0
+local GCD = 1.5
+
+-- The global cooldown is spent when a cast STARTS, so an instant that has gone
+-- out, and a cast-time spell that was cut off halfway, both leave the same floor
+-- behind: the client is busy until a GCD after the send, whatever else happened
+-- to the spell.
+local function ReleaseBusy()
+    local floor = (Aegis_SBR.lastSpellAt or 0) + GCD
+    if (M.busyUntil or 0) > floor then M.busyUntil = floor end
+end
+
 local wlChannelFrame = CreateFrame("Frame")
 wlChannelFrame:RegisterEvent("SPELLCAST_CHANNEL_START")
+-- The START of an ordinary cast. Registered purely as evidence that the client
+-- has taken the spell we sent - a cast-time spell announces itself here, an
+-- instant through SPELLCAST_STOP, a channel through CHANNEL_START.
+wlChannelFrame:RegisterEvent("SPELLCAST_START")
 wlChannelFrame:RegisterEvent("SPELLCAST_CHANNEL_STOP")
 -- The end of an ordinary cast, so a DoT waiting for confirmation is released on
 -- evidence instead of on a two second timer.
@@ -121,20 +165,76 @@ wlChannelFrame:RegisterEvent("SPELLCAST_STOP")
 wlChannelFrame:RegisterEvent("SPELLCAST_FAILED")
 wlChannelFrame:RegisterEvent("SPELLCAST_INTERRUPTED")
 wlChannelFrame:SetScript("OnEvent", function()
+    -- Evidence that the client has taken the spell we sent: a cast began, a
+    -- channel began, or it was refused.
+    --
+    -- SPELLCAST_STOP is deliberately NOT on that list. It fires at the end of
+    -- whatever was already casting, so a stop belonging to the PREVIOUS spell
+    -- would clear the guard while ours was still sitting in the queue - the
+    -- eviction this guard exists to prevent. An instant therefore has no event
+    -- of its own and waits out the window, which costs nothing: an instant that
+    -- has gone out is inside its global cooldown for that whole time anyway.
+    if event == "SPELLCAST_START" then M.sentSeen = true; return end
+
     if event == "SPELLCAST_CHANNEL_START" then
+        M.sentSeen = true
         M.channeling = true
         M.chanStart = GetTime()
-        -- Which channel this is. The event does not say, but Queue stamped the
-        -- name through NoteSpellCast a moment ago, and that is the only thing
-        -- that could have started one.
-        M.chanSpell = Aegis_SBR.lastSpell
+        -- Which channel this is. The event does not say, and the last spell SENT
+        -- is the wrong answer whenever the queue held the channel behind
+        -- something else. Measured at 34 of 598 guard presses in one session: a
+        -- Dark Harvest that started after a Corruption had gone out was recorded
+        -- as "Corruption", which has no channel length on file, so the guard fell
+        -- back to its 16s ceiling instead of the real 7.8s.
+        --
+        -- The last CHANNEL sent is the right answer. The old reading stays as the
+        -- fallback for a channel that did not come from this module.
+        local sent = M.lastChannelSent
+        if sent and (GetTime() - (M.lastChannelSentAt or 0)) <= CHANNEL_ATTRIB_WINDOW then
+            M.chanSpell = sent
+        else
+            M.chanSpell = Aegis_SBR.lastSpell
+        end
+        -- The channel announced itself, so the send is no longer pending.
+        M.lastChannelSentAt = nil
+        -- Evidence that Dark Harvest is really channelling, which is what its
+        -- own guard below waits for.
+        if M.chanSpell == "Dark Harvest" then
+            M.dhChannelSeen = true
+            M.dhFailedAt = nil
+        end
     elseif event == "SPELLCAST_CHANNEL_STOP" then
+        -- Read before the flags are cleared: this stop belongs to whatever
+        -- chanSpell says is running.
+        --
+        -- Dark Harvest's own guard is stamped for the channel's full length and
+        -- had no release on this event at all, only on INTERRUPTED/FAILED. A
+        -- channel that started and stopped 0.3s later therefore held the
+        -- rotation for the remaining 6.5s - measured, with the stop event
+        -- present in the same log and simply not acted on.
+        if M.chanSpell == "Dark Harvest" then M.dhEnd = nil end
         M.channeling = false
         M.chanSpell = nil
+        ReleaseBusy()
     else
         -- A cast ended, one way or another. Nothing is left in the queue to
         -- protect, so no DoT should still be waiting on one.
         M.dotPending = {}
+        -- The busy window is deliberately NOT cleared here.
+        --
+        -- Clearing it on this branch cost a global cooldown on every instant in
+        -- the rotation. SPELLCAST_STOP fires the moment an instant goes out, so
+        -- the window died immediately, the next press cast directly INTO the
+        -- global cooldown, the client refused it - which raises SPELLCAST_FAILED,
+        -- clearing the window again - and the loop ran until the cooldown was
+        -- over. Nothing was ever handed to the queue, so nothing was waiting to
+        -- fire at the end of it: every instant waited out a full cooldown before
+        -- the next was even attempted.
+        --
+        -- Neither event means the client is free. STOP means a spell went out,
+        -- which is when the cooldown STARTS, and FAILED most often means the
+        -- cooldown is still running.
+        --
         -- And a channel that was INTERRUPTED is over too. This branch used to
         -- leave the channel flags alone, on the assumption that a broken channel
         -- would still announce itself through CHANNEL_STOP - which is exactly the
@@ -145,12 +245,20 @@ wlChannelFrame:SetScript("OnEvent", function()
         -- FAILED is included: a channel refused at the moment it should have
         -- started never runs, and waiting out its length is the same mistake.
         if event == "SPELLCAST_INTERRUPTED" or event == "SPELLCAST_FAILED" then
+            -- The client answered, even if the answer was no.
+            M.sentSeen = true
             if M.channeling and Aegis_SBR.Tracing and Aegis_SBR:Tracing() then
                 Aegis_SBR:Trace("channel " .. event .. " after "
                     .. string.format("%.1fs", GetTime() - (M.chanStart or GetTime())))
             end
             M.channeling = false
             M.chanSpell = nil
+            -- The client has answered, so nothing is pending any more.
+            M.lastChannelSentAt = nil
+            -- A cast that was cut off is not still occupying the client, so the
+            -- queue has nothing left to hold against - down to the cooldown the
+            -- send itself spent, which ReleaseBusy keeps.
+            ReleaseBusy()
             -- Dark Harvest keeps its own protection window on top of this one,
             -- for the cooldown race described at that guard. It has the same
             -- blind spot and needs the same release.
@@ -533,7 +641,38 @@ M.CHANNELED = {
     ["Health Funnel"] = true,
 }
 
-function M:Queue(name, reason)
+-- Cast time of what this module sends that is neither a DoT nor a channel.
+-- Read off the client: Shadow Bolt rank 7 is a 3 sec cast, and Bane reduces
+-- Shadow Bolt, Searing Pain and Immolate by 0.1 sec per rank.
+local CAST_TIME = {
+    ["Shadow Bolt"] = 3.0,
+}
+
+-- How long the client is occupied by the spell just sent.
+--
+-- The set of spells this module can send is closed: four channels, three
+-- cast-time spells (Shadow Bolt, Immolate, Corruption), and instants for the
+-- rest - Life Tap, the curses, Siphon Life, Shadowburn. An unrecognised name is
+-- therefore an instant, and the global cooldown is the right floor. A cast-time
+-- spell added later must be entered in CAST_TIME above, or the choice in Queue
+-- below will cast straight into its cast.
+--
+-- busy = 0 from the caller means "this one is instant regardless": the Nightfall
+-- bolt is free and instant, and charging it three seconds would arm the queue
+-- across the presses that follow it.
+function M:BusyFor(name, busy)
+    if busy then return busy end
+    if M.CHANNELED[name] then return self:ChannelLength(name) or GCD end
+    local ct = self:DotCastTime(name)
+    if ct == 0 and CAST_TIME[name] then
+        ct = CAST_TIME[name] - 0.1 * self:TalentRank(TALENT_BANE)
+        if ct < 0 then ct = 0 end
+    end
+    if ct > GCD then return ct end
+    return GCD
+end
+
+function M:Queue(name, reason, busy)
     if not self:KnowsSpell(name) then return false end
     -- Moving: refuse every channel, and let the caller fall through to whatever
     -- it would have done otherwise. Refused here rather than at each decision
@@ -553,11 +692,36 @@ function M:Queue(name, reason)
         return true
     end
     Aegis_SBR:NoteSpellCast(name)
-    if self:Wanding() or not QueueSpellByName then
+    -- Which channel a later SPELLCAST_CHANNEL_START belongs to. Kept separately
+    -- from lastSpell, which the queue makes unreliable for this.
+    if M.CHANNELED[name] then
+        M.lastChannelSent = name
+        M.lastChannelSentAt = GetTime()
+    end
+    -- One spell is in flight from here until the client answers.
+    M.sentSpell = name
+    M.sentAt = GetTime()
+    M.sentSeen = false
+    -- Nampower's queue exists to hold a press until what is ALREADY IN FLIGHT
+    -- finishes. With nothing in flight it has nothing to hold against and the
+    -- press is not passed through. Measured in the mage module out of the same
+    -- idle state: 0.37s through the queue against 0.05s direct, one word apart.
+    --
+    -- Reported here as a single press after the global cooldown that spends a
+    -- cooldown and casts nothing, while spamming - where something is always in
+    -- flight - runs seamlessly.
+    --
+    -- Overestimating busyUntil only queues where a direct cast would also have
+    -- worked, which is the behaviour this replaces. Underestimating casts into a
+    -- running cast and loses the press, so the estimate rounds up.
+    local direct = self:Wanding() or not QueueSpellByName
+        or GetTime() >= (self.busyUntil or 0)
+    if direct then
         CastSpellByName(name)
     else
         QueueSpellByName(name)
     end
+    self.busyUntil = GetTime() + self:BusyFor(name, busy)
     return true
 end
 
@@ -569,6 +733,98 @@ function M:ShadowTranceUp()
         if b and string.find(b, "Spell_Shadow_Twilight") then return true end
     end
     return false
+end
+
+-- Shadow Trance runs 10s and a fresh proc restarts it, so a reading HIGHER than
+-- the one taken when the last bolt went out is a new proc - a lingering icon can
+-- only count down.
+--
+-- This is the piece the 2026-09-04 attempt was missing. That version re-sent
+-- whenever the icon was still up, which fires on a leftover buff exactly as
+-- readily as on a real proc, and the wasted hard-casts cost more than the missed
+-- procs did. A gain in remaining time cannot come from a leftover.
+--
+local ST_REPROC_GAIN = 1.0
+
+-- Seconds left on Shadow Trance, or nil if it is not up.
+--
+-- Found by TEXTURE, not by name. The name path needs SuperWoW's SpellInfo, and
+-- on the client this was measured on it does not answer - every logged press
+-- reads conf=N and the curse shows as "?", both of which are the same missing
+-- lookup. The buff timer itself is plain 1.12 API and answers regardless, which
+-- is why ShadowTranceUp finds the icon by texture too.
+function M:TranceTimeLeft()
+    if not GetPlayerBuff or not GetPlayerBuffTexture then return nil end
+    for i = 0, 31 do
+        local ix = GetPlayerBuff(i, "HELPFUL")
+        if ix and ix ~= -1 then
+            local tex = GetPlayerBuffTexture(ix)
+            if tex and string.find(tex, "Spell_Shadow_Twilight") then
+                return GetPlayerBuffTimeLeft and GetPlayerBuffTimeLeft(ix) or nil
+            end
+        end
+    end
+    return nil
+end
+
+-- Keep the Nightfall latch honest, every press, BEFORE anything can return out
+-- of Rotate.
+--
+-- The latch used to be maintained inside the Nightfall block itself, which sits
+-- below the channel guards - and those return. So for the whole length of a
+-- channel the latch was neither cleared nor re-examined, and a proc that landed
+-- during one found the latch still set from the bolt before it. Measured: a proc
+-- up at t=133.8 with the latch still reading spent, and 108 seconds before the
+-- next proc was used at all.
+--
+-- Three ways the latch is released, in order of evidence:
+--   the icon is gone          - the proc is over, nothing to protect
+--   the timer went UP         - a fresh proc restarted it; a leftover only
+--                               counts down, which is what the 2026-09-04
+--                               attempt could not tell apart
+--   15s have passed           - safety net, above the buff's own duration
+function M:TranceTick()
+    -- The preview runs this same body four times a second and must never write
+    -- state; that is what Later guards everywhere else.
+    if Aegis_SBR.deciding then return end
+    local tl = self:TranceTimeLeft()
+    if not (tl or self:ShadowTranceUp()) then
+        self.stConsumed = false
+        self.stConsumedTL = nil
+        return
+    end
+    if not self.stConsumed then return end
+    if tl and self.stConsumedTL and (tl - self.stConsumedTL) >= ST_REPROC_GAIN then
+        if self:Tracing() then self:Trace("trance re-procced, rearming") end
+        self.stConsumed = false
+        self.stConsumedTL = nil
+        return
+    end
+    if self.stConsumedAt and (GetTime() - self.stConsumedAt) > 15 then
+        self.stConsumed = false
+        self.stConsumedTL = nil
+    end
+end
+
+-- May Shadow Bolt be HARD cast, as opposed to spent instantly off a proc?
+--
+-- On a Nightfall build it may not. Three seconds of casting is the most
+-- expensive press in an affliction rotation, and the sites that reach this are
+-- fallbacks for having no wand equipped, not choices anyone made.
+--
+-- An explicitly configured Shadow Bolt filler is a choice and stays honoured -
+-- and the Nightfall reaction is skipped entirely in that case anyway, so the
+-- two never contradict each other.
+function M:HardCastBoltOK(cfg)
+    if cfg.filler == "Shadow Bolt" then return true end
+    return not (cfg.nightfall or self:HasNightfall())
+end
+
+-- True while a Dark Harvest send that produced no channel is still too recent to
+-- try again. The rotation falls through to the gap filler meanwhile, so the press
+-- is spent on something rather than on a second dead attempt.
+function M:DHRetryHeld()
+    return (self.dhFailedAt and (GetTime() - self.dhFailedAt) < DH_RETRY_BACKOFF) and true or false
 end
 
 -- 100 means "nothing to heal here", which covers both no pet and a dead one -
@@ -1228,7 +1484,31 @@ end
 function M:WandAllowed()
     local cfg = Aegis_SBR:GetActiveProfile()
     if not cfg then return true end
+    -- Below the mana floor the wand is the entire point. That valve exists to
+    -- stop the rotation casting itself dry, and it cannot be overruled by "a
+    -- channel is still affordable" - a cheap channel is affordable long past the
+    -- floor, which is how the two rules deadlocked.
+    --
+    -- Measured: 17 consecutive presses over 4.2s doing nothing at all, at 12%
+    -- mana with the floor at 15. The valve asked for the wand on every one of
+    -- them and this refused it, because Drain Life was still payable. Neither
+    -- wanding nor casting, until Life Tap happened to become available.
+    if self:ManaPct() < (cfg.wandManaFloor or 15) then return true end
+
     local f = cfg.filler
+    if not f then return true end
+
+    -- Dark Harvest runs on a cooldown, so a gap between channels exists BY
+    -- DESIGN and something has to fill it. What fills it is the player's own
+    -- setting, and the wand is one of the choices offered.
+    --
+    -- Testing the main filler here refused the wand in exactly that gap, which
+    -- left the press doing nothing at all: five consecutive empty presses in one
+    -- measured window, and the next-spell preview showing a wand that was then
+    -- refused. The spell to protect is the one that would otherwise run, which
+    -- in the gap is the gap filler.
+    if f == "Dark Harvest" then f = cfg.dhGapFiller end
+
     if not (f and M.CHANNELED[f] and self:KnowsSpell(f)) then return true end
     return not Aegis_SBR:CanAfford(f)
 end
@@ -1265,17 +1545,19 @@ end
 -- A refusal here that is still followed by a wand shot means the shot did not
 -- come from this addon.
 function M:Shoot(reason)
-    if Aegis_SBR.deciding then
-        local p = Aegis_SBR.decidePlan
-        p.spell = "Shoot"; p.reason = reason
-        return true
-    end
+    -- Tested BEFORE the preview branch, or the next-spell window announces a
+    -- wand the real press then refuses - which is what it was doing.
     if not self:WandAllowed() then
-        if self:Tracing() then
+        if not Aegis_SBR.deciding and self:Tracing() then
             self:Trace("wand refused (" .. tostring(reason) .. "): "
                 .. tostring(Aegis_SBR:GetActiveProfile().filler) .. " is affordable")
         end
         return false
+    end
+    if Aegis_SBR.deciding then
+        local p = Aegis_SBR.decidePlan
+        p.spell = "Shoot"; p.reason = reason
+        return true
     end
     CastSpellByName("Shoot")
     return true
@@ -1286,6 +1568,9 @@ end
 -- attack for this class). One queued cast per press, DoTs first.
 -- ============================================================
 function M:Rotate(cfg)
+    -- Before every guard below, because they return.
+    self:TranceTick()
+
     -- Send the pet in. With petMeleeOnly, only when the target is within melee
     -- range (the same gate as the melee auto-attack), so an accidentally
     -- targeted far enemy never pulls the pet away.
@@ -1309,6 +1594,27 @@ function M:Rotate(cfg)
     -- the channel was always going to have. That length is known - it is the
     -- same number DHChannelLength already computes for Dark Harvest, talent
     -- included - it was just never used here.
+    -- A spell has been sent and the client has not acted on it yet. Hold
+    -- everything until it has.
+    --
+    -- This is the whole of the eviction problem. The rotation re-decides on
+    -- every press, a quarter of a second apart, and each decision used to be
+    -- sent - but Nampower holds ONE spell, so every send after the first threw
+    -- away the one before it. Worse, the addon did it to itself: having queued
+    -- Corruption it marks Corruption as handled, so the next press moves on down
+    -- the priority list and queues the filler straight over it.
+    --
+    -- Once the client HAS taken the spell, re-deciding is fine again - a press
+    -- during a cast queues the next one behind it, which is what the queue is
+    -- for. Only the gap between asking and being answered is closed here.
+    if M.sentAt and not M.sentSeen and (GetTime() - M.sentAt) < SEND_GRACE then
+        if self:Tracing() then
+            self:Trace(string.format("STALL %s sent, waiting for the client",
+                tostring(M.sentSpell)))
+        end
+        return
+    end
+
     if self.channeling and self.chanStart then
         local held = GetTime() - self.chanStart
         local expect = self:ChannelLength(self.chanSpell)
@@ -1352,8 +1658,35 @@ function M:Rotate(cfg)
     -- clipped the channel it had just begun. A short unconditional grace
     -- window after dhStart closes that race; only past it does an early
     -- CD-ready reading (an early kill) end the protection ahead of time.
-    if self.dhEnd and GetTime() < self.dhEnd and self:TargetId() == self.dhTarget then
-        if (GetTime() - (self.dhStart or 0)) < 1 or not self:OwnCDReady("Dark Harvest") then
+    -- TargetId returns SuperWoW's GUID when it can and falls back to the unit
+    -- NAME when it cannot, and which of the two comes back varies press to
+    -- press. Comparing only the id therefore dropped the guard at random on a
+    -- target that had not changed - and the rotation, running on past it,
+    -- re-sent Dark Harvest. Three sends inside 2.4s in one measured window.
+    --
+    -- Either form matching is enough to say it is still the same target.
+    local dhSame = self.dhTarget and (self:TargetId() == self.dhTarget
+        or (self.dhTargetName and UnitName("target") == self.dhTargetName))
+    if self.dhEnd and GetTime() < self.dhEnd and dhSame then
+        local since = GetTime() - (self.dhStart or 0)
+        if not self.dhChannelSeen then
+            -- Still inside the window in which the channel may yet announce
+            -- itself. Hold - the old version stopped holding after one second
+            -- and let the next press queue over a Dark Harvest that had not
+            -- been cast yet, which is how it came to be evicted.
+            if since < SEND_GRACE then
+                if self:Tracing() then
+                    self:Trace(string.format("STALL harvest sent %.1fs ago, no channel yet", since))
+                end
+                return
+            end
+            -- The window is up and nothing started. A send is not a channel.
+            if self:Tracing() then
+                self:Trace(string.format("harvest never started, released after %.1fs", since))
+            end
+            self.dhEnd = nil
+            self.dhFailedAt = GetTime()
+        elseif not self:OwnCDReady("Dark Harvest") then
             if self:Tracing() then
                 self:Trace(string.format("STALL harvest %.1fs left", self.dhEnd - GetTime()))
             end
@@ -1388,26 +1721,29 @@ function M:Rotate(cfg)
     -- reading of WHY is what was wrong: the extra sends cost more than the
     -- missed procs did. Anything tried here next needs to explain that.
     if nightfall and cfg.filler ~= "Shadow Bolt" and self:KnowsSpell("Shadow Bolt") then
+        -- Releasing the latch is TranceTick's job, above every guard. All that
+        -- is left here is the decision to spend the proc.
         if self:ShadowTranceUp() then
             if self:Tracing() then
-                self:Trace(string.format("trance up spent=%s conf=%s",
+                self:Trace(string.format("trance up spent=%s tl=%s",
                     self.stConsumed and "Y" or "n",
-                    M.castEventSeen and "Y" or "N"))
+                    self:TranceTimeLeft() and string.format("%.1f", self:TranceTimeLeft()) or "?"))
             end
             if not self.stConsumed then
-                if self:Queue("Shadow Bolt", "Nightfall proc") then
+                -- Instant off the proc, so it occupies the client for a global
+                -- cooldown and not for Shadow Bolt's three seconds.
+                if self:Queue("Shadow Bolt", "Nightfall proc", 0) then
                     if self:Tracing() then self:Trace("trance SENT Shadow Bolt") end
                     self:Later(function()
                         self.stConsumed = true
                         self.stConsumedAt = GetTime()
+                        -- What the timer read as it was spent, for the
+                        -- comparison in TranceTick.
+                        self.stConsumedTL = self:TranceTimeLeft()
                     end)
                     return
                 end
-            elseif self.stConsumedAt and (GetTime() - self.stConsumedAt) > 15 then
-                self:Later(function() self.stConsumed = false end)
             end
-        else
-            self:Later(function() self.stConsumed = false end)
         end
     end
 
@@ -1589,6 +1925,7 @@ function M:Rotate(cfg)
     -- fixing the mana. Below the cost, Life Tap keeps its turn.
     local dhFirst = cfg.filler == "Dark Harvest" and self:KnowsSpell("Dark Harvest")
         and self:OwnCDReady("Dark Harvest") and (UnitMana("player") or 0) >= DH_MANA
+        and not self:DHRetryHeld()
     if cfg.lifeTap and self:KnowsSpell("Life Tap") and not dhFirst then
         if self:ManaPct() < (cfg.lifeTapMana or 20) and self:PlayerHPPct() > (cfg.lifeTapHpMin or 40) then
             self:Queue("Life Tap", "mana from health")
@@ -1604,7 +1941,7 @@ function M:Rotate(cfg)
         -- Moving is handled here rather than at the Queue below, because that
         -- branch returns either way: refused there, the press would be spent on
         -- nothing instead of falling through to the gap filler.
-        if self:OwnCDReady("Dark Harvest") and not self:Moving() then
+        if self:OwnCDReady("Dark Harvest") and not self:Moving() and not self:DHRetryHeld() then
             -- Every enabled DoT is already up at this point (the loop above
             -- only falls through once none of them needed casting). Before
             -- committing to the channel, make sure none of them will fall off
@@ -1648,6 +1985,9 @@ function M:Rotate(cfg)
                     self.dhStart = GetTime()
                     self.dhEnd = self.dhStart + self:DHChannelLength()
                     self.dhTarget = self:TargetId()
+                    self.dhTargetName = UnitName("target")
+                    -- Nothing seen yet; the channel start event sets this.
+                    self.dhChannelSeen = false
                 end)
             end
             return
@@ -1724,7 +2064,7 @@ function M:Rotate(cfg)
             end
             if self:Wanding() then return end
             self:Shoot(gap == "Shoot" and "wanding, gap filler" or "wanding, gap unavailable")
-        elseif self:KnowsSpell("Shadow Bolt") then
+        elseif self:KnowsSpell("Shadow Bolt") and self:HardCastBoltOK(cfg) then
             self:Queue("Shadow Bolt", "filler nuke")
         end
         return
@@ -1755,7 +2095,7 @@ function M:Rotate(cfg)
         if self:HasWand() then
             if self:Wanding() then return end
             self:Shoot("wanding")
-        elseif self:KnowsSpell("Shadow Bolt") then
+        elseif self:KnowsSpell("Shadow Bolt") and self:HardCastBoltOK(cfg) then
             self:Queue("Shadow Bolt", "filler nuke")
         end
     elseif filler and M.CHANNELED[filler] then
