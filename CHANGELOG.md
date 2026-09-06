@@ -4,6 +4,92 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.23 — one spell in flight
+
+### 🐛 Fixed — Warlock: the rotation was throwing away its own spells
+
+Nampower's queue holds exactly **one** spell. A second send does not join a line, it replaces what
+is there. The rotation re-decides four times a second and sent on every press, so each send
+discarded the one before it — and it did this to itself: having queued *Corruption* it marks
+Corruption as handled, so the next press moves down the priority list and queues the filler
+straight over it.
+
+Measured at t=336.63 in one session: a Nightfall *Shadow Bolt* sent, three full rotation passes
+queued over it, and the player's mana never moved. Visible in Nampower's own queue display as a
+spell that appears for one press and is gone the next.
+
+Nothing is sent now between a send and the client's answer — a cast starting, a channel starting,
+or a refusal — with a 1.5s ceiling. The delay from send to answer measures 0.24s to 1.27s across
+sessions. `SPELLCAST_STOP` is deliberately not accepted as that answer: it fires at the end of
+whatever was already casting, so a stop belonging to the previous spell would clear the guard while
+ours was still queued.
+
+### 🐛 Fixed — Warlock: Dark Harvest stalls and clipped channels
+
+Four faults in the same guard:
+
+- **It never saw the channel end.** `dhEnd` was released on interruption but not on
+  `SPELLCAST_CHANNEL_STOP`, so a channel that started and stopped 0.3s later held the rotation for
+  the remaining 6.5s — with the stop event present in the same log and simply not acted on.
+- **It never required the channel to start.** The guard was stamped on the *send*. A send that
+  produced no channel held the rotation for the full 7.8s, three times over in ten seconds.
+- **It stopped holding after one second.** The cooldown only starts when the spell actually casts,
+  so between 1.0s and 1.5s the guard fell away and the next press queued over a Dark Harvest that
+  had not gone out yet.
+- **Target identity flickered.** `TargetId` returns SuperWoW's GUID when it can and the unit name
+  when it cannot, and which comes back varies press to press. Comparing only the id dropped the
+  guard at random on an unchanged target, and the rotation re-sent Dark Harvest — three sends
+  inside 2.4s. Either form matching is now enough.
+
+A send that produces no channel also backs off for three seconds instead of retrying at once.
+
+### 🐛 Fixed — Warlock: Shadow Trance procs were sat on
+
+A proc landing during a channel was ignored for up to 15 seconds. The latch that stops a lingering
+icon triggering a second bolt was maintained *inside* the Nightfall block, which sits below the
+channel guards — and those return, so for the whole length of a channel the latch was neither
+cleared nor re-examined. It is now maintained ahead of every guard.
+
+A fresh proc is told apart from a lingering icon by the buff's own timer: a leftover only counts
+down, a new proc restarts it. The timer is read by **texture** rather than by name, because the name
+path needs SuperWoW's `SpellInfo`, which does not answer on every client.
+
+### 🐛 Fixed — Warlock: the wand and the mana floor deadlocked
+
+Below the mana floor the valve asked for the wand on every press and the channel-filler rule refused
+it, because *Drain Life* is cheap enough to stay affordable well past the floor. Neither wanding nor
+casting: 17 consecutive presses over 4.2s doing nothing at 12% mana with the floor at 15. The mana
+floor now wins.
+
+Two more wand corrections: with *Dark Harvest* as the filler the spell protected is the **gap
+filler**, not Dark Harvest itself — testing the main filler refused the wand inside the gap it is
+configured to fill. And the rule is checked before the next-spell preview answers, so the window no
+longer announces a wand the press then refuses.
+
+### 🐛 Fixed — all classes: an interrupted cast counted as a cast
+
+`Interrupted` was in none of the refusal lists, so it was logged and otherwise ignored — the
+spell's throttle stayed stamped on a cast that never happened and the effect was skipped for its
+whole interval. Measured on a warlock at low mana, where the wand valve had the wand auto-repeating
+and the shot in flight cut off the *Corruption* cast behind it.
+
+Read by the **Druid**, **Hunter** and **Warlock** modules, which all treat a refused cast the same
+way: retry on the next press rather than after the interval. The change can only cause something to
+be re-sent sooner, never skipped. Tested on the warlock only.
+
+### 🔧 Also
+
+- A channel start is attributed to the last **channel** sent rather than the last spell. The queue
+  routinely holds a channel behind an instant, and 34 of 598 guard presses in one session recorded a
+  Dark Harvest channel as "Corruption" — which has no channel length on file, so the guard fell
+  back to its 16s ceiling instead of the real 7.8s.
+- Cast dispatch chooses between a direct cast and the queue by whether anything is in flight.
+  Measured in the mage module out of an idle state: 0.37s through the queue against 0.05s direct.
+- *Shadow Bolt* is entered at its client cast time (3.0s at rank 7, less 0.1s per rank of *Bane*),
+  and the Nightfall bolt is accounted as the instant it is.
+
+---
+
 ## v1.2.22 — wand only when the channel cannot be paid for
 
 ### 🐛 Fixed — Warlock: wand shots at full mana with a channel filler
