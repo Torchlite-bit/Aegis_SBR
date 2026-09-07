@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.23",
+    ver = "1.2.24",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1134,6 +1134,14 @@ local MOVE_SAMPLE = 0.2
 -- Yards of drift tolerated. Position readings jitter slightly while stationary,
 -- and a knockback or a fear is genuinely movement, so this is small.
 local MOVE_EPS = 0.15
+-- How long after a sample the early stop below may be trusted.
+--
+-- Zero displacement is only evidence of standing still once enough time has
+-- passed for movement to have shown up. At walking pace, roughly 7 yards a
+-- second, 0.08s covers half a yard - well clear of MOVE_EPS - so a moving
+-- character cannot read as stopped, while a stopped one is noticed at the next
+-- press instead of at the next sample.
+local MOVE_STOP_MIN = 0.08
 
 function Aegis_SBR:Moving()
     if not UnitPosition then return false end
@@ -1145,9 +1153,30 @@ function Aegis_SBR:Moving()
         self.moveSample = { x = x, y = y, t = now, moving = false }
         return false
     end
-    -- Between samples, the last answer stands rather than being recomputed off
-    -- a stale reference point.
-    if (now - s.t) < MOVE_SAMPLE then return s.moving end
+    -- Between samples the last answer normally stands, rather than being
+    -- recomputed off a stale reference point.
+    --
+    -- With one exception, and it is asymmetric on purpose: saying "moving" needs
+    -- displacement over time, but saying "stopped" does not. A position that has
+    -- not changed since the sample point is not moving NOW, whatever it was
+    -- doing when the sample was taken.
+    --
+    -- Without this, stopping was noticed up to a full sample interval late, and
+    -- the press in between was thrown away: the warlock refuses to start a
+    -- channel while moving, and with a channel filler there is nothing else for
+    -- that press to do. Reported from play as needing to press twice to start
+    -- Drain Life or Drain Soul after coming to a stop, and visible in a captured
+    -- log as "moving, no Drain Life" on the press before every one of them.
+    --
+    -- Only ever turns a "moving" into a "standing"; it can never claim movement
+    -- early, and real movement produces displacement it cannot miss.
+    if (now - s.t) < MOVE_SAMPLE then
+        if s.moving and (now - s.t) >= MOVE_STOP_MIN then
+            local ddx, ddy = x - s.x, y - s.y
+            if (ddx * ddx + ddy * ddy) <= (MOVE_EPS * MOVE_EPS) then return false end
+        end
+        return s.moving
+    end
     local dx, dy = x - s.x, y - s.y
     s.x, s.y, s.t = x, y, now
     s.moving = (dx * dx + dy * dy) > (MOVE_EPS * MOVE_EPS)
@@ -1490,7 +1519,18 @@ function Aegis_SBR:DebuffMine(spell, targetId)
     if self.TargetDebuffMine then
         local mine = self:TargetDebuffMine(spell)
         if mine == true then return true end
-        if mine == false then return false end
+        -- mine == false is somebody ELSE's copy, and that says nothing about
+        -- whether ours is also on the target. It is not an answer to the
+        -- question, so it does not end it - the ledger below still gets asked.
+        --
+        -- Treating it as a final "no" is what made a druid grouped with another
+        -- druid apply Moonfire and Insect Swarm on every press and never reach a
+        -- nuke: the other druid's copy was the one reported, ours was never
+        -- consulted, and the rotation recovered only when theirs expired.
+        --
+        -- The hunter module already refuses to read it that way ("mine == false
+        -- is another hunter's sting and says nothing about ours") and falls back
+        -- to its own record. That rule belongs here, where every module gets it.
     end
     local rec = targetId and self.debuffLedger[targetId .. "|" .. spell]
     if not rec then return false end
@@ -2018,9 +2058,24 @@ function Aegis_SBR:EnsureAutoAttack()
         -- the bug being removed. Put Attack on a bar (any slot the stance/form
         -- bar does not overwrite) to get the guarded path above, which can read
         -- the state and restart the swing whenever it actually drops.
+        -- Identity has to be right here or the toggle above becomes the bug it
+        -- was written to avoid. TargetId returns SuperWoW's GUID when it can and
+        -- falls back to the unit NAME when it cannot, and which of the two comes
+        -- back varies press to press - measured on a warlock, where the same
+        -- flicker dropped a channel guard at random on an unchanged target.
+        --
+        -- Compared on the id alone, a flicker reads as a new target, fires
+        -- AttackTarget again, and TURNS THE SWING OFF. Reported from play as the
+        -- rotation stopping auto-attack for no reason.
+        --
+        -- Either form matching means the target has not changed. Both are kept,
+        -- so a real switch - a different GUID AND a different name - still opens
+        -- the swing on the new one.
         local id = self:TargetId()
-        if id ~= self.attackToggledFor then
+        local nm = UnitName("target")
+        if id ~= self.attackToggledFor and (nm == nil or nm ~= self.attackToggledName) then
             self.attackToggledFor = id
+            self.attackToggledName = nm
             self:NoteSpellCast("Attack")
             AttackTarget()
         end

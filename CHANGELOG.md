@@ -4,6 +4,83 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.24 — somebody else's copy is not yours
+
+### 🐛 Fixed — all classes: another player's debuff answered for yours
+
+Grouped with a second druid, the rotation applied *Moonfire* and *Insect Swarm* on every press
+and never reached a nuke. It recovered the moment the other druid's copy expired.
+
+These auras are per caster, so both copies sit on the target at once, and two separate faults
+each turned that into a permanent "not mine":
+
+- **The aura snapshot kept the first copy of a name and discarded the rest.** If the other
+  player's came first, ours was never in the list at all.
+- **`DebuffMine` treated "somebody else's" as a final no.** It is not an answer to the question
+  — another player's copy says nothing about whether yours is also up — so it now falls through
+  to your own cast record instead of ending there.
+
+The hunter module already refused to read it that way, in as many words: *another hunter's sting
+says nothing about ours*. That rule now lives in the core function where every module gets it,
+which is where it should have gone the first time.
+
+Read by the **Druid**, **Hunter**, **Shaman** and **Warlock** modules. Requires ClassicAPI;
+without it the aura list does not exist and the modules fall back to their own timestamps as
+before.
+
+### 🐛 Fixed — all melee: auto-attack stopped for no reason
+
+With *Attack* not on any action bar, the swing is opened with `AttackTarget()`, which is a
+**toggle** on 1.12 — and with no bar slot there is nothing to read the current state from. It is
+therefore fired at most once per target.
+
+Which target, though, was decided by an id that flickers: `TargetId` returns SuperWoW's GUID when
+it can and the unit name when it cannot, and which of the two comes back varies press to press.
+A flicker read as a new target, fired `AttackTarget()` again, and **turned the swing off**.
+
+Both forms are kept now, and either one matching means the target has not changed. A real switch
+— a different GUID and a different name — still opens the swing on the new one.
+
+### 🐛 Fixed — Warlock: still a double tap to start a channel
+
+v1.2.23 stopped the rotation sending a second spell before the client had answered the first. An
+instant announces nothing, so that guard waited out a fixed window instead — the same length as
+the global cooldown, but measured from the **send** rather than from the cast, so it outlived the
+cooldown by the round trip and the first press after the cooldown ended fell inside it.
+
+The cooldown is the missing evidence: a spell that was ready when it was sent and is not ready now
+has been taken by the client. That reading is only sound because it was ready at send time, so
+readiness is recorded with the send.
+
+### 🐛 Fixed — Warlock: a press lost on coming to a stop
+
+Position is sampled every 0.2s and the last answer stands in between, so stopping was noticed up
+to a full sample late. With a channel filler that press has nothing else to do — channels are not
+started while moving and the wand is held back while the channel is affordable — so it was thrown
+away. Reported as needing to press twice to start *Drain Life* or *Drain Soul* after stopping, and
+visible in a captured log as `moving, no Drain Life` on the press before every one of them.
+
+Saying "moving" still needs displacement over time. Saying "stopped" does not: a position that has
+not changed since the sample point is not moving now. Only ever turns a moving into a standing,
+never the other way, and not within 0.08s of a sample — at walking pace that covers half a yard,
+well clear of the jitter tolerance.
+
+Also read by the **Paladin**, which refuses to drop *Consecration* on ground it is about to leave.
+
+### 🆕 Warrior: Cancel Slam for Execute
+
+A Slam still casting when *Execute* comes up is interrupted, so the press lands the Execute instead
+of waiting the cast out. On by default, with its own toggle under **Reactive & Execute**.
+
+Gated on Execute actually being able to go out. Slam starts the global cooldown when the cast
+starts and the cast is longer than the cooldown — 2.5s against 1.5s, or 2.0s with both ranks of
+*Improved Slam* — so cancelling any earlier throws the Slam away while Execute still cannot fire.
+Confined to the tail of the cast, which is where the whole gain is.
+
+Untested in play: nobody here has a warrior.
+
+---
+
 ## v1.2.23 — one spell in flight
 
 ### 🐛 Fixed — Warlock: the rotation was throwing away its own spells

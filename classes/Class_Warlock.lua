@@ -702,6 +702,10 @@ function M:Queue(name, reason, busy)
     M.sentSpell = name
     M.sentAt = GetTime()
     M.sentSeen = false
+    -- Whether the spell was OFF cooldown at the moment it was sent. The guard
+    -- below reads a ready spell going on cooldown as proof the client took it,
+    -- and that reading is only valid if it was ready to begin with.
+    M.sentWasReady = Aegis_SBR:IsReady(name)
     -- Nampower's queue exists to hold a press until what is ALREADY IN FLIGHT
     -- finishes. With nothing in flight it has nothing to hold against and the
     -- press is not passed through. Measured in the mage module out of the same
@@ -1607,7 +1611,26 @@ function M:Rotate(cfg)
     -- Once the client HAS taken the spell, re-deciding is fine again - a press
     -- during a cast queues the next one behind it, which is what the queue is
     -- for. Only the gap between asking and being answered is closed here.
-    if M.sentAt and not M.sentSeen and (GetTime() - M.sentAt) < SEND_GRACE then
+    -- An instant has no start event of its own, so the first version of this
+    -- guard waited out the whole window after one. That window is the same
+    -- length as the global cooldown, measured from the SEND rather than from the
+    -- cast, so it outlived the cooldown by however long the send took to be
+    -- acted on - and the first press after the cooldown ended landed inside it
+    -- and did nothing. Reported as needing to press twice to start a channel
+    -- once the global cooldown was over.
+    --
+    -- The cooldown itself is the missing evidence: a spell that was ready when
+    -- we sent it and is not ready now has been taken by the client. That reading
+    -- is only sound BECAUSE it was ready at send time - a spell sent into a
+    -- cooldown that was already running reads "not ready" immediately and would
+    -- clear the guard before anything had happened.
+    local answered = M.sentSeen
+    if not answered and M.sentWasReady and M.sentSpell
+        and not Aegis_SBR:IsReady(M.sentSpell) then
+        answered = true
+        self:Later(function() M.sentSeen = true end)
+    end
+    if M.sentAt and not answered and (GetTime() - M.sentAt) < SEND_GRACE then
         if self:Tracing() then
             self:Trace(string.format("STALL %s sent, waiting for the client",
                 tostring(M.sentSpell)))

@@ -123,7 +123,7 @@ function Aegis_SBR:SnapshotTargetAuras()
         if list then
             for i = 1, table.getn(list) do
                 local a = list[i]
-                if a and a.name and a.name ~= "" and not byName[a.name] then
+                if a and a.name and a.name ~= "" then
                     local remain
                     -- expirationTime is 0 when the cast was never observed
                     -- (aura predates login, cache evicted). That is UNKNOWN.
@@ -135,13 +135,29 @@ function Aegis_SBR:SnapshotTargetAuras()
                     if a.sourceUnit == "player" then own = true
                     elseif a.sourceGUID and mine then own = (a.sourceGUID == mine)
                     elseif a.sourceUnit then own = false end
-                    byName[a.name] = {
-                        remain  = remain,
-                        mine    = own,
-                        stacks  = a.applications,
-                        spellId = a.spellId,
-                        dur     = a.duration,
-                    }
+                    -- One entry per NAME, and which of several copies is kept
+                    -- decides every "is this mine" answer built on it.
+                    --
+                    -- First one wins was wrong. These auras are per caster here,
+                    -- so two druids on one mob put two Moonfires in this list -
+                    -- and if the other druid's came first, ours was never seen.
+                    -- DebuffUp then read "not mine" on every press and recast
+                    -- forever, which is the reported rotation that applies its
+                    -- dots and never reaches a nuke, recovering the moment the
+                    -- other player's copy expires.
+                    --
+                    -- Ours outranks anybody else's; between two that are not
+                    -- ours the first still wins.
+                    local prev = byName[a.name]
+                    if (not prev) or (own == true and prev.mine ~= true) then
+                        byName[a.name] = {
+                            remain  = remain,
+                            mine    = own,
+                            stacks  = a.applications,
+                            spellId = a.spellId,
+                            dur     = a.duration,
+                        }
+                    end
                 end
             end
         end

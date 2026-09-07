@@ -24,6 +24,7 @@ local SPELL_OF = {
     useMasterStrike = "Master Strike",
     useConcussionBlow = "Concussion Blow",
     stanceDance = nil, aoeMode = nil, popCDs = nil, autoCDElite = nil,
+    slamCancelForExecute = nil,
 }
 
 -- ============================================================
@@ -57,6 +58,7 @@ function M:BuildBody(ui, parent)
     L:Header("Reactive & Execute")
     row("useOverpower", "Overpower")
     row("useExecute", "Execute")
+    row("slamCancelForExecute", "Cancel Slam for Execute")
     row("useRevenge", "Revenge")
     row("stanceDance", "Stance dancing")
     self.stanceDD = L:Dropdown("homeStance", "Home stance", 150, set("homeStance"))
@@ -109,6 +111,9 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.cb.useRend.cb,         "Rend bleed",    "Keeps Rend up on the target (Battle or Defensive stance). A leveling tool - off by default, since it is rarely used at endgame.", "Skipped during Execute so rage goes to Execute instead.")
     ui:Tip(self.cb.useOverpower.cb,    "Overpower",     "Battle stance only. Fires in the short window after the target dodges you. Enable Stance dancing to auto-swap to Battle.")
     ui:Tip(self.cb.useExecute.cb,      "Execute",       "Top single-target priority below 20% target HP. Suppresses the rage dump so rage feeds Execute.")
+    ui:Tip(self.cb.slamCancelForExecute.cb, "Cancel Slam for Execute",
+        "Interrupts a Slam that is still casting when Execute comes up, so the press lands the Execute instead of waiting the cast out.",
+        "Only fires once Execute could actually go out. Slam starts the global cooldown when the cast starts and the cast is longer than the cooldown, so cancelling any earlier would throw the Slam away without gaining the Execute.")
     ui:Tip(self.cb.useRevenge.cb,      "Revenge",       "Defensive stance only. Fires after you block, dodge, or parry.")
     ui:Tip(self.cb.stanceDance.cb,     "Stance dancing (experimental)", "Auto-swaps to Battle for Overpower (and to Defensive for Revenge when home is Defensive), then drifts back to your home stance.", "Costs a little rage per swap; tune in game.")
     ui:Tip(self.stanceDD,              "Home stance",   "The stance the rotation returns to when dancing. Berserker for most DPS, Defensive for tanking.")
