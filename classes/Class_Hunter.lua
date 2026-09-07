@@ -30,7 +30,7 @@ local M = Aegis_SBR:NewClassModule("HUNTER")
 M.uiTitle = "Hunter"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 878
+M.uiHeight = 938
 M.meleeAutoAttack = false   -- managed here: Auto Shot (ranged) or Attack (melee)
 M.autoAcquireTarget = false -- a ranged class should not auto-pull random mobs; pick targets
 
@@ -76,6 +76,15 @@ local ARCANE_MANA_FLOOR = 50
 -- was. A name nobody has confirmed does not belong in a list that is searched by
 -- "first one known".
 M.MANA_ASPECTS = { "Aspect of the Viper" }
+
+-- Combat aspects the user can pick per stance (config dropdowns). Wolf is the
+-- classic melee aspect and no longer blocks ranged on Turtle; Viper doubles as
+-- the mana aspect, so picking it here simply means "keep Viper up in this
+-- stance". Order here is only the dropdown display order.
+M.COMBAT_ASPECTS = {
+    "Aspect of the Hawk", "Aspect of the Wolf", "Aspect of the Viper",
+    "Aspect of the Beast", "Aspect of the Monkey", "Aspect of the Wild",
+}
 
 -- Stings are mutually exclusive (one debuff slot). Durations are only the
 -- reapply interval on clients without SuperWoW name resolution.
@@ -146,7 +155,7 @@ M.templates = {
         useAimedShot = false, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = false,
         useRaptorStrike = true, useMongooseBite = true, useWingClip = false,
-        useAspect = true, rangedAspect = "Aspect of the Hawk",
+        useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = false, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 50,
         useKillCommand = false, useBaitedShot = false,
@@ -159,7 +168,7 @@ M.templates = {
         useAimedShot = false, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = false,
         useRaptorStrike = true, useMongooseBite = true, useWingClip = false,
-        useAspect = true, rangedAspect = "Aspect of the Hawk",
+        useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = true, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 60,
         useKillCommand = true, useBaitedShot = true,
@@ -172,7 +181,7 @@ M.templates = {
         useAimedShot = true, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = false,
         useRaptorStrike = false, useMongooseBite = false, useWingClip = false,
-        useAspect = true, rangedAspect = "Aspect of the Hawk",
+        useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = true, manaAspectPct = 25,
         petAttack = true, useMendPet = true, mendPetHp = 40,
         useKillCommand = false, useBaitedShot = false,
@@ -185,7 +194,7 @@ M.templates = {
         useAimedShot = false, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = true,
         useRaptorStrike = true, useMongooseBite = true, useWingClip = false, useLacerate = true, useCarve = true,
-        useAspect = true, rangedAspect = "Aspect of the Hawk",
+        useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = true, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 50,
         useKillCommand = false, useBaitedShot = false,
@@ -198,7 +207,7 @@ M.templates = {
         useAimedShot = false, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = false,
         useRaptorStrike = true, useMongooseBite = true, useWingClip = false, useLacerate = true, useCarve = true,
-        useAspect = true, rangedAspect = "Aspect of the Hawk",
+        useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = false, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 60,
         useKillCommand = true, useBaitedShot = true,
@@ -221,7 +230,7 @@ function M:NormalizeProfile(c)
         useAimedShot = false, aimedOnlyOnProc = true,
         aoeMode = false, useVolley = false, useImmolationTrap = false,
         useRaptorStrike = true, useMongooseBite = true, useWingClip = false,
-        useAspect = true, rangedAspect = "Aspect of the Hawk",
+        useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = false, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 50,
         petTaunt = false, useLacerate = false, useCarve = false, useAimedOpener = false,
@@ -234,6 +243,7 @@ function M:NormalizeProfile(c)
     if c.mode ~= "ranged" and c.mode ~= "melee" and c.mode ~= "auto" then c.mode = "ranged" end
     if type(c.sting) ~= "string" then c.sting = "Serpent Sting" end
     if type(c.rangedAspect) ~= "string" then c.rangedAspect = "Aspect of the Hawk" end
+    if type(c.meleeAspect) ~= "string" then c.meleeAspect = "Aspect of the Wolf" end
     -- Two-threshold mana-aspect swap: drop to the mana aspect below manaAspectPct,
     -- swap back to the combat aspect at manaAspectBackPct. Older profiles used a
     -- fixed +MANA_ASPECT_HYST hysteresis, so default the back mark to that to
@@ -259,6 +269,16 @@ function M:AvailableStingsOf()
     local out = {}
     for i = 1, table.getn(self.STINGS) do
         if self:KnowsSpell(self.STINGS[i]) then table.insert(out, self.STINGS[i]) end
+    end
+    return out
+end
+
+-- The combat aspects this hunter can actually cast (config dropdowns), so a
+-- level 10 hunter only sees Hawk until the rest are trained.
+function M:AvailableAspectsOf()
+    local out = {}
+    for i = 1, table.getn(self.COMBAT_ASPECTS) do
+        if self:KnowsSpell(self.COMBAT_ASPECTS[i]) then table.insert(out, self.COMBAT_ASPECTS[i]) end
     end
     return out
 end
@@ -796,6 +816,9 @@ end
 -- (manaAspectPct), swap back to the combat aspect at the high mark
 -- (manaAspectBackPct). Both are user-set sliders; the back mark is guarded to
 -- always sit above the low mark so the two edges never collapse into a flap.
+-- Once the mana aspect is taken it is LATCHED: the combat aspect stays blocked
+-- until mana recovers to the high mark, so a mid-fight Viper->Hawk/Wolf swap
+-- below the mark can never drain the player back into Viper.
 function M:UpdateAspectState(cfg)
     if cfg.useManaAspect and self:KnownManaAspect() then
         local mp = self:ManaPct()
@@ -812,7 +835,8 @@ end
 -- Keep the right aspect up. Returns true if an aspect was cast this press.
 -- The mana aspect (Viper) swap takes priority in EITHER stance when low, so a
 -- mana-heavy melee hunter recovers the same way a ranged one does; otherwise the
--- combat aspect for the current state is maintained (Wolf melee / Hawk ranged).
+-- combat aspect picked for the current stance is maintained (user-selectable
+-- dropdowns; defaults Wolf melee / Hawk ranged).
 -- Aspect upkeep. Costs mana, sits one step above the auto-attack floor, and used
 -- to spend the press whether or not it could be paid for - which is the second
 -- half of the low-mana starvation: with Hunter's Mark falling through, the
@@ -825,7 +849,7 @@ function M:EnsureAspect(cfg, melee)
         if ma and not self:HasBuff(ma) then return self:Pick(ma, "mana aspect") end
         return false
     end
-    local want = melee and "Aspect of the Wolf" or (cfg.rangedAspect or "Aspect of the Hawk")
+    local want = melee and (cfg.meleeAspect or "Aspect of the Wolf") or (cfg.rangedAspect or "Aspect of the Hawk")
     if self:KnowsSpell(want) and not self:HasBuff(want) then return self:Pick(want, "aspect upkeep") end
     return false
 end
