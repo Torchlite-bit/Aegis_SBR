@@ -237,6 +237,7 @@ function M:NormalizeProfile(c)
         useMortalStrike = false, useBloodthirst = false, useShieldSlam = false,
         useWhirlwind = false, useSlam = false,
         useOverpower = false, useRevenge = false, useExecute = true,
+        slamCancelForExecute = true,
         stanceDance = false, homeStance = "berserker",
         useSunder = false, sunderStacks = 5, useThunderClap = false,
         aoeMode = false, useSweeping = false, useCleave = true,
@@ -396,6 +397,40 @@ function M:SlamCastTime()
     local t = SLAM_CAST_BASE - SLAM_CAST_PER_RANK * self:TalentRank(TALENT_IMP_SLAM)
     if t < 0.5 then t = 0.5 end
     return t
+end
+
+-- Is a Slam cast still running?
+--
+-- Slam is the only ability a warrior casts rather than swings, so one stamp
+-- covers the whole class. The stamp is set when Slam is sent and cleared by the
+-- client the moment the cast ends, one way or another; the time is the fallback
+-- for a cast whose end is never announced.
+function M:SlamCasting()
+    return (self.slamCastUntil and GetTime() < self.slamCastUntil) and true or false
+end
+
+-- Cancel a running Slam so Execute can go out.
+--
+-- Reported: with a two-hander, Execute comes up while Slam is mid-cast and the
+-- press is lost waiting for a cast that is now the wrong ability.
+--
+-- The IsReady test is what makes this worth doing at all. Slam starts the global
+-- cooldown when the CAST starts, and the cast is longer than the cooldown - 2.5s
+-- against 1.5s, or 2.0s with both ranks of Improved Slam. Cancel early and the
+-- Slam is thrown away while Execute still cannot fire, which is a strictly worse
+-- result than letting the Slam land. Cancelling only once Execute would actually
+-- go out confines this to the tail of the cast, where the whole gain is.
+--
+-- Through Later, so a preview never cancels a real cast.
+function M:CancelSlamForExecute()
+    if not self:SlamCasting() then return false end
+    if not Aegis_SBR:IsReady("Execute") then return false end
+    self:Later(function()
+        if self:Tracing() then self:Trace("cancelling Slam, Execute is up") end
+        SpellStopCasting()
+        self.slamCastUntil = nil
+    end)
+    return true
 end
 
 -- The strike Slam should be waiting for, or nil.
@@ -706,7 +741,12 @@ function M:Rotate(cfg)
     end
 
     -- 1b. Execute below 20% (highest single-target priority per design).
+    --
+    -- A Slam still casting is cancelled first, so the press that would have been
+    -- spent waiting out the cast lands the Execute instead. Off by setting
+    -- slamCancelForExecute to false.
     if inExecute then
+        if cfg.slamCancelForExecute then self:CancelSlamForExecute() end
         if self:Try("Execute", "target below 20%") then return end
     end
 
@@ -858,6 +898,10 @@ function M:Rotate(cfg)
         elseif not self:SlamFitsBeforeSwing() then
             if self:Tracing() then self:Trace("slam held: would clip the next swing") end
         elseif self:Try("Slam", "filler") then
+            -- For CancelSlamForExecute above. SlamCastTime folds in Improved Slam.
+            self:Later(function()
+                self.slamCastUntil = GetTime() + self:SlamCastTime()
+            end)
             return
         end
     end
@@ -985,6 +1029,17 @@ local SELF_HIT_PATS = {
     ReactPattern(COMBATHITSCHOOLOTHERSELF,     "hits you for"),
     ReactPattern(COMBATHITCRITSCHOOLOTHERSELF, "crits you for"),
 }
+
+-- Slam is the only cast a warrior has, so these three events mean exactly one
+-- thing here: that cast is over. Kept on its own frame because the react frame
+-- below returns immediately on an event with no arg1.
+local castFrame = CreateFrame("Frame")
+castFrame:RegisterEvent("SPELLCAST_STOP")
+castFrame:RegisterEvent("SPELLCAST_FAILED")
+castFrame:RegisterEvent("SPELLCAST_INTERRUPTED")
+castFrame:SetScript("OnEvent", function()
+    M.slamCastUntil = nil
+end)
 
 local reactFrame = CreateFrame("Frame")
 reactFrame:RegisterEvent("CHAT_MSG_COMBAT_SELF_MISSES")              -- our attacks that were avoided
