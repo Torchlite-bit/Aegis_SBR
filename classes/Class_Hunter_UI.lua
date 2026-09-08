@@ -49,6 +49,8 @@ function M:BuildBody(ui, parent)
     L:Header("Aspect")
     self.aspectRow = L:Row{ key = "useAspect", label = "Combat aspect",
         sub = "automatic Hawk / Wolf - switch off to choose your own", onToggle = set("useAspect") }
+    self.rangedAspDD = L:Dropdown("rangedAspect", "Ranged aspect", 180, set("rangedAspect"))
+    self.meleeAspDD = L:Dropdown("meleeAspect", "Melee aspect", 180, set("meleeAspect"))
     self.manaAspRow = L:Row{ key = "useManaAspect", label = "Viper below",
         spell = "Aspect of the Viper", onToggle = set("useManaAspect"),
         slider = { key = "manaAspectPct", min = 0, max = 90, step = 5, suffix = "%", onChange = set("manaAspectPct") } }
@@ -98,7 +100,9 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.wingRow.cb, "Wing Clip", "Optional melee slow / kite tool.")
     ui:Tip(self.lacerateRow.cb, "Lacerate", "Melee bleed, kept rolling on the target in melee mode.")
     ui:Tip(self.carveRow.cb, "Carve", "Melee AoE strike. Leads the melee priority when AoE mode is on (/sbr aoe).")
-    ui:Tip(self.aspectRow.cb, "Combat aspect", "Keeps Aspect of the Hawk up in ranged mode, Aspect of the Wolf in melee mode.", "Switch it OFF and the rotation never touches your aspect at all - the mana swap below included - so you can pick one yourself and it stays. That is the way to run an aspect the rotation has no use for, such as Aspect of the Beast.")
+    ui:Tip(self.aspectRow.cb, "Combat aspect", "Keeps the aspect you pick for each stance up (Hawk ranged / Wolf melee by default).", "Switch it OFF and the rotation never touches your aspect at all - the mana swap below included - so you can pick one yourself and it stays. That is the way to run an aspect the rotation has no use for, such as Aspect of the Beast.")
+    ui:Tip(self.rangedAspDD, "Ranged aspect", "The combat aspect kept up in ranged mode. Default Hawk (+ranged AP); pick any learned aspect, e.g. Viper to keep mana regen as your main aspect.")
+    ui:Tip(self.meleeAspDD, "Melee aspect", "The combat aspect kept up in melee mode. Default Wolf (+melee AP); pick any learned aspect, e.g. Viper to keep mana regen as your main aspect.")
     ui:Tip(self.manaAspRow.cb, "Mana aspect swap", "Swap to Aspect of the Viper when mana drops below the first value, then back to your combat aspect (Hawk ranged / Wolf melee) once mana recovers to the second value.", "Needs Aspect of the Viper, which is learned at level 56. Before that there is nothing to swap to and this does nothing - no other aspect returns mana.")
     ui:Tip(self.manaAspRow.slider, "Viper below", "Drop to Aspect of the Viper when your mana falls under this percent.")
     ui:Tip(self.manaBackRow.slider, "Back to combat at", "Swap back to Aspect of the Hawk/Wolf once mana recovers to this percent. Set it above the 'Viper below' value.")
@@ -146,6 +150,23 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.lacerateRow, buf.useLacerate)
     ui:BindCheck(self.carveRow, buf.useCarve)
     ui:BindCheck(self.aspectRow, buf.useAspect)
+
+    -- melee/ranged aspect pickers: the learned combat aspects only, so a low-level
+    -- hunter sees just the ones they can actually cast; a saved pick that is not yet
+    -- trained shows red "(not learned)" but keeps its value so it applies when trained.
+    local aopts = {}
+    local aavail = self:AvailableAspectsOf()
+    for i = 1, table.getn(aavail) do aopts[i] = { label = aavail[i], value = aavail[i] } end
+    local function aspectDD(dd, v, dflt)
+        local cur = v or dflt
+        local shown, c
+        if self:KnowsSpell(cur) then shown, c = cur, ui.COL.white
+        else shown, c = cur .. " (not learned)", ui.COL.red end
+        ui:SetDropdown(dd, aopts, cur, shown, c)
+    end
+    aspectDD(self.rangedAspDD, buf.rangedAspect, "Aspect of the Hawk")
+    aspectDD(self.meleeAspDD, buf.meleeAspect, "Aspect of the Wolf")
+
     ui:BindCheck(self.manaAspRow, buf.useManaAspect)
     ui:BindCheck(self.petRow, buf.petAttack)
     if Aegis_SBR_Pet then self.petWinRow.cb:SetChecked(Aegis_SBR_Pet:Enabled()) end
