@@ -27,6 +27,10 @@ function M:BuildBody(ui, parent)
     L:Header("Filler and pet")
     self.fillerDD = L:Dropdown("filler", "Filler", 200, set("filler"))
     self.gapDD = L:Dropdown("dhGapFiller", "Between channels", 200, set("dhGapFiller"))
+    self.dhDotRow = L:Row{ label = "Top up DoTs before Dark Harvest",
+        slider = { key = "dhDot", min = 0, max = 20, step = 1, suffix = "s", onChange = set("dhDotRemain") } }
+    self.chanDotRow = L:Row{ label = "Top up DoTs before other channels",
+        slider = { key = "chDot", min = 0, max = 20, step = 1, suffix = "s", onChange = set("chanDotRemain") } }
     self.petRow = L:Row{ key = "petAttack", label = "Send pet to attack", onToggle = set("petAttack") }
     self.petMeleeRow = L:Row{ key = "petMeleeOnly", label = "Pet melee only", onToggle = set("petMeleeOnly") }
     self.nightfallRow = L:Row{ key = "nightfall", label = "Shadow Bolt on Shadow Trance", spell = "Shadow Bolt", onToggle = set("nightfall") }
@@ -74,6 +78,12 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.tapRow.cb, "Life Tap", "Convert health to mana when mana is low and health is high.")
     ui:Tip(self.tapRow.slider, "Tap below mana", "Life Tap only when mana is under this value.")
     ui:Tip(self.tapHpRow.slider, "Keep HP above", "Life Tap only while health stays over this value.")
+    ui:Tip(self.dhDotRow.slider, "Top up DoTs before Dark Harvest",
+        "A DoT with less time left than this is re-applied before Dark Harvest starts.",
+        "Dark Harvest speeds up the DoTs already on the target, so one that drops out partway through loses that boost for the rest of the channel - which is why this margin is the larger of the two. 0 starts the channel whatever the DoTs are doing.")
+    ui:Tip(self.chanDotRow.slider, "Top up DoTs before other channels",
+        "The same, for Drain Life, Drain Soul and anything else used as a filler or between Dark Harvest channels.",
+        "These channels do nothing for your DoTs - the only question is whether they keep running alongside, so a shorter margin is usually enough. The rotation holds the whole press for a channel, so anything due inside it has to go out first. 0 starts the channel whatever the DoTs are doing.")
     ui:Tip(self.wandFloorRow.slider, "Wand below mana", "Below this mana percent, switch to the wand instead of stalling on a DoT you cannot afford right now (Life Tap is tried first if it is safe to use).")
     ui:Tip(self.sburnRow.cb, "Shadowburn", "Instant execute under the threshold below. Costs a Soul Shard and has a cooldown.", "Burst finish; if you want the shard instead, use Drain Soul.")
     ui:Tip(self.dsoulRow.cb, "Drain Soul", "Channel in the target's last seconds to bank a Soul Shard and regen mana.", "If both this and Shadowburn are on, Shadowburn fires first when ready.")
@@ -158,6 +168,10 @@ function M:RefreshBody(ui, buf)
     ui:SliderEnable(self.tapHpRow.slider, tapOn and true or false)
 
     -- Always active: a safety net independent of the Life Tap toggle above.
+    self.dhDotRow.slider:SetValue(buf.dhDotRemain or 0); self.dhDotRow.slider.valText:SetText((buf.dhDotRemain or 0) .. "s")
+    ui:SliderEnable(self.dhDotRow.slider, true)
+    self.chanDotRow.slider:SetValue(buf.chanDotRemain or 0); self.chanDotRow.slider.valText:SetText((buf.chanDotRemain or 0) .. "s")
+    ui:SliderEnable(self.chanDotRow.slider, true)
     self.wandFloorRow.slider:SetValue(buf.wandManaFloor or 0); self.wandFloorRow.slider.valText:SetText((buf.wandManaFloor or 0) .. "%")
     ui:SliderEnable(self.wandFloorRow.slider, true)
 

@@ -993,6 +993,63 @@ function M:TargetIsUndeadOrDemon()
     return self.creatureTypeUD
 end
 
+-- Exorcism reads the creature type, and the creature type can be wrong.
+--
+-- Reported: the quest that turns Ras Frostwhisper human leaves the Undead tag in
+-- place. The client then refuses every Exorcism while the rotation, reading the
+-- tag, keeps offering it - and the whole fight is spent on a spell that cannot
+-- go out.
+--
+-- So the tag is where this starts, not where it ends. One refusal is enough,
+-- because WHICH refusal is known: the core sorts them into out of range, no line
+-- of sight, not enough mana, facing, moving, cooldown - and a wrong target type
+-- is in none of those lists. Only an unclassified refusal counts here, so range
+-- and line of sight cannot cause a false verdict and no strike count is needed
+-- to guard against them.
+--
+-- Kept for the CURRENT target only. A GUID belongs to one mob for one pull, so
+-- there is nothing to grow and nothing to clear: pick a different target and it
+-- is tried again.
+function M:ExorcismUsable()
+    if not self:TargetIsUndeadOrDemon() then return false end
+    local r = self.exoRec
+    if r and r.id == self:TargetId() and r.blocked then return false end
+    return true
+end
+
+-- Resolve the previous send before anything reads ExorcismUsable this press.
+function M:ExorcismTick()
+    local r = self.exoRec
+    if not r or not r.sent then return end
+    if Aegis_SBR.SpellRefusedAnySince and Aegis_SBR:SpellRefusedAnySince("Exorcism", r.sent) then
+        -- Classified refusals are about the cast, not about the target: out of
+        -- range, no line of sight, not enough mana. Those say nothing about
+        -- whether the mob can be exorcised, so they are not a verdict.
+        local known = Aegis_SBR.SpellRefusedSince
+            and Aegis_SBR:SpellRefusedSince("Exorcism", r.sent)
+        if not known then
+            r.blocked = true
+            if self:Tracing() then
+                self:Trace("exorcism refused for a reason that is not range, sight or cost - dropping it on this target")
+            end
+        end
+        r.sent = nil
+    elseif (GetTime() - r.sent) > 2 then
+        -- It went out. The tag was right after all.
+        r.sent = nil
+    end
+end
+
+function M:NoteExorcismSent()
+    local id = self:TargetId()
+    self:Later(function()
+        if not self.exoRec or self.exoRec.id ~= id then
+            self.exoRec = { id = id }
+        end
+        self.exoRec.sent = GetTime()
+    end)
+end
+
 -- Is something hitting US right now? The mob we are fighting is the one that
 -- matters, and its target answers directly - one API call, no scanning.
 --
@@ -2447,6 +2504,9 @@ function M:Rotate(cfg)
     -- the profile was changed - slash command, tab click, or an imported profile.
     if cfg.spec then cfg.healMode = (cfg.spec == "heal") end
 
+    -- Before anything asks whether Exorcism may be used this press.
+    self:ExorcismTick()
+
     self:UpdateManagement(cfg)
 
     -- Before anything else, in every mode.
@@ -2635,10 +2695,10 @@ function M:Rotate(cfg)
         -- Exorcism next: a single strong nuke against Undead and Demon targets,
         -- on its own cooldown, so it competes with nothing.
         if fillersOK and cfg.healFillerExo and self:KnowsSpell("Exorcism")
-            and self:TargetIsUndeadOrDemon() and self:IsReady("Exorcism")
+            and self:ExorcismUsable() and self:IsReady("Exorcism")
             and self:Affordable("Exorcism")
             and Aegis_SBR:SpellReaches("Exorcism", "target") then
-            if self:Pick("Exorcism", "heal filler") then return end
+            if self:Pick("Exorcism", "heal filler") then self:NoteExorcismSent(); return end
         end
 
         if fillersOK and cfg.healFillerConsec and self:InMeleeRange()
@@ -2703,6 +2763,7 @@ function M:Rotate(cfg)
                 .. " exo=" .. (cfg.spells.exorcism and (
                     (not self:KnowsSpell("Exorcism")) and "unknown"
                     or (not self:TargetIsUndeadOrDemon()) and "wrong type"
+                    or (not self:ExorcismUsable()) and "refused on this target"
                     or self.manaMgmtActive and "MANA MODE"
                     or (not self:IsReady("Exorcism")) and "cd"
                     or (not Aegis_SBR:SpellReaches("Exorcism", "target")) and "range"
@@ -2801,10 +2862,10 @@ function M:Rotate(cfg)
     -- opt-out of its own, unlike Consecration's - if Exorcism seems ready and
     -- simply never fires, the trace line says "exo=MANA MODE" and that is why.
     if not cfg.healMode and cfg.spells.exorcism and not self.manaMgmtActive
-        and self:KnowsSpell("Exorcism") and self:TargetIsUndeadOrDemon()
+        and self:KnowsSpell("Exorcism") and self:ExorcismUsable()
         and self:IsReady("Exorcism") and Aegis_SBR:SpellReaches("Exorcism", "target")
         and self:Affordable("Exorcism") then
-        if self:Pick("Exorcism", "undead or demon") then return end
+        if self:Pick("Exorcism", "undead or demon") then self:NoteExorcismSent(); return end
     end
 
     -- 1. Strike (damage/tank mode only; heal mode has its own strike weaving,

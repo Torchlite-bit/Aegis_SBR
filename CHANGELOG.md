@@ -4,6 +4,63 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.25 — the tag is not the answer
+
+### 🐛 Fixed — Paladin: stuck on Exorcism for a whole fight
+
+*Exorcism* is offered against Undead and Demon targets, read from the creature type. The quest
+that turns Ras Frostwhisper human leaves the Undead tag in place, so the client refused every
+cast while the rotation kept offering it — the entire fight spent on a spell that could not go
+out.
+
+The type is now only the starting point. One refusal that is **not** range, line of sight, cost,
+facing or cooldown and Exorcism is dropped for that target.
+
+No strike counting: the core already sorts refusals into named lists, and a wrong target type is
+in none of them, so a range or sight refusal cannot produce a false verdict. Tracked for the
+current target only — a GUID belongs to one mob for one pull — so a new pull tries once and then
+stays quiet.
+
+### 🐛 Fixed — Warlock: up to 25 dead presses in a row
+
+With *Drain Soul* as the filler, a DoT expiring inside the channel blocked it, and the wand it
+fell back to is refused while an affordable channel filler is set. The press did nothing, and it
+kept doing nothing until a DoT actually came due. Measured in one session: three runs, the longest
+25 consecutive presses over 4.3 seconds at 85% mana.
+
+It now tops that DoT up instead, which is what the Dark Harvest gap filler and the plain channel
+filler have both done since v1.2.6. This branch was the only one of the three that did not — and
+it could not, because the check it used returned a yes/no and never named the DoT.
+
+Reported as needing to "double tap"; it was rather more than two.
+
+### 🐛 Fixed — Warlock: the wand cancelled the cast it followed
+
+Starting the wand while one of our own casts is running cancels that cast. At low level with the
+wand as the filler, the pull sent *Immolate*, the next press found Immolate marked as sent and
+fell through to the filler, and the wand it started killed the cast in flight — "pet attack, wand
+twice, two or three seconds of nothing, then Immolate and Corruption".
+
+The wand no longer starts while a cast is running. A call made while it is already repeating is
+the stop toggle and still goes through, since stopping is what a cast wants.
+
+### 🆕 Warlock: two sliders for DoT time before a channel
+
+**Top up DoTs before Dark Harvest** (default 10s) and **Top up DoTs before other channels**
+(default 5s), under *Filler and pet*. A DoT with less time left than the slider is re-applied
+before the channel starts. **0 starts the channel whatever the DoTs are doing.**
+
+Two numbers because the two cases are different jobs. Dark Harvest accelerates the DoTs already on
+the target, so one dropping out partway through loses that boost for the rest of the channel.
+Every other channel does nothing for them — there the only question is whether they keep running
+alongside, and a shorter margin is enough.
+
+The defaults reproduce what was hardcoded before: the accelerated channel length for Dark Harvest,
+the channel's own length for the rest. The second slider covers *Drain Life* and *Drain Soul* as
+fillers and either of them between Dark Harvest channels.
+
+---
+
 ## v1.2.24 — somebody else's copy is not yours
 
 ### 🐛 Fixed — all classes: another player's debuff answered for yours
