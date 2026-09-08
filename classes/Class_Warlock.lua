@@ -47,7 +47,7 @@ local M = Aegis_SBR:NewClassModule("WARLOCK")
 M.uiTitle = "Warlock"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 716
+M.uiHeight = 772
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Talent that turns on the free instant Shadow Bolt proc (Shadow Trance).
@@ -174,7 +174,14 @@ wlChannelFrame:SetScript("OnEvent", function()
     -- eviction this guard exists to prevent. An instant therefore has no event
     -- of its own and waits out the window, which costs nothing: an instant that
     -- has gone out is inside its global cooldown for that whole time anyway.
-    if event == "SPELLCAST_START" then M.sentSeen = true; return end
+    if event == "SPELLCAST_START" then
+        M.sentSeen = true
+        -- A cast of ours is now RUNNING, which is a different fact from the
+        -- client having taken the spell. Starting the wand during it kills it -
+        -- see Shoot.
+        M.casting = true
+        return
+    end
 
     if event == "SPELLCAST_CHANNEL_START" then
         M.sentSeen = true
@@ -219,6 +226,7 @@ wlChannelFrame:SetScript("OnEvent", function()
     else
         -- A cast ended, one way or another. Nothing is left in the queue to
         -- protect, so no DoT should still be waiting on one.
+        M.casting = false
         M.dotPending = {}
         -- The busy window is deliberately NOT cleared here.
         --
@@ -543,6 +551,22 @@ function M:NormalizeProfile(c)
     -- What fills the gap while Dark Harvest is on cooldown (Dark Harvest filler
     -- only). Defaults to the wand, which is what the gap used to be hardcoded to.
     if c.dhGapFiller == nil then c.dhGapFiller = "Shoot" end
+    -- How much time a DoT must have left before a channel is allowed to start.
+    -- Two numbers, because the two cases are not the same job.
+    --
+    -- Dark Harvest accelerates the DoTs already on the target, so a DoT that
+    -- drops out partway through loses that boost for the rest of the channel -
+    -- worth topping up generously. The default is the old computed value: the
+    -- channel's length at its accelerated tick rate.
+    --
+    -- Every other channel does nothing for the DoTs. There the only question is
+    -- whether they keep running alongside it, so a much shorter margin is
+    -- enough. The default is roughly the length of those channels, which is what
+    -- was hardcoded before.
+    --
+    -- 0 on either one means the channel is never held back for a DoT.
+    if c.dhDotRemain == nil then c.dhDotRemain = 10 end
+    if c.chanDotRemain == nil then c.chanDotRemain = 5 end
     if c.nightfall == nil then c.nightfall = false end
     if c.drainLifeSustain == nil then c.drainLifeSustain = false end
     if c.drainLifeHp == nil then c.drainLifeHp = 35 end
@@ -986,9 +1010,14 @@ function M:ChannelLength(name)
     return b
 end
 
--- Minimum DoT time remaining needed to survive a full Dark Harvest channel at
--- its 30%-accelerated tick rate (see DH_TICK_BOOST above).
-function M:DHMinDotRemain()
+-- Minimum DoT time remaining before Dark Harvest is allowed to start.
+--
+-- The player's slider, in seconds. It was computed here instead - the channel's
+-- length at its 30%-accelerated tick rate (see DH_TICK_BOOST above), which came
+-- to about ten seconds - and that number is now the slider's default rather than
+-- the only option.
+function M:DHMinDotRemain(cfg)
+    if cfg and cfg.dhDotRemain then return cfg.dhDotRemain end
     return self:DHChannelLength() * (1 + DH_TICK_BOOST)
 end
 
@@ -1558,6 +1587,24 @@ function M:Shoot(reason)
         end
         return false
     end
+    -- Starting the wand while one of our own casts is running CANCELS that cast.
+    --
+    -- Reported at low level with the wand as the filler: the pull sent Immolate,
+    -- the very next press found Immolate marked as sent and fell through to the
+    -- filler, and the wand it started killed the cast still in flight. Nothing
+    -- landed, the rotation sat out the send interval, and only then did Immolate
+    -- go again - "pet attack, wand twice, two or three seconds of nothing, then
+    -- Immolate and Corruption". Intermittent, because it depends on the press
+    -- landing inside the cast.
+    --
+    -- Only a START is refused. A call made WHILE the wand is already repeating
+    -- is the stop toggle, and stopping is exactly what a cast wants.
+    if M.casting and not self:Wanding() then
+        if not Aegis_SBR.deciding and self:Tracing() then
+            self:Trace("wand held (" .. tostring(reason) .. "): a cast is running")
+        end
+        return false
+    end
     if Aegis_SBR.deciding then
         local p = Aegis_SBR.decidePlan
         p.spell = "Shoot"; p.reason = reason
@@ -1973,7 +2020,7 @@ function M:Rotate(cfg)
             -- boosted rate. Unknown remaining time (no duration on file, or no
             -- cast record for this target) is not treated as urgent, so the
             -- channel is not blocked on a guess.
-            local minRemain = self:DHMinDotRemain()
+            local minRemain = self:DHMinDotRemain(cfg)
             if self:Tracing() then
                 local id = self:TargetId()
                 for i = 1, table.getn(order) do
@@ -2037,7 +2084,10 @@ function M:Rotate(cfg)
         if M.CHANNELED[gap] and self:KnowsSpell(gap) then
             local len = (gap == "Drain Soul") and self:DSChannelLength()
                 or (self:ChannelLength(gap) or 0)
-            local lapsing = self:DotLapsingWithin(order, len, dotsSuppressed)
+            -- The gap channel does nothing for the DoTs, so this asks the
+            -- player's margin for ordinary channels - NOT the channel's length,
+            -- which is still what the overrun test below needs.
+            local lapsing = self:DotLapsingWithin(order, cfg.chanDotRemain or 0, dotsSuppressed)
             if lapsing then
                 if self:Tracing() then
                     self:Trace("gap channel held: " .. lapsing .. " would lapse during it")
@@ -2110,11 +2160,31 @@ function M:Rotate(cfg)
         -- Same channel caution as the Dark Harvest gap filler, minus the
         -- cooldown half: there is no Dark Harvest to be held up here, only the
         -- DoTs, which cannot be refreshed while the channel guard is holding
-        -- the rotation. If one would lapse during it, fall through to the wand
-        -- (or Shadow Bolt without one) for this press instead.
-        if not self:DotExpiringSoonBy(order, self:DSChannelLength()) then
-            if self:Queue("Drain Soul", "filler channel") then return end
+        -- the rotation. Anything due inside the channel has to go out first.
+        --
+        -- TOP THE DOT UP, rather than falling through to the wand. This branch
+        -- was the only one of the three that did not, and the cost was measured:
+        -- with four DoTs running, one is nearly always inside the channel's own
+        -- length, so the channel was blocked almost every press - and the wand it
+        -- fell through to is refused while an affordable channel filler is set.
+        -- The press did nothing at all. Three runs in one session, the longest 25
+        -- consecutive presses over 4.3 seconds at 85% mana.
+        --
+        -- Refreshing costs one press and produces something; the channel then
+        -- starts on the next one with the DoT long enough to survive it. That is
+        -- what the Dark Harvest gap filler and the plain channel filler have both
+        -- done since v1.2.6.
+        local dsNeed = cfg.chanDotRemain or 0
+        local lapsing = self:DotLapsingWithin(order, dsNeed, dotsSuppressed)
+        if lapsing then
+            if self:Tracing() then
+                self:Trace(string.format("filler channel held: %s lapses inside %.1fs",
+                    lapsing, dsNeed))
+            end
+            self:QueueDot(lapsing, self:TargetId())
+            return
         end
+        if self:Queue("Drain Soul", "filler channel") then return end
         if self:HasWand() then
             if self:Wanding() then return end
             self:Shoot("wanding")
@@ -2138,7 +2208,7 @@ function M:Rotate(cfg)
         -- since v1.2.6, and for the same reason: the channel guard stops the
         -- rotation for its whole length, so anything due inside it has to go out
         -- before it starts.
-        local len = self:ChannelLength(filler) or 0
+        local len = cfg.chanDotRemain or 0
         if not dotsSuppressed then
             for i = 1, table.getn(order) do
                 local sp = order[i][1]
