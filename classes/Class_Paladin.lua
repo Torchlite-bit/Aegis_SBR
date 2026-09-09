@@ -2191,6 +2191,22 @@ function M:DoHeal(cfg)
         end
     end
 
+    -- Both direct heals have a cast time, and movement breaks a cast outright -
+    -- so a press spent starting one while running is a press spent on nothing.
+    --
+    -- Below Holy Shock deliberately: that one is instant and has already had its
+    -- turn above, so a moving paladin still heals with it. Only the cast-time
+    -- pair stands down, and returning false hands the press to the attack
+    -- rotation rather than holding it - the instants there can all be used on
+    -- the move.
+    --
+    -- Moving() answers "standing still" whenever it cannot tell (no SuperWoW),
+    -- so this never blocks a heal on a guess.
+    if Aegis_SBR:Moving() then
+        if self:Tracing() then self:Trace("moving, no cast-time heal") end
+        return false
+    end
+
     local pick, pickEff, castTime = self:CascadePick(cfg, rankDeficit, pct, mana, hlFast)
     local amt = pick and (pickEff or 0) * hdb or nil
 
@@ -2816,7 +2832,11 @@ function M:Rotate(cfg)
         -- can only build in melee would mean not casting it at all.
         local _, zeal = self:BuffTime("Zeal")
         local meleeReady = crusaderUp and (zeal or 0) >= ZEAL_STACKS
-        if not melee or meleeReady or not self:CrusaderDetourWorthIt(cfg) then
+        -- The hammer has a cast time on this client - the pushback handling
+        -- above exists for exactly that - so movement breaks it before it lands.
+        if Aegis_SBR:Moving() then
+            if self:Tracing() then self:Trace("moving, no Hammer of Wrath") end
+        elseif not melee or meleeReady or not self:CrusaderDetourWorthIt(cfg) then
             if self:Pick("Hammer of Wrath", "execute") then return end
         else
             -- Worth the detour: hand the seal work to HandleSeals with the

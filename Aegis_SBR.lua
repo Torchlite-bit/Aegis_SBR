@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.25",
+    ver = "1.2.26",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -31,6 +31,32 @@ function Aegis_SBR:NewClassModule(token)
     local m = setmetatable({ classToken = token }, { __index = self })
     self.classes[token] = m
     return m
+end
+
+-- Talent rank by name, cached, cleared on CHARACTER_POINTS_CHANGED and login.
+--
+-- Six class modules carry their own identical copy of this and the seventh did
+-- not - the warrior called self:TalentRank for Slam's cast time and there was
+-- nothing to call, which is a Lua error the moment a warrior turns Slam on. It
+-- belongs here, where every module inherits it and a module that wants its own
+-- can still shadow it.
+--
+-- Matches the talent name EXACTLY, so a name that is wrong reads as rank 0 -
+-- the ability is used at its untalented value rather than not at all.
+function Aegis_SBR:TalentRank(name)
+    if not self.talentCache then self.talentCache = {} end
+    if self.talentCache[name] ~= nil then return self.talentCache[name] end
+    local rank = 0
+    local tabs = GetNumTalentTabs and GetNumTalentTabs() or 0
+    for tab = 1, tabs do
+        for i = 1, GetNumTalents(tab) do
+            local n, _, _, _, r = GetTalentInfo(tab, i)
+            if n == name then rank = r or 0; break end
+        end
+        if rank > 0 then break end
+    end
+    self.talentCache[name] = rank
+    return rank
 end
 
 -- Shared chat output, inherited by every class module (so modules use
@@ -1143,47 +1169,63 @@ local MOVE_EPS = 0.15
 -- press instead of at the next sample.
 local MOVE_STOP_MIN = 0.08
 
-function Aegis_SBR:Moving()
-    if not UnitPosition then return false end
+-- Take one sample, at most every MOVE_SAMPLE seconds.
+--
+-- On a TIMER, not on a press. That distinction is the whole of this function's
+-- history: sampling only when Moving() happened to be called made the reference
+-- point as old as the gap between presses, so a player who moved and then stood
+-- still was compared against where they had been a full second earlier and read
+-- as still moving. The rotation refuses to start a channel while moving, and
+-- with a channel filler there is nothing else for that press to do - so the
+-- press was thrown away, and only the NEXT one, now measuring against a fresh
+-- sample, went through.
+--
+-- That is exactly the reported "press twice after moving", and it explains the
+-- rest of the report too: it never happened on a training dummy, because nobody
+-- walks between attempts, and turning or jumping on the spot was always fine,
+-- because neither changes position.
+local function MoveSample()
+    if not UnitPosition then return end
     local x, y = UnitPosition("player")
-    if not x or not y then return false end
+    if not x or not y then return end
     local now = GetTime()
-    local s = self.moveSample
+    local s = Aegis_SBR.moveSample
     if not s then
-        self.moveSample = { x = x, y = y, t = now, moving = false }
-        return false
+        Aegis_SBR.moveSample = { x = x, y = y, t = now, moving = false, since = now }
+        return
     end
-    -- Between samples the last answer normally stands, rather than being
-    -- recomputed off a stale reference point.
-    --
-    -- With one exception, and it is asymmetric on purpose: saying "moving" needs
-    -- displacement over time, but saying "stopped" does not. A position that has
-    -- not changed since the sample point is not moving NOW, whatever it was
-    -- doing when the sample was taken.
-    --
-    -- Without this, stopping was noticed up to a full sample interval late, and
-    -- the press in between was thrown away: the warlock refuses to start a
-    -- channel while moving, and with a channel filler there is nothing else for
-    -- that press to do. Reported from play as needing to press twice to start
-    -- Drain Life or Drain Soul after coming to a stop, and visible in a captured
-    -- log as "moving, no Drain Life" on the press before every one of them.
-    --
-    -- Only ever turns a "moving" into a "standing"; it can never claim movement
-    -- early, and real movement produces displacement it cannot miss.
-    if (now - s.t) < MOVE_SAMPLE then
-        if s.moving and (now - s.t) >= MOVE_STOP_MIN then
-            local ddx, ddy = x - s.x, y - s.y
-            if (ddx * ddx + ddy * ddy) <= (MOVE_EPS * MOVE_EPS) then return false end
-        end
-        return s.moving
-    end
+    if (now - s.t) < MOVE_SAMPLE then return end
     local dx, dy = x - s.x, y - s.y
     s.x, s.y, s.t = x, y, now
     s.moving = (dx * dx + dy * dy) > (MOVE_EPS * MOVE_EPS)
     -- When the standing still began, for StillFor below.
     if s.moving then s.since = nil
     elseif not s.since then s.since = now end
-    return s.moving
+end
+
+-- One frame, one timestamp comparison, and a position read five times a second.
+local moveFrame = CreateFrame("Frame")
+moveFrame:SetScript("OnUpdate", function() MoveSample() end)
+
+function Aegis_SBR:Moving()
+    if not UnitPosition then return false end
+    -- Also sampled here, so the answer is still correct if the frame has not run
+    -- yet - the very first press of a session, or a client that throttles
+    -- OnUpdate while the window is in the background.
+    MoveSample()
+    local s = self.moveSample
+    if not s then return false end
+    if not s.moving then return false end
+    -- Asymmetric on purpose: saying "moving" needs displacement over time, but
+    -- saying "stopped" does not. A position that has not changed since the
+    -- sample point is not moving NOW, whatever it was doing when the sample was
+    -- taken. Only ever turns a "moving" into a "standing".
+    local x, y = UnitPosition("player")
+    if x and y and (GetTime() - s.t) >= MOVE_STOP_MIN then
+        local ddx, ddy = x - s.x, y - s.y
+        if (ddx * ddx + ddy * ddy) <= (MOVE_EPS * MOVE_EPS) then return false end
+    end
+    return true
 end
 
 -- Have we been standing still for at least this long?
@@ -3026,6 +3068,9 @@ ev:SetScript("OnEvent", function()
         -- cover it, and until that arrived KnowsSpell still answered "yes" for
         -- a spell the client could no longer resolve.
         Aegis_SBR:InvalidateSpellIndex()
+        -- Ranks are read from the tree that just changed.
+        Aegis_SBR.talentCache = nil
+        if Aegis_SBR.active then Aegis_SBR.active.talentCache = nil end
         Aegis_SBR.validCacheName = nil
         -- A talent change is also how the Goblin Brainwashing Device announces
         -- itself, since it announces itself no other way.
