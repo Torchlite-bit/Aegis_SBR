@@ -360,17 +360,28 @@ function M:Clearcasting()
     return false
 end
 
--- Costs are read from a static table, which is right until a proc makes an
--- ability free. Reported: at low energy the rotation refused a Shred that
--- Clearcasting had just made cost nothing.
+-- Two things make the cost of an ability something other than the number in a
+-- table: a Clearcasting proc, and TALENTS.
 --
--- Only the FIRST eligible ability is free, so this cannot hand out a discount
--- twice: the proc is consumed by whatever is cast next, and the buff is gone
--- on the following press.
+-- Clearcasting was already handled. Talents were not, and the table was wrong
+-- for anyone who had taken them - reported for Improved Shred, which takes 6
+-- energy per rank off a 60 energy ability, so a fully talented Shred costs 48
+-- and the rotation was holding it back for twelve energy it did not need.
+--
+-- The client's own spellbook tooltip already carries the talented number, which
+-- is what the core reads and every other module asks for. The static table
+-- stays as the fallback for a tooltip that does not answer, because an
+-- unreadable cost must not make an ability look free here - in cat form that
+-- would spend a press on an ability the energy cannot cover.
+--
+-- Only the FIRST eligible ability is free under Clearcasting, so this cannot
+-- hand out a discount twice: the proc is consumed by whatever is cast next, and
+-- the buff is gone on the following press.
 function M:CanPay(name)
     if not self:KnowsSpell(name) then return false end
     if self:Clearcasting() then return true end
-    local cost = COST[name] or 0
+    local cost = Aegis_SBR.SpellCost and Aegis_SBR:SpellCost(name)
+    if not cost then cost = COST[name] or 0 end
     return UnitMana("player") >= cost
 end
 

@@ -4,6 +4,71 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.26 — movement measured on its own clock
+
+### 🐛 Fixed — all classes: movement was measured between key presses
+
+Position was sampled only when something asked whether you were moving, which is
+once per press. The reference point was therefore as old as the gap between your
+presses — around a second in a captured log — so a player who moved and then stood
+still was compared against where they had been a second earlier and read as still
+moving.
+
+A warlock will not start a channel while moving, and with a channel filler set there
+is nothing else for that press to do, so the press was thrown away. The next press
+measured against a fresh reference and went through. That is the reported "press
+twice after moving", and it explains the rest of the report: it never happened on a
+training dummy, because nobody walks between attempts, and turning or jumping on the
+spot was always fine, because neither changes position.
+
+Position is now sampled five times a second on its own timer, independent of presses,
+so the reference is never more than 0.2s old. One frame, one timestamp comparison per
+frame.
+
+### 🐛 Fixed — Paladin: cast-time spells were started while moving
+
+Movement breaks a cast, so a press spent starting one while running is a press spent
+on nothing. *Hammer of Wrath* and the two direct heals now stand down while moving.
+
+*Holy Shock* is checked first and is instant, so a moving paladin still heals with it,
+and the press is handed to the attack rotation rather than held — everything there can
+be used on the move. *Consecration* keeps its own dwell test, which asks a different
+question: not whether you are moving, but whether you are about to leave the ground you
+are standing on.
+
+### 🐛 Fixed — Warrior: a Lua error the moment Slam was enabled
+
+`SlamCastTime` called `TalentRank`, and the warrior module was the only one of the seven
+that never defined it. Enabling Slam raised an error instead of a decision.
+
+The helper now lives in the core, where every module inherits it. The six modules that
+carry their own copy keep it.
+
+### 🐛 Fixed — Druid: talent discounts were ignored
+
+The druid was the only module costing abilities from a static table. *Improved Shred*
+takes 6 energy per rank off a 60 energy ability, so a fully talented Shred costs 48 and
+was being held back for twelve energy it did not need.
+
+Costs now come from the client's own spellbook tooltip, which already carries the
+talented number and is what every other module reads. The table stays as the fallback
+for a tooltip that does not answer — an unreadable cost must not make an ability look
+free.
+
+### 🐛 Fixed — Paladin: Exorcism could hold the whole fight
+
+The quest that turns Ras Frostwhisper human leaves the Undead tag in place. The client
+refused every Exorcism while the rotation, reading the tag, kept offering it.
+
+The creature type is now where this starts, not where it ends. One refusal that is not
+range, line of sight, mana, facing or cooldown — the core sorts those into named lists,
+and a wrong target type is in none of them — and Exorcism is dropped for that target.
+No strike counting is needed, because a range or sight refusal is recognised for what it
+is and cannot produce a false verdict. Remembered for the current target only, so a new
+pull tries once and then stays quiet.
+
+---
+
 ## v1.2.25 — the tag is not the answer
 
 ### 🐛 Fixed — Paladin: stuck on Exorcism for a whole fight
