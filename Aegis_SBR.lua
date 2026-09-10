@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.26",
+    ver = "1.2.27",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -482,6 +482,17 @@ function Aegis_SBR:OnSwingMessage(msg)
     if not msg then return end
     if string.find(msg, "^Your ") then return end   -- a named ability or seal, not a white swing
     if string.find(msg, "^You ") then
+        -- UNIT_CASTEVENT MAINHAND already anchored this swing, and did it
+        -- without the processing latency a chat message carries. Letting the
+        -- message land as well would push lastSwing forward by exactly that
+        -- latency and throw the precision away again.
+        --
+        -- Inside this branch on purpose: the marker belongs to the white swing
+        -- it was set for, so only a white-swing line may consume it.
+        if self.swingFromCastEvent then
+            self.swingFromCastEvent = nil
+            return
+        end
         self.lastSwing = GetTime()
         local mh = UnitAttackSpeed("player")
         if mh and mh > 0 then self.swingSpeed = mh end
@@ -2886,6 +2897,7 @@ function Aegis_SBR:EvalCommand(msg)
         end
         return
     end
+    if cmd == "deps" or cmd == "components" then self:CmdDeps(); return end
     if cmd == "debug" then self:Debug(); return end
     if cmd == "talents" then self:Talents(); return end
     if cmd == "gobbo" then self:CmdGobbo(); return end
@@ -2943,7 +2955,7 @@ function Aegis_SBR:EvalCommand(msg)
     -- capturing a rotation trace to file, not something a player has any use
     -- for. It still works when typed, so it can be handed out on request when
     -- diagnosing a report ("/sbr log on, play a bit, /reload, send me the file").
-    msgOut("commands: ui, list, use, off, new, del, check, reset, acquire, minimap, debug, talents, trace (plus class commands).")
+    msgOut("commands: ui, list, use, off, new, del, check, reset, acquire, minimap, deps, debug, talents, trace (plus class commands).")
 end
 
 -- ============================================================
@@ -2987,6 +2999,91 @@ end
 
 -- Printed once at PLAYER_LOGIN, when the chat frame is ready. ADDON_LOADED
 -- fires too early in the login for a banner to reliably show.
+-- What Aegis leans on, and whether it is actually here.
+--
+-- Every entry is a live PROBE, not a version string or an addon list: a DLL that
+-- failed to inject leaves its globals absent, and that is the only fact the
+-- rotation cares about. UnitXP is called rather than merely looked up, because
+-- the global can exist while the call itself is unavailable.
+--
+-- req = true means the rotation loses something it cannot work around.
+function Aegis_SBR:Deps()
+    local out = {}
+
+    local _, guid = UnitExists("player")
+    table.insert(out, { name = "SuperWoW", req = true,
+        ok = (guid ~= nil) and (SpellInfo ~= nil),
+        why = "unit ids, cast events, casting on a unit without changing target" })
+
+    table.insert(out, { name = "Nampower", req = true,
+        ok = (QueueSpellByName ~= nil),
+        why = "spell queueing, so a press during a cast is not thrown away" })
+
+    local xp = false
+    if UnitXP then
+        local called = pcall(UnitXP, "distanceBetween", "player", "player")
+        xp = called and true or false
+    end
+    table.insert(out, { name = "UnitXP_SP3", req = true, ok = xp,
+        why = "real distance and line of sight" })
+
+    table.insert(out, { name = "ClassicAPI", req = false,
+        ok = (self.HasClassicAPI and self:HasClassicAPI()) and true or false,
+        why = "debuff timers and their caster, exact spell range" })
+
+    table.insert(out, { name = "SuperCleveRoidMacros", req = false,
+        ok = (IsAddOnLoaded and IsAddOnLoaded("SuperCleveRoidMacros")) and true or false,
+        why = "conditional macros, and it takes over auto-attack" })
+
+    return out
+end
+
+-- The full report, on demand. One line each, so it can be read at a glance and
+-- pasted into a bug report.
+function Aegis_SBR:CmdDeps()
+    local d = self:Deps()
+    DEFAULT_CHAT_FRAME:AddMessage("--- Aegis components ---", 1, 0.8, 0.0)
+    for i = 1, table.getn(d) do
+        local e = d[i]
+        local mark, r, g, b
+        if e.ok then
+            mark = "OK      "; r, g, b = 0.4, 1, 0.4
+        elseif e.req then
+            mark = "MISSING "; r, g, b = 1, 0.4, 0.4
+        else
+            mark = "absent  "; r, g, b = 0.7, 0.7, 0.7
+        end
+        DEFAULT_CHAT_FRAME:AddMessage("  " .. mark .. e.name
+            .. (e.req and " (required)" or " (recommended)"), r, g, b)
+        DEFAULT_CHAT_FRAME:AddMessage("      " .. e.why, 0.6, 0.6, 0.6)
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("Links are in the addon's README.", 0.7, 0.7, 0.7)
+end
+
+-- The login summary. Deliberately short: one line when everything required is
+-- there, and a second only when something is not. Anything longer becomes noise
+-- people learn to scroll past, which defeats the point.
+function Aegis_SBR:DepsBannerLines()
+    local d = self:Deps()
+    local miss, opt = {}, {}
+    for i = 1, table.getn(d) do
+        local e = d[i]
+        if not e.ok then
+            if e.req then table.insert(miss, e.name) else table.insert(opt, e.name) end
+        end
+    end
+    if table.getn(miss) > 0 then
+        return "components MISSING: " .. table.concat(miss, ", ")
+            .. " - the rotation runs without them but loses accuracy. /sbr deps",
+            (table.getn(opt) > 0) and ("also not present, recommended: " .. table.concat(opt, ", ")) or nil
+    end
+    if table.getn(opt) > 0 then
+        return "all required components present. Recommended and not present: "
+            .. table.concat(opt, ", ") .. ". /sbr deps", nil
+    end
+    return "all components present. /sbr deps", nil
+end
+
 function Aegis_SBR:Banner()
     if self.Loaded then return end
     self.Loaded = true
@@ -3004,15 +3101,17 @@ function Aegis_SBR:Banner()
     -- PLAYER_LOGIN is the first point where every DLL has certainly injected
     -- and the chat frame can show the result. Guarded because the capability
     -- file is optional in the load order, exactly like Preview and Pet.
-    if self.DetectClassicAPI then
-        self:DetectClassicAPI()
-        local line = self:ClassicAPIBannerLine()
-        if self:HasClassicAPI() then
-            DEFAULT_CHAT_FRAME:AddMessage("Aegis: " .. line, 0.4, 1, 0.4)
-        else
-            DEFAULT_CHAT_FRAME:AddMessage("Aegis: " .. line, 0.7, 0.7, 0.7)
-        end
+    if self.DetectClassicAPI then self:DetectClassicAPI() end
+    -- One line, two only when something required is missing. Players kept asking
+    -- whether SuperWoW and the rest were actually loaded, and until now the only
+    -- answer was a separate command nobody knew about.
+    local a, b = self:DepsBannerLines()
+    if string.find(a, "MISSING", 1, true) then
+        DEFAULT_CHAT_FRAME:AddMessage("Aegis: " .. a, 1, 0.4, 0.4)
+    else
+        DEFAULT_CHAT_FRAME:AddMessage("Aegis: " .. a, 0.4, 1, 0.4)
     end
+    if b then DEFAULT_CHAT_FRAME:AddMessage("Aegis: " .. b, 0.7, 0.7, 0.7) end
 end
 
 -- Slash commands. /sbr is primary, /aegis the long form; /ar stays as a
@@ -3088,7 +3187,10 @@ ev:SetScript("OnEvent", function()
         Aegis_SBR:OnCastError(arg1)
     elseif event == "PLAYER_REGEN_ENABLED" then
         Aegis_SBR:ClearDebuffLedger()
-        if Aegis_SBR.active then Aegis_SBR.active.lastSwing = nil end
+        if Aegis_SBR.active then
+            Aegis_SBR.active.lastSwing = nil
+            Aegis_SBR.active.swingFromCastEvent = nil
+        end
         -- Out of combat the kill curve is meaningless, and keeping it would let
         -- the last fight's rate answer the first press of the next one.
         Aegis_SBR:ResetTTK()
@@ -3107,6 +3209,21 @@ ev:SetScript("OnEvent", function()
             local sname
             if arg4 and SpellInfo then sname = SpellInfo(arg4) end
             if sname then Aegis_SBR.active:OnCastEvent(arg1, arg2, sname) end
+        end
+        -- Our own white swing landing, straight from SuperWoW.
+        --
+        -- The combat log carries the same fact as text, but it arrives with the
+        -- delay of being formatted, routed and parsed. The event does not, so
+        -- this is the better anchor wherever SuperWoW is present; OnSwingMessage
+        -- stays as the fallback for clients without it.
+        if arg3 == "MAINHAND" then
+            local _, myGuid = UnitExists("player")
+            if arg1 and myGuid and arg1 == myGuid and Aegis_SBR.active then
+                Aegis_SBR.active.lastSwing = GetTime()
+                Aegis_SBR.active.swingFromCastEvent = true
+                local mh = UnitAttackSpeed("player")
+                if mh and mh > 0 then Aegis_SBR.active.swingSpeed = mh end
+            end
         end
         -- Probe log: our OWN finisher casts, to read back what duration the
         -- server actually granted for the combo points spent.
