@@ -372,6 +372,23 @@ local WEAPON_REQ = {
 -- consequence of a false positive is a marginally tighter window rather than a
 -- wrong cast.
 function M:OverpowerLearnTick()
+    -- Resolve the previous Overpower attempt.
+    --
+    -- Pick returns true when the spell is KNOWN, not when the client accepted
+    -- the cast. Closing the window on that answer threw it away whenever the
+    -- cast was refused - a stance edge, latency - and Overpower was skipped
+    -- silently. The window is left open until the client has answered instead:
+    -- refused, and the next press retries; no refusal within half a second, and
+    -- it counts as spent.
+    if self.overpowerAttemptAt and (GetTime() - self.overpowerAttemptAt) > 0.5 then
+        if Aegis_SBR.SpellRefusedAnySince
+            and Aegis_SBR:SpellRefusedAnySince("Overpower", self.overpowerAttemptAt) then
+            if self:Tracing() then self:Trace("overpower refused, window stays open") end
+        else
+            self.overpowerExpiry = 0
+        end
+        self.overpowerAttemptAt = nil
+    end
     if not self.opSentAt then return end
     if GetTime() - self.opSentAt > 2 then
         self.opSentAt, self.opSentAge = nil, nil
@@ -470,8 +487,16 @@ end
 -- wrong here costs a fraction of a swing rather than a whole one - which is why
 -- an estimate is good enough. An UNKNOWN swing timer answers yes, in line with
 -- the rest of the addon: a detection that cannot answer must not close a gate.
+-- Read on SELF, not on Aegis_SBR.
+--
+-- The swing tracker keeps its state on the class MODULE - OnSwingMessage is
+-- called as Aegis_SBR.active:OnSwingMessage(...) - so asking the core table
+-- reads a lastSwing nothing ever writes. SwingTimeLeft then answered nil on
+-- every press, and an unknown swing timer lets Slam through by design, so this
+-- gate had never once closed. The paladin, which asks self:, was right all
+-- along; this was the difference between the two.
 function M:SlamFitsBeforeSwing()
-    local left = Aegis_SBR:SwingTimeLeft()
+    local left = self:SwingTimeLeft()
     if not left then return true end
     return left >= self:SlamCastTime()
 end
@@ -760,7 +785,10 @@ function M:Rotate(cfg)
                     -- still be attributed to this attempt and its age.
                     self.opSentAt = GetTime()
                     self.opSentAge = self.overpowerAt and (GetTime() - self.overpowerAt) or nil
-                    self.overpowerExpiry = 0
+                    -- NOT overpowerExpiry = 0: see OverpowerLearnTick. A send
+                    -- is not an accepted cast, so the window closes only once
+                    -- the client has answered.
+                    self.overpowerAttemptAt = GetTime()
                 end)
                 return
             end
@@ -1057,6 +1085,9 @@ reactFrame:SetScript("OnEvent", function()
             -- the age of an attempt can be worked out afterwards.
             M.overpowerAt = GetTime()
             M.overpowerExpiry = M.overpowerAt + M.opWindow
+            -- An unresolved attempt belonged to the window that just ended; a
+            -- fresh dodge opens a new one, and the leftover must not decide it.
+            M.overpowerAttemptAt = nil
         end
         return
     end

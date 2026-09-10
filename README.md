@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation (v1.2.26)
+# Aegis: Single Button Rotation (v1.2.27)
 
 **One button. Your whole rotation.**
 
@@ -280,7 +280,7 @@ A roleless, toggle-driven engine covering Arms, Fury, and Protection from early 
 - **Threat Toolkit:** Maintains *Sunder Armor* up to a chosen stack count and weaves *Shield Slam*, *Revenge*, and *Shield Block* upkeep for Protection tanking.
 - **Shout Upkeep:** *Battle Shout* (on by default) is kept up as the party attack-power buff — refreshed only when it's missing or about to expire and placed **below your strikes**, so it costs a global cooldown only about once every two minutes and never delays a strike. *Demoralizing Shout* (off by default) keeps the enemy attack-power reduction on your target for tanking, re-applied only when it drops. Both yield during *Execute* and are rage-gated.
 - **Concussion Blow (opt-in):** The Protection talent, off by default and inert until talented. It costs **no rage and generates 10**, is instant on a 20s cooldown, stuns for 3s and ignores armor — free threat that funds your next *Shield Slam*. It currently sits just below your spec's primary strike, the conservative placement; being free, there is a case for putting it higher, and that is a change waiting on somebody who tanks.
-- **Slam knows when to wait:** It yields while a primary strike (*Mortal Strike*, *Bloodthirst*, *Shield Slam*, *Whirlwind*) is off cooldown and only short of rage — Slam is the cheapest ability in the list and used to take those presses — and it stands down when its cast would run past your next white swing. Turtle's Slam is a **2.5s** cast, 1.9s with *Improved Slam*, so against a slow two-hander that second gate is tight by nature.
+- **Slam knows when to wait:** It yields while a primary strike (*Mortal Strike*, *Bloodthirst*, *Shield Slam*, *Whirlwind*) is off cooldown and only short of rage — Slam is the cheapest ability in the list and used to take those presses — and it stands down when its cast would run past your next white swing. Turtle's Slam is a **2.5s** cast, 1.9s with *Improved Slam*, so against a slow two-hander that second gate is tight by nature. The swing timer behind it is anchored on SuperWoW's own auto-attack event where that is available, which is a cleaner timestamp than the combat-log line carrying the same fact.
 - **Cancel Slam for Execute (on by default):** A Slam still casting when *Execute* comes up is interrupted, so the press lands the Execute instead of waiting the cast out. Only once Execute could actually go out: Slam starts the global cooldown when the cast starts and the cast is longer than the cooldown, so cancelling any earlier would throw the Slam away without gaining anything.
 - **Whirlwind leads in AoE:** Checked ahead of the primary strike while `/sbr aoe` is on, since it hits everything in range where *Mortal Strike* hits one. The single-target rage dump keeps its usual place.
 - **Overpower learns its own window:** The reactive window starts when the combat log tells us the target dodged, which is later than the dodge itself — so its tail used to fire into a window the server had already closed. When the client refuses an Overpower, the window shortens to just under the age of that attempt. It only ever shrinks, and never below a floor.
@@ -622,6 +622,12 @@ Four requests:
    `docs/audit-phase1-rotations.md` as a discussion, not a silent edit.
 4. Bump the version in **all three** spots (`.toc`, `ver` in `Aegis_SBR.lua`, the README
    version badge) and add a line to [`CHANGELOG.md`](CHANGELOG.md).
+
+## Thanks
+
+**Dio** found the reason the warrior's Slam swing gate had never worked — the swing timer is
+kept on the class module, and the warrior was the one class asking the core for it — and
+contributed the auto-attack event anchor and the Overpower retry that came with it.
 
 ## License
 

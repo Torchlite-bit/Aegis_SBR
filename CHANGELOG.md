@@ -4,6 +4,44 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.27 — the swing timer the warrior never read
+
+Thanks to **Dio**, who found all three of these and wrote the fixes.
+
+### 🐛 Fixed — Warrior: the Slam swing gate had never closed
+
+Slam stands down when its cast would run past your next white swing. It never did.
+
+The swing tracker keeps its state on the class **module** — `OnSwingMessage` is called as
+`Aegis_SBR.active:OnSwingMessage(...)` — and the warrior asked the core table for it instead.
+Nothing writes a swing time there, so the answer was always nil, and an unknown swing timer
+lets Slam through by design. The gate was open on every press since it was written.
+
+One word: `Aegis_SBR:SwingTimeLeft()` became `self:SwingTimeLeft()`. The paladin, which had
+always asked `self:`, was the comparison that turned it up.
+
+### 🔧 The swing timer is anchored on the event, not the chat line
+
+SuperWoW reports our own white swing landing through `UNIT_CASTEVENT` with type `MAINHAND`.
+The combat log carries the same fact as text, but it arrives after being formatted, routed and
+parsed, and that delay went straight into the timer.
+
+The event is now the anchor wherever SuperWoW is present, and the combat-log line for the same
+swing is skipped so it cannot push the timestamp forward again. `OnSwingMessage` stays as the
+fallback for clients without it.
+
+### 🐛 Fixed — Warrior: Overpower was dropped on a cast that never went out
+
+`Pick` answers true when the spell is **known**, not when the client accepted the cast. The
+Overpower window was closed on that answer, so a refusal — a stance edge, latency — spent the
+window on nothing and Overpower was skipped silently.
+
+The window now stays open until the client has answered: a refusal within half a second leaves
+it open for the next press, no refusal closes it as spent. A fresh dodge clears any unresolved
+attempt, since that one belonged to the window that just ended.
+
+---
+
 ## v1.2.26 — movement measured on its own clock
 
 ### 🐛 Fixed — all classes: movement was measured between key presses
