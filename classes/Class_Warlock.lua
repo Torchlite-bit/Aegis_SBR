@@ -1577,7 +1577,13 @@ end
 --
 -- A refusal here that is still followed by a wand shot means the shot did not
 -- come from this addon.
-function M:Shoot(reason)
+-- `stop` is set by the two callers that want the wand OFF (a DoT is about to
+-- fall off). Those go out as the plain toggle cast, which is the only way to
+-- stop an auto-repeat. Every other caller is a START and goes through
+-- Aegis_SBR:StartRepeating, which cannot toggle the wand off by accident where
+-- ClassicAPI provides a start-only cast. All start callers already check
+-- Wanding() first, so the fallback path is unchanged.
+function M:Shoot(reason, stop)
     -- Tested BEFORE the preview branch, or the next-spell window announces a
     -- wand the real press then refuses - which is what it was doing.
     if not self:WandAllowed() then
@@ -1598,7 +1604,7 @@ function M:Shoot(reason)
     -- landing inside the cast.
     --
     -- Only a START is refused. A call made WHILE the wand is already repeating
-    -- is the stop toggle, and stopping is exactly what a cast wants.
+    -- is the stop (see `stop`), and stopping is exactly what a cast wants.
     if M.casting and not self:Wanding() then
         if not Aegis_SBR.deciding and self:Tracing() then
             self:Trace("wand held (" .. tostring(reason) .. "): a cast is running")
@@ -1610,7 +1616,11 @@ function M:Shoot(reason)
         p.spell = "Shoot"; p.reason = reason
         return true
     end
-    CastSpellByName("Shoot")
+    if stop then
+        CastSpellByName("Shoot")
+    else
+        Aegis_SBR:StartRepeating("Shoot")
+    end
     return true
 end
 
@@ -2132,7 +2142,7 @@ function M:Rotate(cfg)
 
         if self:HasWand() then
             if self:DotExpiringSoon(order) then
-                if self:Wanding() then self:Shoot("stopping the wand for a DoT") end -- toggles the repeat off
+                if self:Wanding() then self:Shoot("stopping the wand for a DoT", true) end -- toggles the repeat off
                 return
             end
             if self:Wanding() then return end
@@ -2150,7 +2160,7 @@ function M:Rotate(cfg)
             -- don't start it) instead of risking the recast racing a shot
             -- already in flight - Shoot toggles the repeat off when cast
             -- again while it is already running.
-            if self:Wanding() then self:Shoot("stopping the wand for a DoT") end
+            if self:Wanding() then self:Shoot("stopping the wand for a DoT", true) end
             return
         end
         -- spammable wand, only start it if it is not already auto repeating

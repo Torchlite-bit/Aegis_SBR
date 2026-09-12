@@ -125,6 +125,15 @@ refresh, audit item **S1**); Shaman totems read the element slot directly and re
 Hunter sting and `DebuffUpAny` for Hunter's Mark. The `markOK` fix is the one change on the
 "adds casts" side and is **flagged for play-test**.
 
+**v1.2.28 (ClassicAPI 1.15.3, `CLASSIC_API_VERSION = 11503`):** `StartRepeating(name)` and
+`StartMeleeAttack()` in the capability file wrap `CastSpellNoToggle` / `StartAttack` — starts
+that can never stop. Used by Hunter Auto Shot, Mage/Priest/Warlock `Shoot` and the bar-less
+branch of `EnsureAutoAttack`; the Warlock's two deliberate wand *stops* pass `stop=true` and
+keep the toggle. Capabilities `notoggle` / `startattack`, probed per function. The
+`StartAttack` every-press restart is on the "adds" side and **flagged for play-test**. Same
+DLL: `C_AddOns` lacks `GetAddOnMetadata` (an upstream gap, not ours); everything Aegis probes
+is unchanged in name and shape.
+
 **REVERTED, do not re-apply without a play-test:** the `InMeleeRange()` melee-range
 integration. Field data justifies it (49 of 128 boundary flips disagree with the 9.9yd proxy;
 the bounding-radius effect confirmed on a worldboss) but it is on the "adds casts" side and

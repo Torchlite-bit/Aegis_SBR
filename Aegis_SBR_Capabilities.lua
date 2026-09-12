@@ -34,6 +34,8 @@ local caps = {
     loc      = false,   -- C_LossOfControl: stun / silence / school lockout
     timer    = false,   -- C_Timer.After
     encoding = false,   -- C_EncodingUtil: profile import/export (roadmap P3)
+    notoggle = false,   -- CastSpellNoToggle: start an auto-repeat, never stop it
+    startattack = false, -- StartAttack: start the melee swing, never stop it
 }
 
 local detected = false
@@ -61,6 +63,10 @@ function Aegis_SBR:DetectClassicAPI()
         caps.timer    = (C_Timer and C_Timer.After) and true or false
         caps.encoding = (C_EncodingUtil and C_EncodingUtil.SerializeJSON
                          and C_EncodingUtil.DeserializeJSON) and true or false
+        -- Both arrived after v1.9; the probe is the function itself, never the
+        -- version number - see the file header.
+        caps.notoggle    = (CastSpellNoToggle ~= nil)
+        caps.startattack = (StartAttack ~= nil)
     end
 
     detected = true
@@ -312,6 +318,46 @@ function Aegis_SBR:After(delay, fn)
 end
 
 -- ============================================================
+-- Toggles that must never toggle OFF
+-- ============================================================
+-- Auto Shot, Shoot and the melee swing are all toggles on 1.12: the call that
+-- starts them is the same call that stops them, and the client offers no way
+-- to read the state unless the ability sits on an action bar. Every class
+-- therefore guesses when the button is not slotted, and a wrong guess turns
+-- the attack OFF - which is what "the rotation stopped auto-attacking for no
+-- reason" has always been.
+--
+-- ClassicAPI adds start-only forms: CastSpellNoToggle is a no-op when the spell
+-- is already repeating (or a different auto-repeat is running - it will not
+-- disrupt that one either), StartAttack is a no-op when already swinging.
+-- Neither can stop anything, so both are pure suppression of the failure case;
+-- neither adds a cast the fallback would not also have made.
+--
+-- The fallback is the plain toggle cast, exactly as before. Callers that WANT
+-- the stop (the warlock drops the wand for a DoT) must not come through here.
+--
+-- Returns true when the start-only path was taken, false when the plain toggle
+-- went out instead. Callers do not need the distinction; the trace does.
+function Aegis_SBR:StartRepeating(name)
+    if self:Capability("notoggle") then
+        -- pcall'd: an unknown spell raises, and every caller is inside a press.
+        local ok = pcall(CastSpellNoToggle, name)
+        if ok then return true end
+    end
+    CastSpellByName(name)
+    return false
+end
+
+-- nil when the capability is absent, so the caller falls through to its own
+-- toggle logic; true after the call went out.
+function Aegis_SBR:StartMeleeAttack()
+    if not self:Capability("startattack") then return nil end
+    local ok = pcall(StartAttack)
+    if not ok then return nil end
+    return true
+end
+
+-- ============================================================
 -- Status reporting
 -- ============================================================
 -- Ordered for the report; pairs() has no defined order and a status list that
@@ -325,6 +371,8 @@ local CAP_ORDER = {
     { "loc",      "stun / silence / school lockout" },
     { "timer",    "deferred callbacks" },
     { "encoding", "profile import/export" },
+    { "notoggle", "start Auto Shot / wand without ever stopping it" },
+    { "startattack", "start the melee swing without ever stopping it" },
 }
 
 -- One short line for the login banner.

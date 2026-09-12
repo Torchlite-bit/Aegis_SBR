@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.27",
+    ver = "1.2.28",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -2096,6 +2096,16 @@ function Aegis_SBR:EnsureAutoAttack()
         -- No Attack on any bar (common on Warriors who never place it, and on
         -- anyone running SuperCleveRoidMacros, which drives the swing with
         -- /startattack so the button never needs slotting).
+        --
+        -- With ClassicAPI the whole problem below disappears: StartAttack is a
+        -- start that never stops, so it can go out on every press and a swing
+        -- that dropped for any reason restarts on the next one - the same
+        -- guarantee the slotted path above gets from IsCurrentAction. Recorded
+        -- for the same reason as there.
+        if self:Capability("startattack") then
+            self:NoteSpellCast("Attack")
+            if self:StartMeleeAttack() then return end
+        end
         --
         -- AttackTarget() is a TOGGLE on 1.12 - it STOPS the swing when one is
         -- already running, and there is no /startattack equivalent in the Lua

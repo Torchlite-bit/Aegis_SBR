@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation (v1.2.27)
+# Aegis: Single Button Rotation (v1.2.28)
 
 **One button. Your whole rotation.**
 
@@ -151,7 +151,7 @@ recommended 1.18.1 setup — install it all and everything behaves as documented
 | **[Nampower](https://github.com/brues-code/nampower)** | Required | Spell queueing and cast timing, so a press during the tail of a cast fires the instant it's legal instead of eating your latency. Every queued cast falls back to a plain cast if it's missing, so the addon still *runs* — but cast-time rotations and the Hunter's Steady Shot weave lose their clip-free timing. |
 | **[UnitXP_SP3](https://codeberg.org/konaka/UnitXP_SP3)** | Required | Accurate distance and line-of-sight checks. **Since v1.1.9 Aegis calls it directly**: it is what puts a real number in the range window, for players *and* NPCs, on every client — SuperWoW's positions resolve only for players. It also remains a hard requirement of SuperCleveRoidMacros' distance and enemy-count conditionals. |
 | **[SuperCleveRoidMacros](https://github.com/brues-code/SuperCleveRoidMacros)** | Recommended | Conditional macros alongside Aegis; it also takes over auto-attack handling when present. |
-| **[ClassicAPI](https://github.com/brues-code/ClassicAPI)** | Recommended | A DLL backporting the modern Blizzard API to 1.12. **Used since v1.1.9, and every use degrades cleanly without it.** It supplies what 1.12 simply cannot: real remaining time and a caster for a debuff on an *enemy*, exact spell range including minimum range and the target's hitbox, and live totem tracking that sees a totem **destroyed** rather than expired. `/sbr capi` reports what it found. See [`docs/research-classicapi.md`](docs/research-classicapi.md). |
+| **[ClassicAPI](https://github.com/brues-code/ClassicAPI)** | Recommended | A DLL backporting the modern Blizzard API to 1.12. **Used since v1.1.9, and every use degrades cleanly without it.** It supplies what 1.12 simply cannot: real remaining time and a caster for a debuff on an *enemy*, exact spell range including minimum range and the target's hitbox, live totem tracking that sees a totem **destroyed** rather than expired, and (since v1.2.28) a way to start Auto Shot, the wand and the melee swing that can never switch them off. `/sbr capi` reports what it found. See [`docs/research-classicapi.md`](docs/research-classicapi.md). |
 
 ---
 
