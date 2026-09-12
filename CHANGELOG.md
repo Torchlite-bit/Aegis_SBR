@@ -4,6 +4,36 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.28 — a start that cannot stop
+
+### 🔧 Auto Shot, the wand and the melee swing no longer switch off by accident (ClassicAPI)
+
+On 1.12 the call that starts an auto-repeat is the call that stops it, and the client only
+tells you which state you are in when the ability sits on an action bar. Without the button
+slotted every class had to guess, and a wrong guess turned Auto Shot, the wand or the white
+swing **off** — the long-standing "the rotation stopped attacking for no reason".
+
+ClassicAPI 1.15 adds start-only forms of both calls. Where they exist, the Hunter's Auto Shot,
+the Mage/Priest/Warlock wand and the bar-less melee swing now go through them: a start that
+is already running is a no-op, never a stop. The detection in front of each start is
+unchanged and still decides *whether* to send; the new path only removes the one outcome in
+which sending was wrong. Suppress-only, per the regression rule.
+
+The bar-less melee branch gains something on top: `StartAttack` can go out on every press, so
+a swing that dropped for any reason restarts on the next one — the guarantee the slotted
+branch always had from `IsCurrentAction`. This part adds a restart and is **flagged for
+play-test**.
+
+The Warlock stops the wand on purpose in two places (a DoT is about to fall off). Those keep
+the plain toggle cast, which is the only way to stop an auto-repeat; `Shoot` takes an
+explicit `stop` argument so the two intents cannot be confused again.
+
+Two new capabilities in `/sbr capi`: `notoggle` and `startattack`. Both are probed on the
+function itself, not on `CLASSIC_API_VERSION`, so an older DLL simply reports them off and
+the rotation runs exactly as before. Without ClassicAPI nothing changes.
+
+---
+
 ## v1.2.27 — the swing timer the warrior never read
 
 Thanks to **Dio**, who found all three of these and wrote the fixes.

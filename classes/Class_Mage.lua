@@ -187,7 +187,9 @@ function M:HasWand()
     return GetInventoryItemLink("player", 18) ~= nil
 end
 
--- Start the wand if it is not already auto-repeating.
+-- Start the wand if it is not already auto-repeating. The start cannot stop
+-- a wand that Wanding() failed to see (no Shoot button on any bar) where
+-- ClassicAPI offers a start-only cast; see Aegis_SBR:StartRepeating.
 function M:Wand()
     if self:Wanding() then return true end
     if not self:HasWand() then return false end
@@ -196,7 +198,7 @@ function M:Wand()
         p.spell = "Shoot"; p.reason = "wanding"
         return true
     end
-    CastSpellByName("Shoot")
+    Aegis_SBR:StartRepeating("Shoot")
     -- Same reason as Queue below: this calls the primitive directly, so it must
     -- do its own bookkeeping for OnCastError's refusal trace to see it.
     Aegis_SBR:NoteSpellCast("Shoot")

@@ -295,6 +295,11 @@ end
 -- is already running turns it OFF. It is only (re)started when not repeating.
 -- IsAutoRepeatAction sees it on an action bar; when it is not, an assumed-on
 -- flag per target prevents toggling it off by accident.
+--
+-- The start itself goes through Aegis_SBR:StartRepeating, which cannot turn the
+-- shot off where ClassicAPI provides a start-only cast. The detection above is
+-- unchanged: it still decides WHETHER to send, the wrapper only removes the one
+-- outcome in which sending was wrong. Suppress-only, per the regression rule.
 -- ============================================================
 function M:AutoShotting()
     local slot = self.autoShotSlot
@@ -340,7 +345,7 @@ function M:EnsureAutoShot()
         p.reason = "restarting the shot"
         return true
     end
-    CastSpellByName("Auto Shot")
+    Aegis_SBR:StartRepeating("Auto Shot")
     self.autoShotOn = true
     self.autoShotTarget = self:TargetId()
     self.autoShotT = now
