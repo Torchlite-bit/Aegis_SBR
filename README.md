@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation (v1.2.37)
+# Aegis: Single Button Rotation (v1.2.38)
 
 **One button. Your whole rotation.**
 
@@ -82,7 +82,7 @@ theirs. Ranged modules opt out of Auto so they never pull something at random.
 
 **A config panel, not a config file.** Flat-dark theme, class-coloured accents, bundled
 *PT Sans Narrow*, one clean row per setting (toggle · label · slider · value), plus a
-draggable minimap button with its own options panel.
+draggable minimap button with its own options panel, which opens on whichever side of the button has room.
 
 **Upkeep monitors (opt-in).** Two independent helpers, toggled from the minimap right-click
 panel. A **buff monitor** watches the self-buffs you choose and pops a clickable rebuff

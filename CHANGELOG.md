@@ -4,6 +4,18 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.38 — the minimap panel stays on screen
+
+### 🐛 Minimap options panel off screen
+
+The right-click panel always opened below and to the left of the minimap button, so with the
+minimap at the bottom of the screen it opened off screen (reported by Dio). It now opens on
+the side of the button that has room - below or above, left or right - measured in the
+button's own scale, since the minimap cluster may be scaled. The panel and the assist name
+picker are clamped to the screen as well.
+
+---
+
 ## v1.2.37 — emergencies break the cast, taps count what they cost
 
 ### 🐛 Paladin — the emergency waited behind the heal
