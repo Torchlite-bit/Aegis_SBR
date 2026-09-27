@@ -155,6 +155,7 @@ local function showGroupPicker(anchorFrame, onPick)
 
     pf:ClearAllPoints()
     pf:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, 2)
+    pf:SetClampedToScreen(true)
 
     local count = 0
     for i = 1, 40 do pf.rows[i]:Hide() end
@@ -179,6 +180,7 @@ end
 local function buildPanel()
     local p = CreateFrame("Frame", "Aegis_SBR_MinimapPanel", UIParent)
     p:SetWidth(232); p:SetHeight(316)
+    p:SetClampedToScreen(true)
     p:SetFrameStrata("DIALOG")
     p:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
@@ -367,12 +369,31 @@ function AM:RefreshPanel()
     end
 end
 
+-- Open the panel on the side of the button that has room. It used to hang
+-- below and to the left of the button always, so with the minimap at the
+-- bottom of the screen it opened off screen. The button's edges are read in
+-- its own scale (the minimap cluster may be scaled) and converted to the
+-- UIParent scale the panel lives in. Clamped as well, for the corner cases.
+function AM:PlacePanel()
+    local p, b = self.panel, self.button
+    p:ClearAllPoints()
+    local k = (b:GetEffectiveScale() or 1) / (UIParent:GetEffectiveScale() or 1)
+    local left = (b:GetLeft() or 0) * k
+    local bottom = (b:GetBottom() or 0) * k
+    local below = bottom - p:GetHeight() >= 0
+    local leftward = left - p:GetWidth() >= 0
+    local v = below and "TOP" or "BOTTOM"
+    local bv = below and "BOTTOM" or "TOP"
+    local h = leftward and "RIGHT" or "LEFT"
+    local bh = leftward and "LEFT" or "RIGHT"
+    p:SetPoint(v .. h, b, bv .. bh, leftward and 4 or -4, 0)
+end
+
 function AM:TogglePanel()
     if not self.panel then return end
     if self.panel:IsShown() then self.panel:Hide(); return end
     self:RefreshPanel()
-    self.panel:ClearAllPoints()
-    self.panel:SetPoint("TOPRIGHT", self.button, "BOTTOMLEFT", 4, 0)
+    self:PlacePanel()
     self.panel:Show()
 end
 
