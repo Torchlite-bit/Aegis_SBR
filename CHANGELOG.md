@@ -4,6 +4,73 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.39 — the hunter plays the guide, the share fits Discord
+
+### 🔧 Hunter — Beast Mastery to the rotation an experienced BM hunter plays
+
+The core is Auto Shot and Steady Shot without clipping, and Kill Command whenever it is
+usable; everything else is filler.
+
+- **Fillers never break the weave.** Serpent Sting, Multi-Shot and Arcane Shot go out only
+  where the press is not Steady Shot's and their global cooldown ends while the Steady Shot
+  after the next Auto Shot can still finish before the one after it; Multi-Shot's half-second
+  cast bar may not run across the next Auto Shot. The sting used to stand above Steady Shot.
+  A first version demanded a whole global cooldown of room before the next Auto Shot, which
+  never fits a swing under three seconds - the fillers almost never went out.
+- **Kill Command reads its action button.** The combat-log crit lines missed most crits (33
+  Kill Commands in twenty minutes of fighting, the player pressing it by hand while it was
+  lit). Now the button the client lights decides - Kill Command found on an action bar by its
+  icon, macros excluded, `IsUsableAction` on it - with the crit lines as the fallback, and only
+  a crit naming the current target counts there (Multi-Shot crits on a neighbour had armed
+  it). Two "You can't do that yet" refusals against a lit button drop the button reading for
+  the session; a target dying under the send, or the cooldown answering a second send, do not.
+  One second after a send it waits for the cooldown to show.
+- **Nothing off the global cooldown is sent during a cast** (Rapid Fire, Bestial Wrath, Kill
+  Command, Baited Shot): the client dropped them without a word - Rapid Fire seven times in
+  one Steady Shot.
+- **Mark only if the target lives**, **Sting only if the target lives** (switch and two
+  sliders, off by default, 8 s and 12 s): by the time-to-kill estimate. A target at full
+  health is marked as before; one already losing health waits for the estimate. A log had a
+  third of 154 Marks and 187 stings on mobs under 40%, while Steady Shot was skipped for mana
+  forty times and Arcane Shot never went out; the next log: 55 Marks, 33 stings, 96 Arcane
+  Shots, a quarter of the mana skips.
+- Bestial Wrath is situational in the guide: off in the Beast Mastery template, pressed by hand.
+  Steady Shot's assumed cast time is its tooltip's one second until measured; Multi-Shot's
+  cast bar is half a second.
+
+### ✨ Hunter — Smart single/AoE, and Survival to its guide
+
+- **Smart single/AoE from N** (new, per tab, off by default, 2-8, default 3): the single macro
+  and a bare `/sbr` switch to the AoE column by themselves from N enemies on the nameplates,
+  and back below it; the AoE column holds two seconds against a flickering count. Counted in
+  melee range for a hunter in melee, in shot range otherwise. The AoE macro still forces AoE,
+  so two macros keep working; without readable nameplates the single macro stays single.
+  Explosive Trap and Carve come with the AoE column.
+- **Lacerate reads its button** like Kill Command (22 of 215 had been refused as "not yet").
+- **Lacerate before Mongoose Bite** (new Survival switch, off by default), for strong gear.
+
+### 🔧 Warlock
+
+- **The shard cap applies everywhere, the damage stays.** A shard is made only when the target
+  dies inside a Drain Soul. At "Stop early to keep shards" the execute Drain Soul is not
+  started, and a Drain Soul as the filler or between Dark Harvests - the hardest-hitting drain -
+  keeps running but is stopped just before the target dies (time-to-kill under 3 s, or under
+  3% health without an estimate), checked on every press and ten times a second between them.
+  The filler and gap Drain Soul had ignored the cap; the switch was greyed out with Drain Soul
+  as the filler.
+- **No Immolate with aggro** (new, off by default): with a mob on you Immolate is left out -
+  its two-second cast takes pushback, which Affliction has no talent against.
+
+### 🔧 Profile share fits a Discord message
+
+`AEGIS2:` strings carry only what differs from the defaults the importer fills in anyway, and
+are LZW-compressed (each 12-bit code as two base64 characters, still Discord-safe). A whole
+hunter profile measured 2240 characters before and 1420 with the compression alone; the
+defaults left out shorten it further. `AEGIS1:` strings still import. The core now keeps the
+text of a cast refusal next to its time, for callers that must tell one refusal from another.
+
+---
+
 ## v1.2.38 — the minimap panel stays on screen
 
 ### 🐛 Minimap options panel off screen
