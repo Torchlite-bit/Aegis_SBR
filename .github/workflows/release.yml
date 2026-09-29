@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A tag pushed with GITHUB_TOKEN does NOT start a new workflow run, so an
+      # `on: push: tags` trigger never fires for it. A workflow_dispatch made
+      # with the same token DOES start one - hence the `gh workflow run` below.
+      - name: Tag the version, if it is new
+        if: github.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^## Version:[[:space:]]*\([^[:space:]]*\).*/\1/p' Aegis_SBR.toc | tr -d '\r')
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::No MAJOR.MINOR.PATCH version in Aegis_SBR.toc (got '$version')"
+            exit 1
+          fi
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag is released already; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Aegis: Single Button Rotation $version"
+          git push origin "$tag"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
+          echo "Tagged $tag; it is packaged in the run started on the tag."
+
+      # Without a manual changelog the packager uses the commit log since the
+      # previous tag, which before the first release is the whole history -
+      # GitHub then refuses the release with "body is too long".
+      #
+      # Headings here are `## vX.Y.Z - title` and each entry is terminated by a
+      # line that is exactly `---`, so both are stop rules. The trailing-space
+      # match is what stops `## v1.2.3 ` matching `## v1.2.30 - ...`.
+      - name: Release notes from CHANGELOG.md
+        if: github.ref_type == 'tag'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            BEGIN { exact = "## v" ver; pref = exact " " }
+            index($0, pref) == 1 || $0 == exact { on = 1; print; next }
+            on && (/^## / || $0 == "---") { exit }
+            on { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "Aegis: Single Button Rotation $version" > RELEASE_NOTES.md
+          fi
+          cat RELEASE_NOTES.md
+
+      # Must run ONLY on a tag ref: the packager refuses to package a branch
+      # push whose commit is tagged ("Found future tag ... not packaging"),
+      # exits successfully and publishes nothing.
+      - name: Package and release to GitHub
+        if: github.ref_type == 'tag'
+        uses: BigWigsMods/packager@v2
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
