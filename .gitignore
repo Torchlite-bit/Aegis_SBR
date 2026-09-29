@@ -39,3 +39,6 @@ luac.out
 *.x86_64
 *.hex
 
+# Written by the release workflow from the CHANGELOG entry; the packager
+# ships it as the manual changelog even though it is not tracked.
+/RELEASE_NOTES.md

@@ -1,0 +1,18 @@
+# The addon folder MUST be Aegis_SBR, not the repository name. WoW loads an
+# addon from the folder named after its .toc, and this repository is still
+# called AutoRota after the rebrand - without this the packager would ship an
+# "AutoRota" folder holding Aegis_SBR.toc, which the client does not load.
+package-as: Aegis_SBR
+
+manual-changelog:
+    filename: RELEASE_NOTES.md
+    markup-type: markdown
+
+# Development-only files. Everything the .toc loads (the root .lua files,
+# classes/) plus the runtime assets (Fonts/, Icons/) ships.
+ignore:
+    - .github
+    - .gitignore
+    - CLAUDE.md
+    - docs
+    - scripts

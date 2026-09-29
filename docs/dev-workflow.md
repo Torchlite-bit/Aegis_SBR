@@ -111,6 +111,45 @@ PR entirely and put version, changelog and README into one release PR cut from
 `main` after the feature PRs have landed. A conflict you have to resolve once is
 cheaper than a merge that silently does not happen.
 
+## Releases are automatic - never push a `v*` tag by hand
+
+`.github/workflows/release.yml` publishes a GitHub release for every version that
+reaches `main`. Launchers compare an installed addon against the latest GitHub
+release, so a repository with no releases either nags about an update forever or
+never offers one.
+
+What happens on a merge to `main`:
+
+1. The push run reads `## Version:` from `Aegis_SBR.toc`. If `vX.Y.Z` is already a
+   tag it stops - **a merge that does not change the version releases nothing**, so
+   docs and tooling PRs are free.
+2. Otherwise it creates the annotated tag, pushes it, and starts the same workflow
+   again on the tag.
+3. The tag run writes that version's `CHANGELOG.md` entry into `RELEASE_NOTES.md`
+   and publishes the release with `BigWigsMods/packager`.
+
+So the release checklist is unchanged from what it always was: bump the version in
+all three places, add the CHANGELOG entry, merge. Nothing else.
+
+Three things in that workflow look redundant and are not. Do not simplify them away:
+
+- **The second run exists because a tag pushed with `GITHUB_TOKEN` does not start a
+  workflow.** `on: push: tags` never fires for it. A `workflow_dispatch` made with
+  the same token does, which is why the push run dispatches the tag run.
+- **The packager step is gated on `github.ref_type == 'tag'`.** It refuses to package
+  a branch push whose commit is tagged - it logs `Found future tag`, exits
+  successfully and publishes nothing.
+- **`RELEASE_NOTES.md` exists so the packager does not fall back to the commit log.**
+  Before the first release that is the entire history, and GitHub rejects the release
+  with `body is too long`.
+
+`.pkgmeta` sets `package-as: Aegis_SBR`. That is not cosmetic: this repository is
+still named `AutoRota`, the packager names the folder after the repository by
+default, and WoW loads an addon only from the folder matching its `.toc`.
+
+If a release does not appear, read the log of the run on the tag. `Found future tag`
+means the second rule above has regressed; `body is too long` means the third has.
+
 ## Delete the branch when the PR merges
 
 Not housekeeping - it is what makes GitHub retarget anything still pointing at
