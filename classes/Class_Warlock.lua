@@ -47,7 +47,7 @@ local M = Aegis_SBR:NewClassModule("WARLOCK")
 M.uiTitle = "Warlock"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 994
+M.uiHeight = 1022
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Talent that turns on the free instant Shadow Bolt proc (Shadow Trance).
@@ -297,6 +297,25 @@ end)
 -- reads "missing but recently cast" and answers "wait" - the rotation visibly
 -- stalls for a couple of seconds on a DoT that was never applied. The combat log
 -- is the only place that knows, so it is read below.
+-- Between presses, too: a running Drain Soul at the shard cap is stopped the
+-- moment the target is about to die, whether a press comes or not.
+local dsCapFrame = CreateFrame("Frame")
+dsCapFrame:SetScript("OnUpdate", function()
+    if Aegis_SBR.active ~= M then return end
+    if not (M.channeling and M.chanSpell == "Drain Soul") then return end
+    local now = GetTime()
+    if (M.dsCapTick or 0) > now then return end
+    M.dsCapTick = now + 0.1
+    local cfg = Aegis_SBR:GetActiveProfile()
+    if not cfg then return end
+    if M:DrainSoulMustStop(cfg) then
+        SpellStopCasting()
+        M.channeling = false
+        M.chanSpell = nil
+        if M:Tracing() then M:Trace("Drain Soul stopped at the shard cap, target about to die") end
+    end
+end)
+
 local wlCastEventFrame = CreateFrame("Frame")
 wlCastEventFrame:RegisterEvent("UNIT_CASTEVENT")
 -- "Your Corruption was resisted by X." - see the resist branch at the bottom.
@@ -610,6 +629,9 @@ function M:NormalizeProfile(c)
     -- Immolate's own stop line: a two second cast that a dying mob does not
     -- repay, so it can stop earlier than the instant DoTs. 0 = off.
     if c.immolateStopHp == nil then c.immolateStopHp = 0 end
+    -- Immolate's two second cast takes pushback, and Affliction has no talent
+    -- against it on Destruction spells: with a mob on you it may be left out.
+    if c.immolateNoAggro == nil then c.immolateNoAggro = false end
     if c.dotStopKeepCorruption == nil then c.dotStopKeepCorruption = true end
     return c
 end
@@ -1968,6 +1990,34 @@ function M:TapSafe(cfg)
     return self:HPAfterTap() > floor
 end
 
+-- Enough shards banked (the "Stop early to keep shards" line)?
+--
+-- A shard is made only when the target dies inside a Drain Soul. So at the
+-- cap the execute Drain Soul, which exists for the shard, is not started, and
+-- the filler and the between-channels Drain Soul - the hardest-hitting drain,
+-- kept in the rotation for its damage - run as before but are stopped before
+-- the target dies (DrainSoulMustStop). An earlier version stopped starting them
+-- at the cap, which took the strongest channel out of the rotation.
+function M:ShardsFull(cfg)
+    return cfg.keepShards and self:CountSoulShards() >= (cfg.shardTarget or 0) and true or false
+end
+
+-- About to die: the time-to-kill estimate under DS_STOP_TTK seconds, or, with
+-- no estimate, the health under DS_STOP_HP percent. The margin covers a tick of
+-- somebody else's damage and the latency of the stop.
+local DS_STOP_TTK = 3.0
+local DS_STOP_HP = 3
+function M:TargetDyingSoon()
+    local ttk = Aegis_SBR:TargetTTK()
+    if ttk then return ttk < DS_STOP_TTK end
+    return self:TargetHPPct() <= DS_STOP_HP
+end
+
+-- Stop (or do not start) a Drain Soul that would make a shard over the cap.
+function M:DrainSoulMustStop(cfg)
+    return self:ShardsFull(cfg) and self:TargetDyingSoon()
+end
+
 -- Before a Drain Life: tap first while there is health to spare and room in
 -- the mana bar. Drain Life's return is health, and at a full bar that return
 -- is thrown away; the tap turns the spare health into mana and the channel
@@ -2152,6 +2202,10 @@ function M:Rotate(cfg)
             why = "target dead"
         elseif Aegis_SBR:Moving() then
             why = "broken by movement"
+        elseif self.chanSpell == "Drain Soul" and self:DrainSoulMustStop(cfg) then
+            -- At the shard cap: the kill inside the channel would make one more.
+            SpellStopCasting()
+            why = "stopped at the shard cap, target about to die"
         elseif held < limit then
             if self:Tracing() then
                 self:Trace(string.format("STALL channel %.1fs of %.1fs (%s)",
@@ -2396,7 +2450,8 @@ function M:Rotate(cfg)
     --  5. Corruption. Instant and the best damage-per-mana of the set, so it
     --     loses the least by being applied last.
     local order = {}
-    if cfg.useImmolate and not (cfg.immolateStopHp and cfg.immolateStopHp > 0 and thp < cfg.immolateStopHp) then
+    if cfg.useImmolate and not (cfg.immolateStopHp and cfg.immolateStopHp > 0 and thp < cfg.immolateStopHp)
+        and not (cfg.immolateNoAggro and self:HasAggro()) then
         table.insert(order, { "Immolate", self.dotTex["Immolate"], 3 })
     end
     if cfg.curse ~= "" then
@@ -2572,6 +2627,10 @@ function M:Rotate(cfg)
         end
         -- Dark Harvest is on cooldown: fill the gap with the configured choice.
         local gap = cfg.dhGapFiller or "Shoot"
+        if gap == "Drain Soul" and self:DrainSoulMustStop(cfg) then
+            if self:Tracing() then self:Trace("shards banked and the target dying, no Drain Soul between channels") end
+            gap = "Shoot"
+        end
 
         -- A CHANNEL in the gap - Drain Life or Drain Soul. The guard at the top
         -- of Rotate stops the rotation for the channel's whole length, so two
@@ -2672,6 +2731,15 @@ function M:Rotate(cfg)
         -- spammable wand, only start it if it is not already auto repeating
         if self:WandRepeating() then return end
         self:Shoot("wanding")
+    elseif filler == "Drain Soul" and self:DrainSoulMustStop(cfg) then
+        -- Shards banked and the target about to die: a Drain Soul now would
+        -- make a shard over the cap. The wand, or Shadow Bolt without one.
+        if self:Tracing() then self:Trace("shards banked and the target dying, no Drain Soul") end
+        if self:HasWand() then
+            if not self:WandRepeating() then self:Shoot("wanding, shards banked") end
+        elseif self:KnowsSpell("Shadow Bolt") and self:HardCastBoltOK(cfg) then
+            self:Queue("Shadow Bolt", "filler nuke")
+        end
     elseif filler == "Drain Soul" then
         -- Same channel caution as the Dark Harvest gap filler, minus the
         -- cooldown half: there is no Dark Harvest to be held up here, only the

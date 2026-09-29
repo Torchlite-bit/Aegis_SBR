@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.38",
+    ver = "1.2.39",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -2120,6 +2120,7 @@ Aegis_SBR.spellRefused = {}
 -- already have reason to believe its own cast is the subject. The warrior's
 -- Overpower window is the one user: it sends the ability, then looks here.
 Aegis_SBR.spellRefusedAny = {}
+Aegis_SBR.spellRefusedMsg = {}
 
 function Aegis_SBR:SpellRefusedAnySince(name, t)
     if not name or not t then return false end
@@ -2181,6 +2182,9 @@ function Aegis_SBR:OnCastError(msg)
     -- knows what it just sent.
     if self.lastSpell and (GetTime() - (self.lastSpellAt or 0)) <= BLAME_WINDOW then
         self.spellRefusedAny[self.lastSpell] = GetTime()
+        -- Which refusal it was, for a caller that has to tell "not yet" from
+        -- "the target died" (the hunter's Kill Command).
+        self.spellRefusedMsg[self.lastSpell] = norm
     end
 
     if not (unitRefused or selfRefused) then
@@ -3048,24 +3052,111 @@ local function parse(s, pos)
 end
 
 -- The string for one saved profile, or nil and a reason.
+-- ------------------------------------------------------------
+-- AEGIS2: only what differs from the defaults, LZW-compressed.
+--
+-- Discord takes 2000 characters, and a whole profile was more: every switch
+-- and slider travelled, most of them at their default. The importer fills in
+-- every default anyway (NormalizeProfile), so only the differences go into
+-- the string. What is left repeats itself - the key names - and LZW with a
+-- 4096-entry dictionary folds it; each 12-bit code is written as two base64
+-- characters, which keeps the text Discord-safe. A default changed in a later
+-- version reaches the importer as the new default for a setting the sender
+-- never touched. AEGIS1 strings (whole profile, plain base64) still import.
+-- ------------------------------------------------------------
+local LZW_MAX = 4096
+
+local function lzwEnc(str)
+    local dict, size = {}, 256
+    for i = 0, 255 do dict[string.char(i)] = i end
+    local out, w = {}, ""
+    local function put(code)
+        local hi, lo = math.floor(code / 64), math.mod(code, 64)
+        table.insert(out, string.sub(B64, hi + 1, hi + 1) .. string.sub(B64, lo + 1, lo + 1))
+    end
+    for i = 1, string.len(str) do
+        local c = string.sub(str, i, i)
+        local wc = w .. c
+        if dict[wc] then
+            w = wc
+        else
+            put(dict[w])
+            if size < LZW_MAX then dict[wc] = size; size = size + 1 end
+            w = c
+        end
+    end
+    if w ~= "" then put(dict[w]) end
+    return table.concat(out)
+end
+
+local function lzwDec(t)
+    t = string.gsub(t, "[^%w%+/]", "")
+    if math.mod(string.len(t), 2) ~= 0 then return nil end
+    local dict, size = {}, 256
+    for i = 0, 255 do dict[i] = string.char(i) end
+    local out, w = {}, nil
+    for i = 1, string.len(t), 2 do
+        local a, b = B64R[string.sub(t, i, i)], B64R[string.sub(t, i + 1, i + 1)]
+        if not (a and b) then return nil end
+        local code = a * 64 + b
+        local entry = dict[code]
+        if not entry then
+            if w and code == size then entry = w .. string.sub(w, 1, 1) else return nil end
+        end
+        table.insert(out, entry)
+        if w and size < LZW_MAX then dict[size] = w .. string.sub(entry, 1, 1); size = size + 1 end
+        w = entry
+    end
+    return table.concat(out)
+end
+
+-- The part of v that differs from d, or nil when it is equal. A table with no
+-- table under it in the defaults is kept, even empty: the importer's defaults
+-- would not recreate it.
+local function sparse(v, d)
+    if type(v) ~= "table" then
+        if v == d then return nil end
+        return v
+    end
+    if type(d) ~= "table" then d = nil end
+    local out, any = {}, false
+    for k, x in pairs(v) do
+        if not (type(k) == "string" and string.sub(k, 1, 2) == "__") then
+            local r = sparse(x, d and d[k])
+            if r ~= nil then out[k] = r; any = true end
+        end
+    end
+    if any or d == nil then return out end
+    return nil
+end
+
 function Aegis_SBR:ExportProfile(name)
     local cfg = AegisDB and AegisDB.profiles and name and AegisDB.profiles[name]
     if not cfg then return nil, "profile '" .. tostring(name) .. "' not found" end
     local class = (self.active and self.active.classToken) or "?"
+    -- The defaults as this version's importer fills them in. Should a module
+    -- fail on an empty profile, the whole profile goes, as in AEGIS1.
+    local def = {}
+    if self.active and self.active.NormalizeProfile then
+        local ok = pcall(self.active.NormalizeProfile, self.active, def)
+        if not ok then def = nil end
+    end
+    local body = def and (sparse(cfg, def) or {}) or cfg
     local out = {}
-    serialize({ name = name, ver = self.ver, class = class, cfg = cfg }, out)
-    return "AEGIS1:" .. class .. ":" .. b64enc(table.concat(out))
+    serialize({ name = name, ver = self.ver, cfg = body }, out)
+    return "AEGIS2:" .. class .. ":" .. lzwEnc(table.concat(out))
 end
 
 -- Creates a profile from a string; returns its name and the version it was
 -- written by, or nil and a reason. Nothing is activated.
 function Aegis_SBR:ImportProfile(text)
     text = string.gsub(text or "", "%s", "")
-    local _, _, class, payload = string.find(text, "^AEGIS1:(%u+):(.+)$")
-    if not payload then return nil, "not an Aegis profile string" end
+    local _, _, fmt, class, payload = string.find(text, "^AEGIS(%d):(%u+):(.+)$")
+    if not payload or (fmt ~= "1" and fmt ~= "2") then return nil, "not an Aegis profile string" end
     local mine = self.active and self.active.classToken
     if class ~= mine then return nil, "a " .. class .. " profile; this character is a " .. tostring(mine) end
-    local raw = b64dec(payload)
+    local raw
+    if fmt == "2" then raw = lzwDec(payload) else raw = b64dec(payload) end
     local rec = raw and parse(raw, 1)
     if type(rec) ~= "table" or type(rec.cfg) ~= "table" then return nil, "the string is damaged" end
     if type(AegisDB) ~= "table" then AegisDB = {} end

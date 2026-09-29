@@ -30,7 +30,7 @@ local M = Aegis_SBR:NewClassModule("HUNTER")
 M.uiTitle = "Hunter"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 1184
+M.uiHeight = 1326
 M.meleeAutoAttack = false   -- managed here: Auto Shot (ranged) or Attack (melee)
 M.autoAcquireTarget = false -- a ranged class should not auto-pull random mobs; pick targets
 
@@ -44,7 +44,7 @@ local MANA_ASPECT_HYST = 15   -- swap back to the combat aspect this far above t
 -- Steady Shot weave margin: it must finish this far before the next Auto Shot
 -- launches to clear the ~0.5s shot windup plus latency, so it never clips.
 local STEADY_BUFFER = 0.5
-local STEADY_CAST_DEFAULT = 1.5   -- assumed Steady Shot cast time until measured live
+local STEADY_CAST_DEFAULT = 1.0   -- Steady Shot's tooltip cast time, until measured live
 -- Auto Shot is considered stalled if no shot has fired for the ranged swing plus
 -- this margin (covers a Steady Shot pause); then we restart it automatically.
 local AUTOSHOT_STALL = 2.0
@@ -183,6 +183,9 @@ M.templates = {
         useManaAspect = true, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 60,
         useKillCommand = true, useBaitedShot = true,
+        -- Situational: when the tank's aggro is safe, or for a fear, sleep or
+        -- execute phase. That is the player's call, not the rotation's.
+        useBestialWrath = false,
         popCDs = false, autoCDElite = true,
     },
     marksmanship = {
@@ -251,6 +254,14 @@ function M:NormalizeProfile(c)
         useRapidFire = true,
         useKillCommand = false, useBaitedShot = false,
         popCDs = false, autoCDElite = false,
+        -- Hunter's Mark and the sting only on a target that lives long enough
+        -- to repay them (see LivesFor). Off by default.
+        useDebuffTTK = false, markMinTTK = 8, stingMinTTK = 12,
+        -- The single macro decides single or AoE by the enemies the nameplates
+        -- show (see PressAoe). Off: the two macros decide, as before.
+        smartAoe = false, smartAoeN = 3,
+        -- Survival: Lacerate ahead of Mongoose Bite (strong gear).
+        lacerateFirst = false,
     }
     for k, v in pairs(b) do
         if c[k] == nil then c[k] = v end
@@ -471,6 +482,65 @@ function M:SteadyReady()
     return (now - (self.steadyT or 0)) >= speed       -- stale/unknown: one per swing
 end
 
+-- Does the target live long enough for a debuff that needs `need` seconds?
+--
+-- Hunter's Mark and the sting cost mana every pull, and on trash that dies in
+-- ten seconds most of it is thrown away: a log had 154 Marks and 187 stings in
+-- one session, a third of them on mobs already under 40%, while Steady Shot
+-- was skipped for mana forty times and Arcane Shot never went out.
+--
+-- The time-to-kill estimate answers once it has three seconds of this target.
+-- Before that, an untouched target (full health: the pull, a fresh mob) is
+-- worth it as before; one already losing health waits for the estimate, and
+-- the rotation carries on with the shots meanwhile.
+function M:LivesFor(cfg, need)
+    if not cfg.useDebuffTTK or not need or need <= 0 then return true end
+    local ttk = Aegis_SBR:TargetTTK()
+    if ttk then return ttk >= need end
+    return self:TargetHPPct() >= 100
+end
+
+-- May a filler go out now without breaking the weave?
+--
+-- The rotation is Auto Shot and Steady Shot without clipping; everything else
+-- is filler. A filler may move the next Steady Shot, not break it: its global
+-- cooldown has to end while the Steady after the next Auto Shot can still
+-- finish before the Auto Shot after that - the same window SteadyReady opens
+-- for the weave. And a filler with a cast bar (Multi-Shot's is short) may not
+-- run across the moment of the next Auto Shot, which it would delay.
+--
+-- The first version asked for a whole global cooldown of room before the next
+-- Auto Shot. With Steady's own global cooldown in the same cycle that never
+-- fits a swing under three seconds, and fillers were almost never used.
+--
+-- Unknown or stale shot timing (moving, out of range) answers yes: there is no
+-- weave to protect then.
+local FILLER_GCD = 1.5
+-- Multi-Shot's cast bar on this client: half a second (measured in play).
+local MULTI_CAST = 0.5
+function M:FillerRoom(castTime)
+    local last = self.lastAutoShot
+    if not (last and last > 0) then return true end
+    local now = GetTime()
+    local speed = self:RangedSpeed()
+    if now - last >= speed + 1.0 then return true end
+    local nextAuto = last + speed
+    castTime = castTime or 0
+    if castTime > 0 and now < nextAuto and now + castTime > nextAuto - 0.1 then return false end
+    local cast = (self.steadyCastDur and self.steadyCastDur > 0) and self.steadyCastDur or STEADY_CAST_DEFAULT
+    local window = speed - cast - STEADY_BUFFER
+    if window < 0.3 then window = 0.3 end
+    return now + FILLER_GCD <= nextAuto + window
+end
+
+-- Is this press Steady Shot's? Then nothing below it may take the global.
+-- Not while moving: Steady has a cast time and cannot go out, and holding the
+-- sting for it would leave the press to nothing.
+function M:SteadyDueNow(cfg)
+    if Aegis_SBR:Moving() then return false end
+    return cfg.useSteadyShot and self:KnowsSpell("Steady Shot") and self:SteadyReady() and true or false
+end
+
 -- Which weave path is live, for the trace line.
 function M:WeaveSource()
     return (self.lastAutoShot and self.lastAutoShot > 0) and "precise" or "interval"
@@ -531,8 +601,89 @@ end
 -- last send, whether that send went through or was refused. A send consumes
 -- the crit; a refusal means there was none to consume. Either way the next
 -- attempt waits for the next crit, and a hunter's crits are not rare.
+--
+-- "On the target" is the tooltip's condition, and it matters: Multi-Shot hits
+-- three mobs, and a crit on a neighbour - or on the mob before this one - armed
+-- it all the same. A log had eight of twenty-six sends refused that way. The
+-- crit line must name the current target (see the frame at the bottom).
+--
+-- The combat-log reading missed most crits: a log had 33 Kill Commands in
+-- twenty minutes of fighting, gaps of one to five minutes between them, and
+-- the player pressing it by hand while it was lit. The button's own state is
+-- what the client lights, so it is read first: Kill Command's slot on an
+-- action bar (found by its icon, macros excluded) and IsUsableAction on it.
+-- Should that ever answer yes to a send the client then refuses as "not yet",
+-- the button reading is dropped for the session and the crit lines decide.
+-- The action-bar slot of a spell the client lights only after a trigger (Kill
+-- Command, Lacerate: "after a critical strike on the target"), found by its
+-- icon with macros excluded, or nil. Per spell: slot, last scan, and whether
+-- the reading has been dropped for the session.
+M.reactive = {}
+
+function M:ReactiveSlot(spell)
+    local r = self.reactive[spell]
+    if not r then r = {}; self.reactive[spell] = r end
+    if r.bad then return nil end
+    local sb = Aegis_SBR:FindSpellSlot(spell)
+    local tex = sb and GetSpellTexture(sb, BOOKTYPE_SPELL)
+    if not tex then return nil end
+    local s = r.slot
+    if s and GetActionTexture(s) == tex and not GetActionText(s) then return s end
+    local now = GetTime()
+    if (r.scanAt or 0) > now - 5 then return nil end
+    r.scanAt = now
+    r.slot = nil
+    for i = 1, 120 do
+        if GetActionTexture(i) == tex and not GetActionText(i) then r.slot = i; return i end
+    end
+    return nil
+end
+
+-- Is the triggered spell usable, by its button? true/false when the button
+-- can be read, nil when it cannot (not on a bar, or dropped) - the caller then
+-- falls back to the crit lines.
+--
+-- A send refused as "You can't do that yet" although the button said yes is
+-- counted; two of them drop the button reading for the session. Nothing else
+-- counts: a mob that died under the send, or "Ability is not ready yet" from
+-- the cooldown answering a second send, says nothing about the button.
+-- One second after a send it answers no: the button stays lit until the
+-- client has taken the cast.
+function M:ReactiveReady(spell, sentAt)
+    local r = self.reactive[spell]
+    if r and r.byButton and sentAt and Aegis_SBR.SpellRefusedAnySince
+        and Aegis_SBR:SpellRefusedAnySince(spell, sentAt) and (r.checked or 0) < sentAt then
+        r.checked = sentAt
+        local why = Aegis_SBR.spellRefusedMsg and Aegis_SBR.spellRefusedMsg[spell] or ""
+        if string.find(why, "can't do that yet", 1, true) then
+            r.refusals = (r.refusals or 0) + 1
+            if r.refusals >= 2 then r.bad = true end
+        end
+    end
+    local slot = self:ReactiveSlot(spell)
+    r = self.reactive[spell]
+    if not slot then r.byButton = false; return nil end
+    r.byButton = true
+    if sentAt and GetTime() - sentAt < 1.0 then return false end
+    return IsUsableAction(slot) and true or false
+end
+
+-- The combat-log reading missed most crits: a log had 33 Kill Commands in
+-- twenty minutes of fighting and the player pressing it by hand while it was
+-- lit. The button is read first (ReactiveReady); the crit lines are the
+-- fallback.
 function M:KillCommandArmed()
-    return (M.lastCritAt or 0) > (self.killCommandSentAt or 0)
+    local b = self:ReactiveReady("Kill Command", self.killCommandSentAt)
+    if b ~= nil then return b end
+    if (M.lastCritAt or 0) <= (self.killCommandSentAt or 0) then return false end
+    return M.lastCritName ~= nil and M.lastCritName == UnitName("target")
+end
+
+-- For the trace: which reading decides, and what it says.
+function M:KillCommandText()
+    local armed = self:KillCommandArmed()
+    local r = self.reactive["Kill Command"]
+    return ((r and r.byButton) and "btn" or "log") .. (armed and "+" or "-")
 end
 
 -- Debuffs this client has actually been seen to read back off a target, by
@@ -545,6 +696,10 @@ M.debuffSeen = {}
 -- last time the client refused it. The refusal is read the same way the throttle
 -- reads it: any refusal naming Lacerate after the send.
 function M:LacerateArmed()
+    -- The button first, as for Kill Command: a log had 22 of 215 Lacerates
+    -- refused as "not yet" on the crit-line reading.
+    local b = self:ReactiveReady("Lacerate", self.lacerateSentAt)
+    if b ~= nil then return b end
     local sent = self.lacerateSentAt
     if sent and Aegis_SBR.SpellRefusedAnySince and Aegis_SBR:SpellRefusedAnySince("Lacerate", sent) then
         self.lacerateDisarmedAt = sent
@@ -975,6 +1130,42 @@ function M:SpecFromTalents()
     return best
 end
 
+-- Single or AoE for this press.
+--
+-- Without "Smart single/AoE" the macros decide, as they always have. With it,
+-- the single macro (and a bare /sbr) is decided by the enemies the nameplates
+-- show: from N on the AoE column with all its switches, below it single. The
+-- AoE macro, and the AoE toggle, still force AoE. No readable nameplates, no
+-- count: the single press stays single. Once on, AoE holds two seconds, so a
+-- mob dropping out of the count for a moment does not flip the rotation.
+--
+-- Counted around the player: in melee range for a hunter in melee, in shot
+-- range otherwise - coarser, a second pack thirty yards off counts too.
+local SMART_HOLD = 2.0
+local SMART_MELEE_YARDS = 8
+local SMART_RANGED_YARDS = 30
+function M:PressAoe(cfg, over)
+    local pressed = Aegis_SBR:PressModeHeld()
+    if pressed and Aegis_SBR.pressAoe then return true end
+    if not pressed and cfg.aoeMode then return true end
+    local smart = over and over.smartAoe
+    if smart == nil then smart = cfg.smartAoe end
+    if not smart then return Aegis_SBR:AoeMode(cfg) end
+    local melee = M.SPEC_MELEE[cfg.spec or "bm"] or false
+    local rs = over and over.rangeSwitch
+    if rs == nil then rs = cfg.rangeSwitch end
+    if rs then melee = self:AutoMelee() end
+    local n = Aegis_SBR:CountEnemiesNear(melee and SMART_MELEE_YARDS or SMART_RANGED_YARDS)
+    local want = (over and over.smartAoeN) or cfg.smartAoeN or 3
+    local now = GetTime()
+    self.smartCount = n
+    if n and n >= want then
+        self.smartUntil = now + SMART_HOLD
+        return true
+    end
+    return now < (self.smartUntil or 0)
+end
+
 -- The profile as THIS SPEC sees it, on this press.
 --
 -- Three tabs, three sparse layers: cfg.bm, cfg.mm, cfg.surv. A key present in
@@ -991,7 +1182,7 @@ function M:SpecConfig(cfg)
     local spec = cfg.spec
     local over = spec and cfg[spec]
     if type(over) ~= "table" then return cfg end
-    local aoeSet = Aegis_SBR:AoeMode(cfg) and over.aoe or nil
+    local aoeSet = self:PressAoe(cfg, over) and over.aoe or nil
     if type(aoeSet) ~= "table" then aoeSet = nil end
     return setmetatable({}, {
         __index = function(_, k)
@@ -1013,14 +1204,16 @@ function M:Rotate(cfg)
     local now      = GetTime()
     local cls      = UnitClassification("target")
     local isElite  = (cls == "worldboss" or cls == "elite" or cls == "rareelite")
-    local aoe      = Aegis_SBR:AoeMode(cfg)
+    local aoe      = self:PressAoe(cfg)
     local inCombat = UnitAffectingCombat("player")
     local inMeleeNow = self:InMeleeRange()   -- actual range to target, independent of mode
     local targetHP   = self:TargetHPPct()
     -- Strict opener gate: Serpent Sting may only follow a confirmed Hunter's Mark.
     -- (True when Mark is disabled or unlearned, so it never blocks at low level.)
+    -- A Mark skipped for a short-lived target does not hold the sting back.
+    local markWorth = self:LivesFor(cfg, cfg.markMinTTK)
     local markOK = (not cfg.useHuntersMark) or (not self:KnowsSpell("Hunter's Mark"))
-        or self:DebuffUpAny("Hunter's Mark")
+        or not markWorth or self:DebuffUpAny("Hunter's Mark")
     -- Effective range state. "auto" picks ranged vs melee by distance each press
     -- (so abilities only fire in the matching state); otherwise honor the choice.
     -- The spec sets the default range; the range switch lets distance override
@@ -1036,6 +1229,7 @@ function M:Rotate(cfg)
 
     if self:Tracing() then
         self:Trace("spec=" .. (cfg.spec or "?") .. "/" .. (melee and "melee" or "ranged") .. (aoe and " AOE" or "")
+            .. (cfg.smartAoe and (" smart=" .. (self.smartCount and tostring(self.smartCount) or "?")) or "")
             .. " hp=" .. floor(targetHP)
             .. " sting=" .. (cfg.sting ~= "" and (cfg.sting
                 .. (effectiveSting ~= cfg.sting and ("->" .. effectiveSting) or "")
@@ -1048,6 +1242,9 @@ function M:Rotate(cfg)
                 .. (self:StingRemainText(effectiveSting))) or "-")
             .. " inMelee=" .. (inMeleeNow and "Y" or "n")
             .. " mark=" .. (cfg.useHuntersMark and (self:DebuffUpAny("Hunter's Mark") and "Y" or "n") or "-")
+            .. (cfg.useKillCommand and (" kc=" .. self:KillCommandText()) or "")
+            .. " ttk=" .. (Aegis_SBR:TargetTTK() and string.format("%.0fs", Aegis_SBR:TargetTTK()) or "?")
+            .. (cfg.useDebuffTTK and ((markWorth and "" or " markSkip") .. (self:LivesFor(cfg, cfg.stingMinTTK) and "" or " stingSkip")) or "")
             -- Seconds still to run on each reapply throttle, which is the one
             -- state that can make a missing debuff stay missing while every
             -- other field looks correct.
@@ -1073,8 +1270,12 @@ function M:Rotate(cfg)
     -- throttled, no-ops if the pet lacks it.
     if aoe and cfg.petAttack and UnitExists("pet") then self:PetCleave() end
 
+    -- Nothing off the global cooldown is sent while a cast runs: the client
+    -- drops it without a word. A log had Rapid Fire sent seven times during
+    -- one Steady Shot, none of them taken. The press after the cast sends.
+    local casting = CastingBarFrame and (CastingBarFrame.casting or CastingBarFrame.channeling)
     local popBurst = cfg.popCDs or (cfg.autoCDElite and isElite)
-    if popBurst and inCombat then
+    if popBurst and inCombat and not casting then
         -- Rapid Fire speeds up ranged attacks and nothing else. In melee it is
         -- a cooldown spent on nothing, so it stays for the ranged branch - and
         -- is still ready when the hunter steps back to range.
@@ -1102,13 +1303,13 @@ function M:Rotate(cfg)
     end
     -- Kill Command is rotational for BM: fire in combat (off GCD) once a crit
     -- of ours has armed it - see KillCommandArmed.
-    if cfg.useKillCommand and inCombat and self:KnowsSpell("Kill Command") and self:IsReady("Kill Command")
+    if cfg.useKillCommand and inCombat and not casting and self:KnowsSpell("Kill Command") and self:IsReady("Kill Command")
         and self:KillCommandArmed() then
         self:PickExtra("Kill Command")
         self:Later(function() self.killCommandSentAt = GetTime() end)
     end
     -- Baited Shot reaction inside the short window after the pet crits.
-    if cfg.useBaitedShot and self:KnowsSpell("Baited Shot")
+    if cfg.useBaitedShot and not casting and self:KnowsSpell("Baited Shot")
         and now < (self.petCritUntil or 0) and self:IsReady("Baited Shot") then
         self:PickExtra("Baited Shot")
     end
@@ -1127,7 +1328,7 @@ function M:Rotate(cfg)
     --    still runs first because it is fire-and-continue and never eats the
     --    press.
     -- ----------------------------------------------------------------
-    if cfg.useHuntersMark then
+    if cfg.useHuntersMark and markWorth then
         if self:MaintainDebuff("Hunter's Mark", 110) then return end
     end
 
@@ -1162,7 +1363,14 @@ function M:Rotate(cfg)
     --     even a melee hunter lands it on the pull and stops once closed. No HP
     --     gate - the reapply throttle already stops trash from getting a wasted
     --     refresh, and the Arcane finisher below still burns down a low mob.
-    if cfg.sting ~= "" and not inMeleeNow and markOK
+    --
+    --     Filler all the same: the press that belongs to Steady Shot goes to
+    --     Steady, and the sting waits for a gap with a global cooldown of room
+    --     before the next Auto Shot - the weave is the rotation, the sting is
+    --     not.
+    local stingRoom = melee or (not self:SteadyDueNow(cfg) and self:FillerRoom())
+    if cfg.sting ~= "" and not inMeleeNow and markOK and stingRoom
+        and self:LivesFor(cfg, cfg.stingMinTTK)
         and not self:StingBlocked(effectiveSting) then
         if self:MaintainSting(effectiveSting, STING_DUR[effectiveSting] or 12) then
             -- remember this application so a sting that never lands (an immune
@@ -1260,6 +1468,19 @@ function M:Rotate(cfg)
         -- which is the vanilla rule and not this client's: here it is an ordinary
         -- instant melee attack, 30 mana, five seconds. The gate meant it almost
         -- never fired, and the dodge tracker that fed it is gone with it.
+        --
+        -- With "Lacerate before Mongoose Bite" the bleed goes first (strong
+        -- gear makes it the bigger hit); by default the Bite leads.
+        local function lacerate()
+            if cfg.useLacerate and self:KnowsSpell("Lacerate") and self:LacerateArmed() then
+                if self:MaintainDebuff("Lacerate", 8) then
+                    self:Later(function() self.lacerateSentAt = GetTime() end)
+                    return true
+                end
+            end
+            return false
+        end
+        if cfg.lacerateFirst and lacerate() then return end
         if cfg.useMongooseBite and self:KnowsSpell("Mongoose Bite")
             and self:IsReady("Mongoose Bite") then
             if self:Pick("Mongoose Bite", "on cooldown") then return end
@@ -1273,12 +1494,7 @@ function M:Rotate(cfg)
         -- it, Lacerate took the press and was refused on every one until a crit
         -- happened to land. So it is ARMED by a crit of ours and DISARMED by a
         -- refusal - each refusal waits for the next crit, no guessed window.
-        if cfg.useLacerate and self:KnowsSpell("Lacerate") and self:LacerateArmed() then
-            if self:MaintainDebuff("Lacerate", 8) then
-                self:Later(function() self.lacerateSentAt = GetTime() end)
-                return
-            end
-        end
+        if not cfg.lacerateFirst and lacerate() then return end
         -- Carve as a single-target filler, BELOW every rotational attack, so it
         -- can only take a press nothing else wanted. Requested from play.
         --
@@ -1331,13 +1547,18 @@ function M:Rotate(cfg)
 
     -- Multi-Shot woven into the post-Steady downtime (single-target burst when you
     -- have the GCDs to spare): Auto Shot -> Steady -> Multi-Shot.
-    if cfg.useMultiShot and self:KnowsSpell("Multi-Shot") and self:IsReady("Multi-Shot") then
-        if self:Queue("Multi-Shot", "instant") then return end
+    --
+    -- Single target it is filler: below Kill Command and the Steady weave, and
+    -- only with a global cooldown of room before the next Auto Shot, so it
+    -- never delays the next Steady.
+    local room = self:FillerRoom()
+    if cfg.useMultiShot and self:FillerRoom(MULTI_CAST) and self:KnowsSpell("Multi-Shot") and self:IsReady("Multi-Shot") then
+        if self:Queue("Multi-Shot", "filler, room before the next shot") then return end
     end
 
     -- Low-HP finisher: below the floor, instant Arcane Shot burns the mob down
     -- ahead of the mana-gated filler. Runs regardless of the mana gate - it's a kill.
-    if cfg.useArcaneShot and self:KnowsSpell("Arcane Shot")
+    if cfg.useArcaneShot and room and self:KnowsSpell("Arcane Shot")
         and targetHP <= STING_HP_FLOOR and self:IsReady("Arcane Shot") then
         if self:Queue("Arcane Shot", "finishing a low target") then return end
     end
@@ -1348,7 +1569,7 @@ function M:Rotate(cfg)
     if cfg.useArcaneShot and self:KnowsSpell("Arcane Shot") and self:IsReady("Arcane Shot") then
         local autoStale = not (self.lastAutoShot and self.lastAutoShot > 0
             and (now - self.lastAutoShot) < (self:RangedSpeed() + 1.0))
-        if self:ManaPct() >= ARCANE_MANA_FLOOR or autoStale then
+        if (self:ManaPct() >= ARCANE_MANA_FLOOR and room) or autoStale then
             if self:Queue("Arcane Shot", "instant filler") then return end
         end
     end
@@ -1463,7 +1684,13 @@ hunterFrame:SetScript("OnEvent", function()
     -- read further down for other reasons and return early there.
     if (event == "CHAT_MSG_COMBAT_SELF_HITS" or event == "CHAT_MSG_SPELL_SELF_DAMAGE")
         and arg1 and string.find(arg1, "crit") then
-        M.lastCritAt = GetTime()
+        -- Only a crit on the current target counts: Kill Command and Lacerate
+        -- are both "after a critical strike on the target".
+        local tname = UnitName("target")
+        if tname and string.find(arg1, tname, 1, true) then
+            M.lastCritAt = GetTime()
+            M.lastCritName = tname
+        end
     end
     if event == "PLAYER_REGEN_ENABLED" then
         M.autoShotOn = false

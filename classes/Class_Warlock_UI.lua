@@ -67,6 +67,7 @@ function M:BuildBody(ui, parent)
         onToggle = set("dotStopKeepCorruption") }
     self.immoStopRow = L:Row{ label = "Stop Immolate below",
         slider = { key = "immoStopHp", min = 0, max = 60, step = 5, suffix = "%", onChange = set("immolateStopHp") } }
+    self.immoAggroRow = L:Row{ key = "immolateNoAggro", label = "No Immolate with aggro", spell = "Immolate", onToggle = set("immolateNoAggro") }
 
     L:Header("Survival")
     self.drainRow = L:Row{ key = "drainLifeSustain", label = "Drain Life when low", spell = "Drain Life", onToggle = set("drainLifeSustain"),
@@ -109,7 +110,8 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.dsoulRow.cb, "Drain Soul", "Channel in the target's last seconds to bank a Soul Shard and regen mana.", "If both this and Shadowburn are on, Shadowburn fires first when ready.")
     ui:Tip(self.sburnRow.slider, "Burn below", "Target health percent under which Shadowburn fires.")
     ui:Tip(self.dsoulRow.slider, "Drain below", "Target health percent under which Drain Soul channels.")
-    ui:Tip(self.shardRow.cb, "Stop early to keep shards", "Once you hold at least this many shards, Drain Soul stops finishing targets so the filler (or Shadowburn) takes over instead.")
+    ui:Tip(self.shardRow.cb, "Stop early to keep shards", "At this many shards no new shard is made: the execute Drain Soul is not started, and a Drain Soul as the filler or between Dark Harvests keeps running for its damage but is stopped just before the target dies.")
+    ui:Tip(self.immoAggroRow.cb, "No Immolate with aggro", "While a mob is attacking you, Immolate is left out: its two second cast takes pushback. The instant DoTs keep going.")
     ui:Tip(self.shardRow.slider, "Shard target", "Drain Soul keeps finishing targets while you hold fewer shards than this.")
     ui:Tip(self.dotStopRow.slider, "Stop new DoTs below", "Below this target health, no damage-over-time effect is applied or refreshed any more - the press goes to your filler instead.", "A fresh DoT never earns its mana back on a mob about to die: Siphon Life needs most of its 30s to break even and Curse of Agony's damage comes at the end. Set to 0 to switch this off. DoTs already ticking are never cancelled.")
     ui:Tip(self.immoStopRow.slider, "Stop Immolate below", "Below this target health Immolate is neither applied nor topped up - its two second cast is not repaid on a dying mob. Separate from the line above, so the instant DoTs can keep going longer. 0 = off.")
@@ -231,7 +233,9 @@ function M:RefreshBody(ui, buf)
 
     -- Keeping shards is a refinement of the Drain Soul finisher, so grey it
     -- out whenever that finisher itself is off, unlearned, or superseded above.
-    local dsoulOn = self:KnowsSpell("Drain Soul") and buf.useDrainSoul and not dsIsFiller
+    local dsoulOn = self:KnowsSpell("Drain Soul")
+        and ((buf.useDrainSoul and not dsIsFiller) or dsIsFiller
+            or (buf.filler == "Dark Harvest" and buf.dhGapFiller == "Drain Soul"))
     if not dsoulOn then
         self.shardRow.cb:Disable()
         ui:Color(self.shardRow.label, ui.COL.grey)
@@ -246,6 +250,7 @@ function M:RefreshBody(ui, buf)
     self.immoStopRow.slider:SetValue(buf.immolateStopHp or 0)
     self.immoStopRow.slider.valText:SetText((buf.immolateStopHp or 0) .. "%")
     ui:SliderEnable(self.immoStopRow.slider, buf.useImmolate and true or false)
+    ui:BindCheck(self.immoAggroRow, buf.immolateNoAggro, "Immolate")
     ui:BindCheck(self.dotStopCorrRow, buf.dotStopKeepCorruption)
     if (buf.dotStopHp or 0) <= 0 then
         self.dotStopCorrRow.cb:Disable()

@@ -78,6 +78,10 @@ function M:BuildBody(ui, parent)
 
     L:MacroNote()
 
+    L:Header("Single / AoE")
+    self.smartRow = L:Row{ key = "smartAoe", label = "Smart single/AoE from", onToggle = set("smartAoe"),
+        slider = { key = "smartAoeN", min = 2, max = 8, step = 1, suffix = "", onChange = set("smartAoeN") } }
+
     -- ---------------------------------------------------------------- 1. aspect
     L:Header("Aspect")
     self.aspectRow = L:Row{ key = "useAspect", label = "Keep the combat aspect up", onToggle = set("useAspect") }
@@ -105,6 +109,10 @@ function M:BuildBody(ui, parent)
     self.explosiveRow = aoeOnly("r_expl", "useExplosiveTrap", "Explosive Trap", "Explosive Trap")
     self.aimedProcRow = L:Row{ key = "aimedOnlyOnProc", label = "Aimed only on Lock and Load", onToggle = set("aimedOnlyOnProc") }
     self.aimedOpenerRow = L:Row{ key = "useAimedOpener", label = "Aimed opener (pre-pull)", onToggle = set("useAimedOpener") }
+    self.ttkMarkRow = L:Row{ key = "useDebuffTTK", label = "Mark only if the target lives", onToggle = set("useDebuffTTK"),
+        slider = { key = "markMinTTK", min = 0, max = 30, step = 1, suffix = "s", onChange = set("markMinTTK") } }
+    self.ttkStingRow = L:Row{ label = "Sting only if the target lives",
+        slider = { key = "stingMinTTK", min = 0, max = 30, step = 1, suffix = "s", onChange = set("stingMinTTK") } }
 
     -- Survival: the melee table is primary.
     L:Header("Melee attacks", { surv = true })
@@ -112,6 +120,7 @@ function M:BuildBody(ui, parent)
     self.raptorRow   = both("s_raptor", "useRaptorStrike", "Raptor Strike", "Raptor Strike")
     self.mongooseRow = both("s_mongoose", "useMongooseBite", "Mongoose Bite", "Mongoose Bite")
     self.lacerateRow = both("s_lacerate", "useLacerate", "Lacerate", "Lacerate")
+    self.lacFirstRow = L:Row{ key = "lacerateFirst", label = "Lacerate before Mongoose Bite", spell = "Lacerate", onToggle = set("lacerateFirst") }
     self.carveRow    = both("s_carve", "useCarve", "Carve", "Carve")
     self.wingRow     = both("s_wing", "useWingClip", "Wing Clip", "Wing Clip")
     self.trapRow2      = singleOnly("s_immo", "useImmolationTrap", "Immolation Trap", "Immolation Trap")
@@ -133,6 +142,10 @@ function M:BuildBody(ui, parent)
     self.markRow2   = both("o_mark", "useHuntersMark", "Hunter's Mark", "Hunter's Mark")
     self.arcaneRow2 = both("o_arcane", "useArcaneShot", "Arcane Shot", "Arcane Shot")
     self.multiRow2  = both("o_multi", "useMultiShot", "Multi-Shot", "Multi-Shot")
+    self.ttkMarkRow2 = L:Row{ key = "useDebuffTTK2", label = "Mark only if the target lives", onToggle = set("useDebuffTTK"),
+        slider = { key = "markMinTTK2", min = 0, max = 30, step = 1, suffix = "s", onChange = set("markMinTTK") } }
+    self.ttkStingRow2 = L:Row{ label = "Sting only if the target lives",
+        slider = { key = "stingMinTTK2", min = 0, max = 30, step = 1, suffix = "s", onChange = set("stingMinTTK") } }
 
     -- ---------------------------------------------------------------- 4. spec abilities
     L:Header("Beast Mastery", { bm = true })
@@ -186,10 +199,16 @@ function M:BuildBody(ui, parent)
     stingTip(self.stingDD); stingTip(self.stingDD2)
     local function markTip(row) ui:Tip(row.cb, "Hunter's Mark", "Applied once per target and refreshed when it falls off.", "Off in the AoE column by default: one mark per mob is a press each that a pack does not repay.") end
     markTip(self.markRow); markTip(self.markRow2)
+    local function ttkTip(mr, sr)
+        ui:Tip(mr.cb, "Mark and sting only if the target lives", "Hunter's Mark and the sting only on a target the time-to-kill estimate says lives at least the seconds on the right. Saves the mana they cost on trash that dies anyway.", "A target at full health is marked as before; one already losing health waits about three seconds for the estimate, the shots go on meanwhile. 0 = no limit.")
+        ui:Tip(mr.slider, "Mark if it lives", "Seconds the target must have left for Hunter's Mark.")
+        ui:Tip(sr.slider, "Sting if it lives", "Seconds the target must have left for the sting.")
+    end
+    ttkTip(self.ttkMarkRow, self.ttkStingRow); ttkTip(self.ttkMarkRow2, self.ttkStingRow2)
     ui:TipRow(self.steadyRow, "Steady Shot", "The 1:1 weave after each Auto Shot and the main filler. Queued so it does not clip the shot.")
-    local function arcaneTip(row) ui:Tip(row.cb, "Arcane Shot", "Instant, weaved on cooldown between Auto Shots.") end
+    local function arcaneTip(row) ui:Tip(row.cb, "Arcane Shot", "Filler: only where it leaves a global cooldown of room before the next Auto Shot, so the Steady weave is never delayed.") end
     arcaneTip(self.arcaneRow); arcaneTip(self.arcaneRow2)
-    local function multiTip(row) ui:Tip(row.cb, "Multi-Shot", "On cooldown. Leads AoE together with Volley.") end
+    local function multiTip(row) ui:Tip(row.cb, "Multi-Shot", "AoE: on cooldown, ahead of Steady Shot. Single target: filler below Kill Command and Steady Shot, only with room before the next Auto Shot.") end
     multiTip(self.multiRow); multiTip(self.multiRow2)
     ui:TipRow(self.aimedRow, "Aimed Shot", "Only fired when Lock and Load procs (cast time drop + line cleave), so it never clips Auto Shot.")
     ui:Tip(self.aimedProcRow.cb, "Aimed only on Lock and Load", "Recommended on. Off, Aimed Shot is also hard-cast on cooldown, which clips Auto Shot.")
@@ -205,6 +224,9 @@ function M:BuildBody(ui, parent)
     mongooseTip(self.mongooseRow); mongooseTip(self.mongooseRow2)
     local function wingTip(row) ui:Tip(row.cb, "Wing Clip", "Optional melee slow / kite tool.") end
     wingTip(self.wingRow); wingTip(self.wingRow2)
+    ui:Tip(self.smartRow.cb, "Smart single/AoE", "The single macro switches to the AoE column by itself from this many enemies, and back below it. Needs enemy nameplates shown (V): without them there is no count and the single macro stays single.", "The AoE macro still forces AoE, so two macros keep working as before.")
+    ui:Tip(self.smartRow.slider, "Enemies for AoE", "Enemies near you from which the AoE column is used: in melee range for a hunter in melee, in shot range otherwise.")
+    ui:Tip(self.lacFirstRow.cb, "Lacerate before Mongoose Bite", "The bleed ahead of the Bite. Worth it with strong gear (Naxxramas and above); off, Mongoose Bite leads.")
     ui:TipRow(self.lacerateRow, "Lacerate", "An 8 second bleed on a 10 second cooldown, re-applied when it falls off.", "Only usable after you critically strike the target: it is armed by a crit of yours and stands down again when the client refuses it, until the next crit.")
     ui:TipRow(self.carveRow, "Carve", "Melee cone. Leads the melee attacks on an AoE press; a single-target filler otherwise.")
 
@@ -220,10 +242,10 @@ function M:BuildBody(ui, parent)
         end
     end
 
-    ui:Tip(self.kcRow.cb, "Kill Command", "Fired the moment it becomes usable - the client only allows it after you land a critical strike.")
+    ui:Tip(self.kcRow.cb, "Kill Command", "Fired the moment it becomes usable: after you land a critical strike on the current target.")
     ui:Tip(self.baitedRow.cb, "Baited Shot", "Fired in the short window after your pet lands a critical strike.")
     ui:Tip(self.rfRow.cb, "Rapid Fire", "Included when cooldowns fire. At range only - it speeds up ranged attacks and nothing else, so in melee it is kept for when you step back.")
-    ui:Tip(self.bwRow.cb, "Bestial Wrath", "Fires together with the cooldowns (see the Cooldowns section for when). Skipped without a live pet - it grants the pet Scent of Blood, and with no pet out the two minutes are spent on nothing.")
+    ui:Tip(self.bwRow.cb, "Bestial Wrath", "Situational: press it yourself when the tank's aggro is safe, or for a fear, sleep or execute phase. Switched on, it fires together with the cooldowns.", "Skipped without a live pet - it grants the pet Scent of Blood.")
     ui:Tip(self.petRow.cb, "Pet attack", "Sends your pet onto the target each press.")
     ui:Tip(self.petMeleeRow.cb, "Pet only in melee range", "Only send the pet when the target is within melee range of you, so a far target does not pull it away.")
     ui:Tip(self.mendRow.cb, "Mend Pet", "Heals the pet below the slider value (HoT, refreshed ~12s).")
@@ -322,6 +344,23 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.petMeleeRow, get("petMeleeOnly"))
     ui:BindCheck(self.tauntRow, get("petTaunt"))
     ui:BindCheck(self.mendRow, get("useMendPet"))
+    ui:BindCheck(self.smartRow, get("smartAoe"))
+    local sn = get("smartAoeN") or 3
+    self.smartRow.slider:SetValue(sn)
+    if self.smartRow.slider.valText then self.smartRow.slider.valText:SetText(">=" .. sn) end
+    ui:SliderEnable(self.smartRow.slider, get("smartAoe") and true or false)
+    ui:BindCheck(self.lacFirstRow, get("lacerateFirst"), "Lacerate")
+    local ttkOn = get("useDebuffTTK") and true or false
+    local mt, st = get("markMinTTK") or 8, get("stingMinTTK") or 12
+    for _, pair in ipairs({ { self.ttkMarkRow, self.ttkStingRow }, { self.ttkMarkRow2, self.ttkStingRow2 } }) do
+        ui:BindCheck(pair[1], ttkOn)
+        pair[1].slider:SetValue(mt)
+        if pair[1].slider.valText then pair[1].slider.valText:SetText(">=" .. mt .. "s") end
+        pair[2].slider:SetValue(st)
+        if pair[2].slider.valText then pair[2].slider.valText:SetText(">=" .. st .. "s") end
+        ui:SliderEnable(pair[1].slider, ttkOn)
+        ui:SliderEnable(pair[2].slider, ttkOn)
+    end
     if Aegis_SBR_Pet then self.petWinRow.cb:SetChecked(Aegis_SBR_Pet:Enabled()) end
     local mhp = get("mendPetHp") or 50
     self.mendRow.slider:SetValue(mhp)
