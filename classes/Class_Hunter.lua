@@ -518,8 +518,13 @@ end
 local FILLER_GCD = 1.5
 -- Multi-Shot's cast bar on this client: half a second (measured in play).
 local MULTI_CAST = 0.5
-function M:FillerRoom(castTime)
+-- Without Steady Shot in the rotation there is no weave to protect: an instant
+-- cannot clip the Auto Shot, and only a cast bar across its moment could delay
+-- it. A player with Steady Shot switched off still got the room test, and with
+-- a fast bow it answered no nearly all the time.
+function M:FillerRoom(castTime, cfg)
     local last = self.lastAutoShot
+    local steadyUsed = not cfg or (cfg.useSteadyShot and self:KnowsSpell("Steady Shot"))
     if not (last and last > 0) then return true end
     local now = GetTime()
     local speed = self:RangedSpeed()
@@ -527,6 +532,7 @@ function M:FillerRoom(castTime)
     local nextAuto = last + speed
     castTime = castTime or 0
     if castTime > 0 and now < nextAuto and now + castTime > nextAuto - 0.1 then return false end
+    if not steadyUsed then return true end
     local cast = (self.steadyCastDur and self.steadyCastDur > 0) and self.steadyCastDur or STEADY_CAST_DEFAULT
     local window = speed - cast - STEADY_BUFFER
     if window < 0.3 then window = 0.3 end
@@ -1385,7 +1391,13 @@ function M:Rotate(cfg)
         and not self:DebuffUpAny(effectiveSting) then
         return
     end
-    local stingRoom = melee or (not self:SteadyDueNow(cfg) and self:FillerRoom())
+    -- The sting is the exception among the fillers: a DoT that is missing is
+    -- applied ahead of Steady Shot, costing one Steady per sting duration. As
+    -- a pure filler it waited for room that a fast bow never leaves - Steady's
+    -- global cooldown and the sting's together are three seconds - and was
+    -- reported as no longer applied, even with Steady Shot switched off.
+    -- Instant, so it clips nothing; the hold above keeps the queue clean.
+    local stingRoom = true
     if cfg.sting ~= "" and not inMeleeNow and markOK and stingRoom
         and self:LivesFor(cfg, cfg.stingMinTTK)
         and not self:StingBlocked(effectiveSting) then
@@ -1561,8 +1573,8 @@ function M:Rotate(cfg)
     -- Single target it is filler: below Kill Command and the Steady weave, and
     -- only with a global cooldown of room before the next Auto Shot, so it
     -- never delays the next Steady.
-    local room = self:FillerRoom()
-    if cfg.useMultiShot and self:FillerRoom(MULTI_CAST) and self:KnowsSpell("Multi-Shot") and self:IsReady("Multi-Shot") then
+    local room = self:FillerRoom(nil, cfg)
+    if cfg.useMultiShot and self:FillerRoom(MULTI_CAST, cfg) and self:KnowsSpell("Multi-Shot") and self:IsReady("Multi-Shot") then
         if self:Queue("Multi-Shot", "filler, room before the next shot") then return end
     end
 
