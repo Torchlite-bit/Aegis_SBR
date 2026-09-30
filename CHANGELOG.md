@@ -4,6 +4,24 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.42 — a missing sting goes first again
+
+### 🐛 Hunter — Serpent Sting starved by a fast bow
+
+Since v1.2.39 the sting was a filler: it went out only where its global cooldown still let the
+next Steady Shot finish before the Auto Shot after it. With a fast ranged weapon that room
+hardly exists - Steady Shot's global cooldown and the sting's are three seconds together - so
+the sting appeared in the next-spell window for a moment and vanished, and was reported as no
+longer applied, even with Steady Shot switched off, where the room test still ran.
+
+- A missing sting goes out **ahead of Steady Shot** again, as before v1.2.39: it is instant and
+  clips nothing, and costs one Steady Shot per sting duration. The v1.2.40 hold still keeps
+  anything from overwriting it in Nampower's queue.
+- Without Steady Shot in the rotation the room test is gone for all fillers; only Multi-Shot's
+  cast bar may still not run across the moment of an Auto Shot.
+
+---
+
 ## v1.2.41 — the healing priest wands between heals
 
 ### ✨ Priest — heal, nuke, wand
