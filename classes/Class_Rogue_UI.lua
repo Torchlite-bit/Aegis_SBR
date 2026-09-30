@@ -89,6 +89,8 @@ function M:BuildBody(ui, parent)
     self.evisSubRow = L:Row{ key = "useEviscerate", label = "Eviscerate when nothing is due", spell = "Eviscerate", onToggle = set("useEviscerate") }
     self.eaRow = L:Row{ key = "useExposeArmor", label = "Expose Armor from", spell = "Expose Armor", onToggle = set("useExposeArmor"),
         slider = { key = "exposeCP", min = 1, max = 5, step = 1, suffix = "", onChange = set("exposeCP") } }
+    self.eaTTKRow = L:Row{ key = "useExposeTTK", label = "Expose Armor only if the target lives", onToggle = set("useExposeTTK"),
+        slider = { key = "exposeMinTTK", min = 5, max = 60, step = 5, suffix = "s", onChange = set("exposeMinTTK") } }
     self.eaRefreshRow = L:Row{ label = "Expose Armor refresh under",
         slider = { key = "exposeRefresh", min = 1, max = 15, step = 1, suffix = "s", onChange = set("exposeRefresh") } }
     self.sodRow = L:Row{ key = "useShadowOfDeath", label = "Shadow of Death from", spell = "Shadow of Death", onToggle = set("useShadowOfDeath"),
@@ -210,6 +212,8 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.cdRow.cb, "Pop cooldowns", "Use Adrenaline Rush and Blade Flurry every press (off the global cooldown).")
     ui:Tip(self.cdEliteRow.cb, "Auto on elite", "Pop the cooldowns only against elite and boss targets.")
     ui:Tip(self.eaRow.cb, "Expose Armor", "Kept up the whole fight, ahead of every other finisher. The time left is read off the target (ClassicAPI) or counted from the last cast; it is re-applied under the seconds set below.", "The points are reserved for it early: once there is no longer time to spend five elsewhere and build them back before it drops - measured on this fight's own combo rate, shown as cps= in the trace - no other finisher goes out and the five points wait for the refresh line.")
+    ui:Tip(self.eaTTKRow.cb, "Expose Armor only if the target lives", "Expose Armor - and the combo points held back for it - only on a target the time-to-kill estimate says lives at least this long. Raid trash that dies sooner gets Rupture, the sigil and the Mark instead; bosses keep it.", "Until the estimate has a few seconds of damage, Expose Armor counts as worth it.")
+    ui:Tip(self.eaTTKRow.slider, "Target lives at least", "Seconds the target must have left for Expose Armor.")
     ui:Tip(self.eaRefreshRow.slider, "Expose Armor refresh under", "Seconds left on the debuff at which it is re-applied with five points. Lower keeps more of each debuff; higher leaves more room for a late fifth point.")
     ui:Tip(self.eaRow.slider, "Expose Armor at CP", "Combo points required before the debuff is applied. Its strength scales with the points spent, so anything below 5 puts up a weaker reduction than the warrior's Sunder it is meant to replace.")
     ui:Tip(self.garroteRow.cb, "Garrote from stealth", "The opener, and again after Vanish: from stealth and behind the target, ahead of everything else. Two combo points with Initiative. Not on a bleed-immune target - there the press goes to Hemorrhage.")
@@ -264,6 +268,11 @@ function M:RefreshBody(ui, buf)
     self.eaRefreshRow.slider:SetValue(earv)
     if self.eaRefreshRow.slider.valText then self.eaRefreshRow.slider.valText:SetText("<" .. earv .. "s") end
     ui:SliderEnable(self.eaRefreshRow.slider, buf.useExposeArmor and true or false)
+    ui:BindCheck(self.eaTTKRow, buf.useExposeTTK)
+    local ettk = buf.exposeMinTTK or 20
+    self.eaTTKRow.slider:SetValue(ettk)
+    if self.eaTTKRow.slider.valText then self.eaTTKRow.slider.valText:SetText(">=" .. ettk .. "s") end
+    ui:SliderEnable(self.eaTTKRow.slider, (buf.useExposeArmor and buf.useExposeTTK) and true or false)
     local eav = buf.exposeCP or 5
     self.eaRow.slider:SetValue(eav)
     if self.eaRow.slider.valText then self.eaRow.slider.valText:SetText(">=" .. eav) end

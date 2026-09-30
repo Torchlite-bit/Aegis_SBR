@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.39",
+    ver = "1.2.40",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -3744,6 +3744,9 @@ function Aegis_SBR:EvalCommand(msg)
         local sub = string.lower(t[2] or "")
         if sub == "clear" then
             AegisImmune = {}
+            -- A module's own older memory (the hunter's stings by creature id)
+            -- goes with it.
+            if self.active and self.active.ClearLearnedImmunity then self.active:ClearLearnedImmunity() end
             msgOut("immunity table cleared.")
         elseif sub == "forget" then
             local name = table.concat(t, " ", 3)

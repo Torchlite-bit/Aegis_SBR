@@ -1807,6 +1807,11 @@ function M:WandAllowed()
 
     if not (f and M.CHANNELED[f] and self:KnowsSpell(f)) then return true end
     if self:ChannelRefusal(f) then return true end
+    -- At the shard cap Drain Soul stands down on a dying target (see
+    -- DrainSoulMustStop), and the wand is what takes over. Protected for it
+    -- here, the wand was refused as well: the rotation did nothing at all in a
+    -- mob's last seconds.
+    if f == "Drain Soul" and self:DrainSoulMustStop(cfg) then return true end
     return not Aegis_SBR:CanAfford(f)
 end
 

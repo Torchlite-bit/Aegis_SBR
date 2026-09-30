@@ -1791,7 +1791,10 @@ function Aegis_SBR_UI:Refresh()
     -- in-combat control surface for the profile the rotation is running.
     self:AutoApplyActive()
 
-    local ok, missing = MOD():ProfileValidity(self.buf)
+    -- Judged as the tab being shown sees the profile (CORE:Validity applies
+    -- the tab's layer): the Subtlety tab's builder is Hemorrhage, and reading
+    -- the base reported the Assassination builder as not trained.
+    local ok, missing = CORE.Validity(CORE, self.buf)
     local isActive = self.editing and AegisDB.active == self.editing
     -- Missing spells no longer block anything: the rotation skips whatever is
     -- not trained, so a profile is always usable and always applies. Validity is

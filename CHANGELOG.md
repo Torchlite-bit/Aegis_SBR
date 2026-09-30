@@ -4,6 +4,42 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.40 — the sting goes out again, Expose Armor on targets that last
+
+### 🐛 Hunter — Serpent Sting no longer applied (v1.2.39)
+
+A sting just sent is protected while it waits in Nampower's single-slot queue: nothing is
+queued behind it until it reads back on the target. With the sting made a filler in v1.2.39,
+that protection sat inside the filler's room test - and on the press after the next Auto Shot,
+Steady Shot's press, the test said no, the protection was skipped, and Steady Shot was queued
+over the pending sting. It never left, and the next try met the same fate. The protection now
+runs first, whatever the room test says. On Undead a sting sent and never seen is learned as
+immunity; `/sbr immune clear` now empties the hunter's own sting memory as well, so entries
+learned from the lost stings can be removed.
+
+### ✨ Rogue — Expose Armor only on targets that last
+
+- **Expose Armor only if the target lives** (new, Subtlety section, off by default, 5-60 s,
+  default 20): Expose Armor - and the combo points held back for it - only on a target the
+  time-to-kill estimate says lives that long. A log from Molten Core and Onyxia's Lair had
+  Expose Armor missing on two thirds of the presses: every trash mob, dying in about six
+  seconds, came without it, the reserve held every finisher for it, and with that there was
+  no Rupture, no Taste for Blood, no Mark for Death, one sigil and one Preparation. Bosses
+  keep it. Until the estimate has a few seconds of damage, Expose Armor counts as worth it.
+- **Mark for Death no longer waits for Taste for Blood while the reserve holds the points** -
+  Rupture cannot come then, and the wait locked the whole burst behind Expose Armor.
+
+### 🐛 Smaller
+
+- **Warlock:** at the shard cap a Drain Soul that stands down on a dying target left the
+  press to nothing - the wand was held back for the Drain Soul channel filler. The wand takes
+  those last seconds now.
+- **Panel status line:** judged the profile's base instead of the tab on screen, so the
+  Subtlety tab reported the Assassination builder as "not trained yet". It now reads through
+  the tab's layer, as the rotation does.
+
+---
+
 ## v1.2.39 — the hunter plays the guide, the share fits Discord
 
 ### 🔧 Hunter — Beast Mastery to the rotation an experienced BM hunter plays

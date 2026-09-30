@@ -22,7 +22,7 @@
 
 local M = Aegis_SBR:NewClassModule("ROGUE")
 M.uiTitle = "Rogue"
-M.uiHeight = 706
+M.uiHeight = 734
 
 -- Each panel tab keeps its own settings layer (Aegis_SBR:TabView): a change
 -- made on one tab stays on that tab.
@@ -249,6 +249,9 @@ function M:NormalizeProfile(c)
     -- Eviscerate only as the overflow finisher when nothing else is due.
     if c.useEviscerate == nil then c.useEviscerate = true end
     if c.exposeRefresh == nil then c.exposeRefresh = EXPOSE_REFRESH_DEFAULT end
+    -- Expose Armor only on a target that lives long enough (see ExposeWorth).
+    if c.useExposeTTK == nil then c.useExposeTTK = false end
+    if c.exposeMinTTK == nil then c.exposeMinTTK = 20 end
     if c.popCDs == nil then c.popCDs = false end
     if c.autoCDElite == nil then c.autoCDElite = false end
     -- old keys from any earlier format are dropped silently
@@ -528,8 +531,22 @@ function M:BuildSecs(n, energy)
     return byGcd
 end
 
+-- Does the target live long enough for Expose Armor ("Expose Armor only if the
+-- target lives")? Raid trash dies in six seconds with forty people on it, and
+-- every new mob came without the debuff: a log had it missing on two thirds of
+-- the presses, the reserve holding every finisher for it, and with that no
+-- Rupture, no Taste for Blood, no Mark, no sigil and no Preparation. An unknown
+-- time to kill (the first seconds on a target) answers yes.
+function M:ExposeWorth(cfg)
+    if not cfg.useExposeTTK then return true end
+    local ttk = Aegis_SBR:TargetTTK()
+    if not ttk then return true end
+    return ttk >= (cfg.exposeMinTTK or 20)
+end
+
 function M:ExposeReserve(cfg, cp)
     if not cfg.useExposeArmor or not self:KnowsSpell("Expose Armor") then return false end
+    if not self:ExposeWorth(cfg) then return false end
     if self:TalentRank(TALENT_IEA) < 1 then return false end
     local left = self:ExposeLeft()
     if not left then return true end                 -- missing: the next five are its
@@ -542,6 +559,7 @@ end
 
 function M:ExposeDue(cfg)
     if not cfg.useExposeArmor then return false end
+    if not self:ExposeWorth(cfg) then return false end
     if not self:KnowsSpell("Expose Armor") then return false end
     -- Without Improved Expose Armor the debuff only matches the warrior's Sunder
     -- stack instead of beating it, so five combo points every 30s buy nothing the
@@ -1089,6 +1107,7 @@ function M:DecideSubtlety(cfg, tracing)
             .. " stealth=" .. (stealthed and "Y" or "n")
             .. " immune=" .. (immune and "Y" or "n")
             .. " ea=" .. (eaLeft and string.format("%.1fs", eaLeft) or "none") .. (eaDue and "/due" or "") .. (reserve and "/reserve" or "")
+            .. ((cfg.useExposeArmor and not self:ExposeWorth(cfg)) and "/short" or "")
             .. " cps=" .. string.format("%.1f", self:ComboSecs())
             .. " snd=" .. (useSnd and string.format("%.1fs", sndLeft) or "-")
             .. " tfb=" .. (useRup and string.format("%.0fs", self:TasteLeft()) or "-")
@@ -1159,7 +1178,9 @@ function M:DecideSubtlety(cfg, tracing)
     -- goes out when the Mark is far away. A log had the sigil spent early on
     -- its own, so the Mark that followed had nothing to burst with and
     -- Preparation fired straight after it.
-    local tfbWait = useRup and self:TalentRank(TALENT_TASTE) > 0 and self:TasteLeft() <= 0
+    -- Not while the reserve holds the points: Rupture cannot come then, and
+    -- the Mark waiting for its buff locked the whole burst behind Expose Armor.
+    local tfbWait = useRup and not reserve and self:TalentRank(TALENT_TASTE) > 0 and self:TasteLeft() <= 0
     local markSoon = false
     if cfg.useMark and self:KnowsSpell("Mark for Death") and not markUp then
         markSoon = self:OwnCDReady("Mark for Death") or ((Aegis_SBR:OwnCDLeft("Mark for Death") or 0) <= BURST_WAIT)
