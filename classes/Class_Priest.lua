@@ -39,7 +39,7 @@ local M = Aegis_SBR:NewClassModule("PRIEST")
 M.uiTitle = "Priest"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 732
+M.uiHeight = 788
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
@@ -213,6 +213,11 @@ function M:NormalizeProfile(c)
     if c.prayerCount == nil then c.prayerCount = 3 end
     if c.useInnerFocus == nil then c.useInnerFocus = true end
     if c.offensiveWeave == nil then c.offensiveWeave = false end
+    -- Heal mode, between heals: Smite / Holy Fire only above this mana, and
+    -- the wand below it (or with the weave off), so the five-second rule can
+    -- bring the mana back. Requested for a duo priest healing a paladin.
+    if c.healNukeMana == nil then c.healNukeMana = 50 end
+    if c.healWand == nil then c.healWand = false end
     if c.useLightwell == nil then c.useLightwell = false end
     if c.healPower == nil then c.healPower = 0 end
     return c
@@ -698,14 +703,22 @@ function M:Rotate(cfg)
             if self:Pick("Lightwell", "off cooldown") then return end
         end
 
-        -- Offensive weave: only with an attackable target and out of Shadowform.
+        -- Offensive weave: only with an attackable target and out of Shadowform,
+        -- and only above the "Smite/Holy Fire above mana" line. Below it - or
+        -- with the weave off - the wand, when "Wand between heals" is on: no
+        -- mana spent, so the five-second rule regenerates it for the next heal.
+        -- Heals above still go first at any mana.
         local hasEnemy = UnitExists("target") and not UnitIsDead("target") and UnitCanAttack("player", "target")
-        if cfg.offensiveWeave and hasEnemy and not shadowform then
+        local nukeOK = self:ManaPct() >= (cfg.healNukeMana or 50)
+        if cfg.offensiveWeave and hasEnemy and not shadowform and nukeOK then
             if self:KnowsSpell("Holy Fire") then
                 local r = self:ApplyDot("Holy Fire", "Spell_Holy_SearingLight", 4)
                 if r == "cast" or r == "wait" then return end
             end
             if self:Queue("Smite", "filler nuke") then return end
+        end
+        if cfg.healWand and hasEnemy and self:HasWand() then
+            if self:Wand() then return end
         end
         return
     end

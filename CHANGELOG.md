@@ -4,6 +4,23 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.41 — the healing priest wands between heals
+
+### ✨ Priest — heal, nuke, wand
+
+A priest healing a duo partner could heal or deal damage, not both with a mana plan: heal
+mode healed and, with the weave on, nuked at any mana; the wand and its mana line belonged to
+the damage mode only and were greyed out while healing.
+
+- **Weave Smite/Holy Fire above mana** (the weave switch, now with a slider, default 50%):
+  between heals Holy Fire and Smite go out only while the mana is above the line.
+- **Wand between heals** (new, off by default): when nobody needs a heal and the weave is off
+  or under its line, the wand on the target - no mana spent, so the five-second rule brings it
+  back for the next heal. A heal that is needed goes first at any mana and stops the wand.
+- Both need an enemy targeted; for a duo the Assist targeting mode on the partner does that.
+
+---
+
 ## v1.2.40 — the sting goes out again, Expose Armor on targets that last
 
 ### 🐛 Hunter — Serpent Sting no longer applied (v1.2.39)
