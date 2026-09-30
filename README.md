@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation (v1.2.40)
+# Aegis: Single Button Rotation (v1.2.41)
 
 **One button. Your whole rotation.**
 
@@ -425,7 +425,7 @@ Shadow/leveling damage and Discipline/Holy healing in one module, switched by a 
 * **Mitigation, Not Over-Bubbling:** *Power Word: Shield* is cast when a mob reaches melee or you drop below half health — and it is **gated on *Weakened Soul*** in every mode, so it never wastes a cast trying to re-shield through the debuff.
 * **Shadow (endgame):** hold *Shadowform* (which auto-skips every Holy cast), keep *Shadow Word: Pain* and *Vampiric Embrace* up, *Mind Blast* on cooldown for *Shadow Weaving*, and fill with channelled *Mind Flay*. **Turn *Shadow Word: Pain* and *Vampiric Embrace* off for raids** to respect debuff-slot limits.
 * **Responsive Healing (Disc/Holy):** healing is triage, not a fixed rotation. Aegis picks the most-hurt *reachable* party/raid member and **downranks** *Heal* / *Greater Heal* / *Flash Heal* to the size of the deficit (the `+healing` bonus is read from gear, override `/sbr healpower <n>`; *Spiritual Healing* is factored in). *Flash Heal* is **reserved for emergencies** (`/sbr flashat <%>`), *Greater Heal* covers big deficits, *Heal* the efficient sustained healing, and *Renew* / *Power Word: Shield* maintain a mildly hurt unit. *Prayer of Healing* fires when several members are hurt, **fronted by *Inner Focus*** (when ready) to negate its mana cost.
-* **Offensive Weave & Lightwell:** between heals it can weave *Smite* / *Holy Fire* as offensive support, and place *Lightwell* when out of combat.
+* **Offensive Weave, Wand & Lightwell:** between heals it can weave *Smite* / *Holy Fire* as offensive support while the mana is above a line of your choosing, fall back to the **wand between heals** below it so the five-second rule refills the pool for the next heal, and place *Lightwell* when out of combat. For a duo, the Assist targeting mode on your partner gives the weave and the wand their target.
 
 > **Verification note:** Heal values are tuned approximations — the rank tables sit at the top of `Class_Priest.lua`; adjust them if downranking over- or under-heals. The *Shadow Weaving* / proc behaviour and the exact *Enlighten* mechanic are best-effort, so confirm names in-game with `/sbr talents` and `/sbr debug`. *(Multi-target Shadow spreads its DoTs as you tab between mobs; the engine is single-target by design and does not tab for you.)*
 </details>

@@ -42,7 +42,9 @@ function M:BuildBody(ui, parent)
     self.renewRow = L:Row{ key = "useRenew", label = "Renew", spell = "Renew", onToggle = set("useRenew") }
     self.prayerRow = L:Row{ key = "usePrayer", label = "Prayer of Healing", spell = "Prayer of Healing", onToggle = set("usePrayer") }
     self.innerFocusRow = L:Row{ key = "useInnerFocus", label = "Inner Focus", spell = "Inner Focus", onToggle = set("useInnerFocus") }
-    self.offensiveRow = L:Row{ key = "offensiveWeave", label = "Weave Smite/Holy Fire", spell = "Smite", onToggle = set("offensiveWeave") }
+    self.offensiveRow = L:Row{ key = "offensiveWeave", label = "Weave Smite/Holy Fire above mana", spell = "Smite", onToggle = set("offensiveWeave"),
+        slider = { key = "healNukeMana", min = 0, max = 100, step = 5, suffix = "%", onChange = set("healNukeMana") } }
+    self.healWandRow = L:Row{ key = "healWand", label = "Wand between heals", onToggle = set("healWand") }
     self.lightwellRow = L:Row{ key = "useLightwell", label = "Place Lightwell", spell = "Lightwell", onToggle = set("useLightwell") }
 
 
@@ -107,7 +109,9 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.renewRow.cb, "Renew", "Keep the heal-over-time on a hurt member as efficient maintenance.")
     ui:Tip(self.prayerRow.cb, "Prayer of Healing", "Group heal when several members are hurt at once.")
     ui:Tip(self.innerFocusRow.cb, "Inner Focus on AoE", "Pop Inner Focus before Prayer of Healing to negate its mana cost.")
-    ui:Tip(self.offensiveRow.cb, "Weave Smite/Holy Fire", "When no one needs healing, cast Smite/Holy Fire as offensive support.", "Skipped in Shadowform. Pairs with Enlighten-style talents.")
+    ui:Tip(self.offensiveRow.cb, "Weave Smite/Holy Fire", "When no one needs healing, cast Holy Fire and Smite on your target - while your mana is above the value on the right.", "Heals always come first. Skipped in Shadowform. Needs an enemy targeted (or the Assist targeting mode).")
+    ui:Tip(self.offensiveRow.slider, "Smite above mana", "Mana percent above which the weave nukes. Below it the wand takes over, if switched on.")
+    ui:Tip(self.healWandRow.cb, "Wand between heals", "When no one needs healing and the weave is off or under its mana line: the wand on your target. No mana is spent, so the five-second rule brings it back.", "A heal that is needed goes first and stops the wand.")
     ui:Tip(self.lightwellRow.cb, "Place Lightwell", "Place a Lightwell when out of combat, off cooldown, and known.")
 end
 
@@ -160,6 +164,16 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.prayerRow, buf.usePrayer, "Prayer of Healing")
     ui:BindCheck(self.innerFocusRow, buf.useInnerFocus, "Inner Focus")
     ui:BindCheck(self.offensiveRow, buf.offensiveWeave, "Smite")
+    local hnm = buf.healNukeMana or 50
+    self.offensiveRow.slider:SetValue(hnm); self.offensiveRow.slider.valText:SetText(hnm .. "%")
+    ui:SliderEnable(self.offensiveRow.slider, (buf.healMode and buf.offensiveWeave) and true or false)
+    ui:BindCheck(self.healWandRow, buf.healWand)
+    if not self:HasWand() then
+        self.healWandRow.label:SetText("Wand between heals (none)")
+        ui:Color(self.healWandRow.label, ui.COL.grey)
+    else
+        self.healWandRow.label:SetText("Wand between heals")
+    end
     ui:BindCheck(self.lightwellRow, buf.useLightwell, "Lightwell")
     -- heal sliders matter in heal mode
     ui:SliderEnable(self.healAtRow.slider, buf.healMode)
