@@ -29,45 +29,52 @@ Author tag: "Mercaius & Subtilizer (Torchlite)".
 3. Run `python3 scripts/verify.py --all` after every edit; never hand off a failing file.
 
 ## Current State / Next Task
-**Current release: v1.2.7** — three releases about asking the client what it already knows.
+**Current release: v1.2.39.**
 
-**v1.2.6** every class that keeps a debuff up now checks **whose it is**. Most DoTs do not stack
-between casters, so the second warlock on a mob was reading the first one's Corruption as their
-own and applying nothing all fight. `NoteDebuffApplied` / `DebuffMine` live in the core; the
-ledger stores an **expiry, not a timestamp**, because a rogue's *Rupture* runs 8–16s depending on
-the combo points spent and only the caster knows which. Shared debuffs (*Hunter's Mark*, *Expose
-Armor*, *Faerie Fire*, *Demoralizing Shout*, *Sunder Armor*) stay exempt. Same release: the
-warlock's DoT throttle stopped depending on a `UNIT_CASTEVENT` confirmation that a captured log
-proved had **never arrived once in 580 measurements**; and Consecration can wait for a crowd,
-counting enemies from the **nameplates the client draws** (a nameplate is a `WorldFrame` child
-and SuperWoW puts the unit's GUID in its first name string — the trick read out of IWinEnhanced).
+### Releases publish themselves (since v1.2.39) — never push a `v*` tag by hand
+`.github/workflows/release.yml` tags and publishes every version that reaches `main`. The push
+run reads `## Version:` from the `.toc` and tags `vX.Y.Z` if that tag does not exist, then
+starts itself again on the tag; that second run writes this version's `CHANGELOG.md` entry into
+`RELEASE_NOTES.md` and packages with `BigWigsMods/packager`. **A merge that does not change the
+version releases nothing**, so docs and tooling PRs are free.
 
-**v1.2.7** three more, all from studying IWinEnhanced: abilities are no longer cast without the
-weapon they require (*Shield Slam* needed a shield, and the comment beside it said so while
-nothing tested for it); *Backstab* is no longer chosen from the front (vanilla has no facing API,
-UnitXP_SP3 does); and the paladin measures the group **once per press** instead of up to six
-times, via `Aegis_SBR:NewPress()`.
+The release checklist is therefore unchanged: bump the version in all three places, add the
+CHANGELOG entry, merge. Three things in that workflow look redundant and are load bearing —
+`docs/dev-workflow.md` says which and why. `.pkgmeta` sets `package-as: Aegis_SBR` because the
+repository is still named `AutoRota` and WoW loads an addon only from the folder matching its
+`.toc`.
 
-Since v1.2.0:
-**v1.2.2** the auto-attack fallback stopped toggling the white swing every press (`AttackTarget()`
-is a TOGGLE on 1.12 and the no-slot branch called it unguarded — see the Lessons list);
-**v1.2.3** Holy Strike ahead of the heal (opt-in), Seal of Wisdom above the heal, the Holy Shock
-threshold actually enforced, plus the first error handling in the addon — the core reads the
-client's refusal messages and stands a unit down, where a line-of-sight refusal used to repeat
-forever; **v1.2.4** spec tabs bind to Goblin Brainwashing Device slots, read out of the gossip
-text (no event and no API names the active slot) with the talent build as a second source, plus
-`/sbr gobbo`; **v1.2.5** `Aegis_SBR:Moving()` / `StillFor(seconds)` from SuperWoW `UnitPosition`
-(answers "standing still" whenever it cannot tell), a Warlock movement stall fixed, channels
-refused while moving inside `Queue` rather than at six call sites, a stand-still switch for
-Consecration, and three opt-in heal-mode damage fillers behind a mana line. Also since: the
-Hunter now lets the debuff on the target decide rather than the reapply timer, and an **outside
-contributor** (Migux13, PR #59) ported the Warrior v1.1.4 bleed-immunity gate to the Druid's
-Rake/Rip.
+### What v1.2.31–v1.2.39 added
+Mostly core surface. Use it rather than re-implementing it:
 
-Cut history to be aware of: **v1.3.0 was renumbered to v1.2.3** after the fact (nothing broke or
-was removed, so a minor bump overstated it) — the CHANGELOG entry carries the final number. The
-user's stated preference is patch bumps unless something actually breaks or is removed; do not
-reach for a minor bump because a release feels large.
+| Area | Core API | Command |
+|---|---|---|
+| Learned immunity table, **account-wide** (`AegisImmune`) | `KnownImmune`, `NoteImmune`, `ForgetImmune`, `OnImmuneLine` | `/sbr immune` |
+| Enemy casts, for interrupts | `EnemyIsCasting`, `EnemyCastName/Start/Duration`, `TargetCastName/Start/Duration` | — |
+| Enemy count | `EnemiesNear`, `EnemiesNearCached` — one nameplate walk serves the count and the CC scan | — |
+| Profiles as text | `ExportProfile`, `ImportProfile` | `/sbr export`, `/sbr import` |
+| Per-tab settings layers | `TabView`, `PressModeHeld` | — |
+| Other | `PickAt`, `DisarmActive`, `SpellRefusedAnySince` | — |
+
+`AegisImmune` is the first SavedVariable that is **not** per character; every other one is.
+
+Per class in that window: **Mage** the Arcane Missiles gap (v1.2.31 — the lesson it left is in
+the Lessons list); **Warlock** four dead ends found in one log, a spell lock that left the
+rotation standing, and the four-second hole after the DoTs; **Warrior** interrupts, automatic
+AoE, CC respect and the swing after a disarm, contributed by **Dio**; **Rogue** the Subtlety
+raid rotation ability by ability, and Rupture held off targets that will not live long enough
+for it; **Paladin** the emergency that waited behind the heal; **Hunter** Beast Mastery and
+Survival rewritten to their guides.
+
+Older history is in `CHANGELOG.md` and is not summarised here — it went stale at v1.2.7 and
+stayed that way for thirty-two releases, which is the argument against keeping a running
+narrative in the file that is read first.
+
+### Decisions that still bind
+**Version scheme.** `1.1.0` and up; **v1.3.0 was renumbered to v1.2.3** after the fact (nothing
+broke or was removed, so a minor bump overstated it) and the CHANGELOG entry carries the final
+number. The user's stated preference is patch bumps unless something actually breaks or is
+removed; do not reach for a minor bump because a release feels large.
 
 **Open question, deliberately unresolved:** whether `ratioHealthy` (Paladin heal, default 60)
 should move. Three logged sessions at 60/70/80 were compared and the first reading favoured 80 —
@@ -92,20 +99,12 @@ git branch -r --merged origin/main
 at the start of a session; anything besides `origin/main` and `origin/HEAD` is landed and
 deletable. `docs/dev-workflow.md` asks for deletion on merge — it is what makes GitHub retarget
 anything still based on them, and what keeps that command usable as a check for what has actually
-landed. As of 2026-09-01 there were four. **Do not restate the current list here** — a snapshot
-in a file that is read first goes stale within days, which is exactly what happened to the note
-this replaced.
+landed. **Do not restate the current list here** — a snapshot in a file that is read first goes
+stale within days.
 
-Earlier history, v1.1.4 onward:
-**v1.1.5** `/sbr spell <name>` toggles instead of silently switching off; **v1.1.6** Hunter's
-Mark leads the rotation (approved priority change) + `verify.py` lookbehind fix; **v1.1.7**
-Shaman totem + imbue overhaul, per-context buff lists, Paladin melee heal margin; **v1.1.8**
-the Rogue combo-point/energy economy cut, driven by replaying ~2000 logged presses rather than
-theory (it reverted two of our own earlier changes with the measurements that killed them);
-**v1.1.9** ClassicAPI support, the range window and the Subtlety rogue, alongside the Hunter pet
-window and the Serpent Sting fixes; **v1.2.0** as above.
-
-Working tree clean, `main` in sync with `origin/main`, no open PRs.
+**This repository has more than one active contributor.** Re-sync at the start of every session
+rather than trusting the working copy; several releases can land between sessions, and the
+contributor shipping them does not update this file.
 
 ### ClassicAPI integration (shipped in v1.1.9)
 ClassicAPI is now **installed and active on the dev client** (`CLASSIC_API_VERSION = 10911`,
@@ -163,17 +162,16 @@ The probe log collects most of this passively — `/sbr probe on`, play, `/reloa
 `py scripts/read_probe.py`.
 
 ### Carried forward
-- **Warrior Overpower** (open since v1.1.4): reported as passed over for Slam/Heroic Strike,
-  though it already sits ABOVE both. Likeliest cause is the Battle Stance gate or
-  `overpowerExpiry` being zeroed before a cast that then fails (Revenge has the same shape).
-  Awaiting a `/sbr log` capture; the Warrior trace already carries `op=Y/N`.
-  **Do not be fooled by the `Later()` wrapper** the two-mode conversion put around the zeroing:
-  `Later` only skips while `Aegis_SBR.deciding` (preview mode), so on a real press it runs
-  immediately — and `Pick` returns true as soon as the spell is KNOWN, not when the cast was
-  accepted. The proc is still discarded on a refused cast. **v1.2.3/v1.2.5 added the tool that
-  would fix it**: `Aegis_SBR:NoteSpellCast` + `SpellRefusedSince(name, t)`, which is exactly how
-  37f3826 fixed the Hunter's equivalent throttle bug. Wiring it into the two proc windows is a
-  candidate fix once the log confirms the cause.
+- **Warrior Overpower — RESOLVED in v1.2.27, and this note used to say otherwise.** The
+  defect named here was real: `Pick` answers true when the spell is KNOWN, not when the client
+  accepted the cast, so the window was closed on a refusal and the proc spent on nothing. The
+  fix proposed here is the fix that shipped — `SpellRefusedAnySince` now keeps the window open
+  when the client refused within half a second, and only the cooldown starting (which a refused
+  cast never starts) closes it as spent. See `Class_Warrior.lua`, the `overpowerAttemptAt`
+  block. **One loose end:** the v1.2.32 changelog still reads "Overpower still stands: the proc
+  is discarded when the cast is refused", which contradicts both v1.2.27 and the current code.
+  Either that line is stale or the ORIGINAL play report (passed over for Slam/Heroic Strike) is
+  separately unconfirmed. Ask before acting on either reading.
 - **PR #32's `holyLightPct` — resolved, and the old note here was wrong twice.** It was NOT
   "closed unmerged, never shipped": the gate DID ship (5447c7e, v1.1.8), and was then
   deliberately **retired** in the v1.2.0 Paladin healing rebuild (014d655). The field is now
@@ -184,12 +182,12 @@ The probe log collects most of this passively — `/sbr probe on`, play, `/reloa
   way. So the open question ("is a slider wanted, and which way should it point?") is answered;
   do not re-raise it.
 - Phase 2 leftovers: off-hand imbue, poison auto-apply beyond the Quick Bar.
-- **Logos:** raw image files still pending from the user. They need TGA conversion
+- **Logos:** raw image files still pending from the user (still absent at v1.2.39). They need TGA conversion
   (power-of-two, 32-bit, uncompressed). The header stub already tries
   `Interface\AddOns\Aegis_SBR\logo` and falls back to the sigil + wordmark while absent
   (1.12 `SetTexture` returns nil for a missing file). Drop `logo.tga` in the addon root and do
   a **full relog**.
-- `updatelog.md` was asked for but never created; `CHANGELOG.md` currently carries the
+- `updatelog.md` was asked for but never created (still absent at v1.2.39); `CHANGELOG.md` currently carries the
   history. Confirm with the user whether a second, differently-scoped file is actually wanted.
 
 ## Tech Stack / Hard Constraints (WHAT — read carefully, these bite)
@@ -292,7 +290,8 @@ The probe log collects most of this passively — `/sbr probe on`, play, `/reloa
    Bump the version in ALL THREE canonical spots (`.toc`, the core `.lua` `ver = "..."`,
    **and the README H1** — `# Aegis: Single Button Rotation (vX.Y.Z)`) and prepend a
    `CHANGELOG.md` entry. Keep them in sync — grep to confirm no stale version strings
-   remain.
+   remain. **Merging that bump to `main` publishes a GitHub release** (see Current State):
+   the CHANGELOG entry becomes the release body, so it is public text, not a private note.
 5. **Preserve `.toc` load order** — reordering files can break the single-pass loader.
 6. Prefer **minimal, surgical diffs**; match existing code style and naming exactly.
 7. Confirm the plan with the user before large changes; the user tests in-game and reports
