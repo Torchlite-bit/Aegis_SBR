@@ -930,6 +930,12 @@ function M:RememberImmune(id)
     mem[id] = true
 end
 
+-- /sbr immune clear empties this memory as well (see the core).
+function M:ClearLearnedImmunity()
+    if AegisDB then AegisDB.stingImmuneIDs = {} end
+    self.stingImmune = {}
+end
+
 function M:KnownImmuneType()
     local id = Aegis_SBR.UnitCreatureID and Aegis_SBR:UnitCreatureID("target")
     if not id then return false end
@@ -1368,6 +1374,17 @@ function M:Rotate(cfg)
     --     Steady, and the sting waits for a gap with a global cooldown of room
     --     before the next Auto Shot - the weave is the rotation, the sting is
     --     not.
+    --
+    --     The hold for a sting already queued comes FIRST, outside the room
+    --     test. Inside it, the press after the next Auto Shot - Steady Shot's
+    --     press, where the room test says no - skipped the hold, queued Steady
+    --     over the pending sting in Nampower's single slot, and the sting never
+    --     left: reported as Serpent Sting no longer applied after v1.2.39.
+    if cfg.sting ~= "" and not inMeleeNow and self.stingQueuedT
+        and (now - self.stingQueuedT) < STING_QUEUE_HOLD
+        and not self:DebuffUpAny(effectiveSting) then
+        return
+    end
     local stingRoom = melee or (not self:SteadyDueNow(cfg) and self:FillerRoom())
     if cfg.sting ~= "" and not inMeleeNow and markOK and stingRoom
         and self:LivesFor(cfg, cfg.stingMinTTK)
@@ -1381,20 +1398,13 @@ function M:Rotate(cfg)
                 self.stingQueuedT = now   -- protect the queued shot from eviction
             end)
             return
-        elseif self.stingQueuedT and (now - self.stingQueuedT) < STING_QUEUE_HOLD
-            and not self:DebuffUpAny(effectiveSting) then
-            -- Sting was just queued but cannot be read on the target yet. Hold
-            -- here instead of queuing Steady / Multi / Arcane, which would
-            -- overwrite the still-pending sting in Nampower's single-slot queue
-            -- before it fires. Auto Shot (handled above) keeps going meanwhile.
-            --
-            -- Only while the sting is NOT yet on the target: once it reads back
-            -- the queue slot is free and the hold has nothing to protect. It
-            -- used to run its full length regardless - a log showed the sting
-            -- up 0.25s after the send and the rotation silent for the next 1.5s
-            -- on every pull.
-            return
         end
+        -- (The hold for a sting just queued - not yet readable on the target,
+        -- so Steady / Multi / Arcane must not overwrite it in Nampower's
+        -- single-slot queue - sits above this block. Only while the sting is
+        -- NOT yet on the target: once it reads back the slot is free; it used
+        -- to run its full length regardless, and a log showed the rotation
+        -- silent for 1.5s on every pull.)
     end
 
     -- 5b. Mend Pet when the pet is hurting (throttled, HoT lasts ~15s).
