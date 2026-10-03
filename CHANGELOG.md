@@ -4,6 +4,63 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.43 — the warrior plays Octo's rotation, Kill Command stays with its target
+
+### ⚔️ Warrior — reworked (contributed by Dio)
+
+The Warrior module in this release is Dio's work, played and refined on his own warrior and
+handed over for Aegis; the maintainers do not play a warrior.
+
+- **The rotation follows the Octo warrior rotation**, with a Whirlwind pack of two enemies
+  and a three-state `/sbr aoe` (on, off, automatic), and Intercept as a Berserker gap closer.
+- **Sweeping Strikes from Berserker Stance:** it is Battle Stance only, so a Berserker Arms
+  warrior never got it. With stance dancing on, the rotation now swaps to Battle for it
+  (Tactical Mastery 5/5, AoE, buff down, the pack not about to drop) and holds the stance until
+  the charges are spent; rage above 25 goes into Whirlwind before the swap. Its 30 rage cost
+  is now checked - before, the client refused the pop and the press was lost.
+- **Bloodrage** has sliders for its rage and health floors (it costs 5% health) and fires
+  mid-fight whenever both allow, not only around the pull.
+- **Berserker Rage answers a fear** on its own, outside the cooldown setting.
+- The press log records real stance dances.
+
+### 🔧 Warrior — Thunder Clap and Hamstring
+
+- **Thunder Clap** goes out only with at least the auto-AoE number of enemies within its
+  radius, or, with no count from the nameplates, the target in melee range - so not during a
+  Charge. It had no range or count check at all.
+- **Thunder Clap: skip if the target has it** (new, off by default).
+- **Hamstring (slow)** (new, off by default): the slow kept on the target, Battle or
+  Berserker Stance, not in AoE or the execute phase, at most every four seconds on one target.
+
+### 🐛 Hunter
+
+- **Kill Command stays with its target.** Its button stays lit across a target change, but
+  the crit that lit it was on the old target: the rotation sent it, the client refused it, and
+  two such refusals dropped the button reading for the session. The light now counts for the
+  target it came on, and on another target only after a crit on that one; refusals right after
+  a target change no longer count against the button.
+- **Mend Pet without a target:** with nothing attackable targeted the rotation did not run,
+  so the pet was never healed out of combat. A press with no enemy targeted now heals the pet
+  under its line. A Mend Pet the client refused (range, line of sight) no longer starts the
+  twelve-second wait, and a dead pet is not "healed".
+
+### 🔧 Warlock
+
+- **No channel in the first second after stopping.** The movement reading lags a sample, and
+  a channel sent on the stop - Dark Harvest above all - was broken by the last step.
+- **No wand for a channel refused for movement:** it cannot shoot on the move, and started
+  there it kept repeating after the stop, ahead of the channels. The press waits instead.
+
+### 🔧 Core
+
+- Critters are no longer counted as enemies (auto AoE, Smart single/AoE, Consecration).
+- The Disarm read tries name and icon one after the other, with the spell id sign-corrected,
+  so the swing restarts after a Disarm ends.
+- New `Aegis_SBR:FearActive()` (the Warrior's Berserker Rage) and
+  `Aegis_SBR:MovedWithin(sec)` (the warlock's channel buffer).
+
+---
+
 ## v1.2.42 — a missing sting goes first again
 
 ### 🐛 Hunter — Serpent Sting starved by a fast bow

@@ -30,6 +30,7 @@ for any name-based talent detection** in the class modules.
 | Shaman | `TALENT_CLEARCAST` | `"Elemental Focus"` | ✅ confirmed in this dump (Elemental) |
 | Warlock | `TALENT_NIGHTFALL` | `"Nightfall"` | ✅ confirmed in this dump (Affliction) |
 | Warlock | `TALENT_RAPID_DETERIORATION` | `"Rapid Deterioration"` | ✅ confirmed in-game by a player: 2 ranks, 3% shorter Corruption/Curse of Agony/Siphon Life/Dark Harvest duration per rank (measured against the tooltip, not from an `/ar talents` dump) |
+| Warrior | Flurry aura | `"Flurry"` | ✅ user-confirmed in play; haste measured from the server's own cast timing: Slam 2500ms plain → 1923ms at 5/5, i.e. exactly 2500 × 100/130 (30% haste) |
 | Paladin | `TALENT_HOLY_MIGHT` | `"Vengeful Strikes"` | ✅ confirmed in Paladin dump (Retribution / tab 3) |
 | Paladin | `TALENT_THREAT` | `"Righteous Strikes"` | ✅ confirmed in Paladin dump (Protection / tab 2) |
 

@@ -661,7 +661,7 @@ function M:ReactiveReady(spell, sentAt)
         and Aegis_SBR:SpellRefusedAnySince(spell, sentAt) and (r.checked or 0) < sentAt then
         r.checked = sentAt
         local why = Aegis_SBR.spellRefusedMsg and Aegis_SBR.spellRefusedMsg[spell] or ""
-        if string.find(why, "can't do that yet", 1, true) then
+        if string.find(why, "can't do that yet", 1, true) and r.litFor == self:TargetId() then
             r.refusals = (r.refusals or 0) + 1
             if r.refusals >= 2 then r.bad = true end
         end
@@ -670,8 +670,27 @@ function M:ReactiveReady(spell, sentAt)
     r = self.reactive[spell]
     if not slot then r.byButton = false; return nil end
     r.byButton = true
-    if sentAt and GetTime() - sentAt < 1.0 then return false end
-    return IsUsableAction(slot) and true or false
+    -- The button stays lit across a target change, but the trigger was a crit
+    -- on the OLD target: a log had the mob die, the next one targeted, the lit
+    -- button sent - "You can't do that yet" - and two of those dropped the
+    -- button reading for the rest of the session. So the light counts for the
+    -- target it came on, and on another target only once a crit has named
+    -- that one (the crit lines) after the light.
+    local lit = IsUsableAction(slot) and true or false
+    local tid = self:TargetId()
+    local now = GetTime()
+    if lit and not r.lit then r.litFor = tid; r.litAt = now end
+    r.lit = lit
+    if not lit then return false end
+    if sentAt and now - sentAt < 1.0 then return false end
+    if r.litFor ~= tid then
+        local tname = UnitName("target")
+        if not (M.lastCritName and M.lastCritName == tname and (M.lastCritAt or 0) > (r.litAt or 0)) then
+            return false
+        end
+        r.litFor = tid
+    end
+    return true
 end
 
 -- The combat-log reading missed most crits: a log had 33 Kill Commands in
@@ -989,6 +1008,35 @@ function M:StingBlocked(sting)
                 return true
             end
         end
+    end
+    return false
+end
+
+-- Mend Pet due? The switch, the spell, a LIVING pet under the line, and the
+-- throttle - which is cleared when the client refused the last one (out of
+-- range, no line of sight): stamped on a cast that never happened, it held
+-- the heal back for twelve seconds, which looked like "sometimes it works,
+-- sometimes not".
+function M:MendPetDue(cfg)
+    if not cfg.useMendPet or not self:KnowsSpell("Mend Pet") then return false end
+    if not UnitExists("pet") or UnitIsDead("pet") then return false end
+    if self.mendPetT and Aegis_SBR.SpellRefusedSince and Aegis_SBR:SpellRefusedSince("Mend Pet", self.mendPetT) then
+        self.mendPetT = nil
+    end
+    if self:PetHPPct() >= (cfg.mendPetHp or 50) then return false end
+    return (GetTime() - (self.mendPetT or 0)) > MEND_PET_CD
+end
+
+-- With nothing attackable targeted the rotation does not run at all - and the
+-- pet was then never healed, out of combat least of all: reported as Mend Pet
+-- working only sometimes. The press does this one thing then.
+function M:Prebuff(cfg)
+    cfg = self:SpecConfig(cfg)
+    if not self:MendPetDue(cfg) then return false end
+    if self:Pick("Mend Pet", "pet needs healing") then
+        local now = GetTime()
+        self:Later(function() self.mendPetT = now end)
+        return true
     end
     return false
 end
@@ -1420,8 +1468,8 @@ function M:Rotate(cfg)
     end
 
     -- 5b. Mend Pet when the pet is hurting (throttled, HoT lasts ~15s).
-    if cfg.useMendPet and UnitExists("pet") and self:KnowsSpell("Mend Pet") then
-        if self:PetHPPct() < (cfg.mendPetHp or 50) and (now - (self.mendPetT or 0)) > MEND_PET_CD then
+    if self:MendPetDue(cfg) then
+        do
             if self:Pick("Mend Pet", "pet needs healing") then
                 self:Later(function() self.mendPetT = now end)
                 return

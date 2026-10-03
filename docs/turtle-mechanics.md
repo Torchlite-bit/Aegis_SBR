@@ -56,6 +56,24 @@ forum.turtlecraft.gg theorycraft threads, r/turtlewow, community class guides.
 - Aspect of the Wolf now grants melee AP and no longer blocks ranged abilities.
 - Piercing Shots: crit Aimed/Steady/Multi bleeds (no threat).
 
+## Warrior
+- **Sunder Armor costs 10 rage** and is the first GCD for damage and threat builds. The
+  addon now uses the Turtle cost and leads with Sunder when enabled.
+- **Flurry shortens Slam cast time**: Turtle's Flurry implementation applies its haste to
+  Slam, reducing 2.5s to about 1.92s at the maximum confirmed haste. `SlamCastTime()` now
+  applies the live Flurry modifier; autoattack timing continues to use `UnitAttackSpeed`.
+- **Pummel works in Battle or Berserker stance** (vanilla restricted it to Berserker).
+  Confirmed by the user in play; a Battle-stance warrior with Pummel on was passing up
+  89 Chain Lightning kicks in a single captured `/sbr log` because the code held the
+  vanilla-only stance gate. `STANCE_REQ["Pummel"]` carries both stances today.
+- **Berserker Rage grants immunity to fear and incapacitate.** Confirmed by the user
+  on 1.18.1 from the spell tooltip. Two consequences the rotation has to respect: the
+  player cannot be feared or incapacitated while it is up, so anything reacting to it
+  is necessarily PRE-emptive (there is no "break the fear now" case, because the client
+  refuses casts during loss of control — see `Aegis_SBR.lua:1948`, "Can't do that while
+  stunned"). And it is an active cast on this server, not the vanilla passive proc,
+  which is why the addon drives it with `PickExtra` and reads it with `HasBuff`.
+
 ## Shaman
 - **Elemental core is Flame Shock + Molten Blast + Lightning Bolt**, not LB-spam. Molten
   Blast (Rekindled Flame) refreshes Flame Shock. **Electrify** (replaced Elemental Fury):

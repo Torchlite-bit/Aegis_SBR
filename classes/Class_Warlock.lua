@@ -769,6 +769,13 @@ end
 --     twenty yards where the DoTs reach thirty, so at the edge of range every
 --     press sent a channel the client refused;
 --   * a target that takes no life drain (see LifeDrainImmune).
+local MOVE_BUFFER = 1.0
+-- Refused for movement? Then the wand is no answer either: it cannot shoot on
+-- the move, and started there it kept repeating after the stop, ahead of the
+-- channels and DoTs - reported as the rotation reaching for the wand after
+-- moving. The press waits instead.
+local function MoveRefusal(why) return why == "moving" or why == "just moved" end
+
 function M:ChannelRefusal(name)
     if not M.CHANNELED[name] then return nil end
     -- A school lockout (interrupted while casting) is not a debuff: the client
@@ -776,6 +783,10 @@ function M:ChannelRefusal(name)
     -- Queue refuses such a spell, and the wand must not stay protected for it.
     if self:LockedOut(name) then return "locked out" end
     if Aegis_SBR:Moving() then return "moving" end
+    -- And not in the first second after stopping: the movement reading lags a
+    -- sample, and a channel sent on the stop was broken by the last step -
+    -- reported as Dark Harvest tried over and over while moving around.
+    if Aegis_SBR.MovedWithin and Aegis_SBR:MovedWithin(MOVE_BUFFER) then return "just moved" end
     if M.TARGET_CHANNELS[name] and not Aegis_SBR:SpellReaches(name, "target") then return "out of range" end
     if name == "Drain Life" and self:LifeDrainImmune() then return "target takes no life drain" end
     return nil
@@ -2695,6 +2706,7 @@ function M:Rotate(cfg)
                 if self:TapBeforeDrain(cfg, gap) then return end
                 if self:Queue(gap, "gap channel") then return end
                 -- Refused (moving, out of range, locked out - see ChannelRefusal).
+                if MoveRefusal(self:ChannelRefusal(gap)) then return end
                 if self:HasWand() and not self:Wanding() then
                     self:Shoot("wanding, channel refused")
                     return
@@ -2818,7 +2830,8 @@ function M:Rotate(cfg)
         if self:Queue(filler, "filler channel") then return end
         -- Refused - moving, out of the channel's range, or a target that takes
         -- no life drain. The wand is the one ranged attack that costs nothing
-        -- to give up.
+        -- to give up - except for movement, where it cannot shoot either.
+        if MoveRefusal(self:ChannelRefusal(filler)) then return end
         if self:HasWand() and not self:Wanding() then self:Shoot("wanding, channel refused") end
     elseif filler then
         if self:Queue(filler, "filler") then return end
