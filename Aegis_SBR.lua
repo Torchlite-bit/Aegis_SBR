@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.42",
+    ver = "1.2.43",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1438,6 +1438,7 @@ local function MoveSample()
     local dx, dy = x - s.x, y - s.y
     s.x, s.y, s.t = x, y, now
     s.moving = (dx * dx + dy * dy) > (MOVE_EPS * MOVE_EPS)
+    if s.moving then Aegis_SBR.lastMovingAt = now end
     -- When the standing still began, for StillFor below.
     if s.moving then s.since = nil
     elseif not s.since then s.since = now end
@@ -1456,6 +1457,14 @@ moveFrame:SetScript("OnUpdate", function() MoveSample() end)
 -- the rotation hold anything back on its own reading of where they stand.
 function Aegis_SBR:MoveDetectEnabled()
     return not (AegisDB and AegisDB.moveDetect == false)
+end
+
+-- Moved within the last `sec` seconds? For a channel that should not start
+-- the instant the player stops - the reading lags a sample behind, and a
+-- channel sent on the stop is broken by the last step.
+function Aegis_SBR:MovedWithin(sec)
+    if not self:MoveDetectEnabled() then return false end
+    return (GetTime() - (self.lastMovingAt or -100)) < (sec or 0)
 end
 
 function Aegis_SBR:Moving()
@@ -1678,6 +1687,12 @@ function Aegis_SBR:EnemiesNear(yards)
         if not unit then return end
         if not UnitExists(unit) or not UnitCanAttack("player", unit) then return end
         if UnitIsDeadOrGhost(unit) then return end
+        -- Critters are neutral, and neutral is attackable, so UnitCanAttack
+        -- admits them and the scan counted every squirrel in the pack as a
+        -- target - reported as auto-AoE engaging on a critter pile. Fail open
+        -- when the read is missing or unrecognised: an unknown classification
+        -- is "cannot tell", and dropping a real mob is the worse error.
+        if UnitClassification and UnitClassification(unit) == "critter" then return end
         local _, guid = UnitExists(unit)
         local key = guid or unit
         if seen[key] then return end
@@ -2412,10 +2427,11 @@ function Aegis_SBR:WeaponEnchantId(slot)
 end
 
 -- A disarm makes the swing impossible for its whole duration, so the once-per
--- target guard below must not keep the swing off after it ends. The debuff
--- name is resolved through SuperWoW's spell id where available (the same
--- rank/locale-proof path the target snapshot uses), falling back to the icon
--- fragment on clients without it.
+-- target guard below must not keep the swing off after it ends. Name and icon
+-- are tried SEQUENTIALLY, the way ScanTargetDebuff does it, and the id is sign-
+-- corrected first as the snapshot does: a non-nil but unusable id would
+-- otherwise suppress the icon path outright and read "not disarmed" while the
+-- player is disarmed - a silent no-op, since the swing is only restarted here.
 local DISARM_TTL = 0.5
 function Aegis_SBR:DisarmActive()
     local now = GetTime()
@@ -2429,13 +2445,52 @@ function Aegis_SBR:DisarmActive()
         if type(d3) == "number" then id = d3
         elseif type(d4) == "number" then id = d4
         elseif type(d5) == "number" then id = d5 end
+        if id and id < -1 then id = id + 65536 end
         if (id and SpellInfo and SpellInfo(id) == "Disarm")
-            or (not id and tex and string.find(tex, "Warrior_Disarm")) then
+            or (tex and string.find(tex, "Warrior_Disarm")) then
             found = true
             break
         end
     end
     self.disarmActive = found
+    return found
+end
+
+-- Fear ON THE PLAYER, not on the target. Two sources on purpose:
+-- C_LossOfControl is ClassicAPI, and ClassicAPI is only Recommended, so a gate
+-- reading it alone would be dead on a client without the DLL. The debuff scan
+-- is the always-available path and is TTL-cached like DisarmActive so 16
+-- UnitDebuff calls do not run every press. When ClassicAPI IS present the scan
+-- still runs if it reported nothing, so a DLL that under-reports loses nothing.
+--
+-- "not feared" and "cannot tell" collapse to false deliberately. This drives an
+-- offensive pop rather than closing a gate, so the failure direction is safe
+-- both ways: a missed fear costs a wasted press, a false one costs a cooldown.
+local FEAR_TTL = 0.5
+function Aegis_SBR:FearActive()
+    local now = GetTime()
+    if (self.fearCheckAt or 0) + FEAR_TTL > now then return self.fearActive end
+    self.fearCheckAt = now
+    local found = false
+    if self:Capability("loc") and self:LossOfControl("FEAR") then
+        found = true
+    else
+        for i = 1, 16 do
+            -- UnitDebuff's 2nd return is the effect name, which is all this
+            -- needs. A Shaman's Fear Ward is an immunity TO fear and is
+            -- excluded.
+            local tex, name = UnitDebuff("player", i)
+            if not tex then break end
+            if name then
+                local n = string.lower(name)
+                if string.find(n, "fear") and not string.find(n, "ward") then
+                    found = true
+                    break
+                end
+            end
+        end
+    end
+    self.fearActive = found
     return found
 end
 

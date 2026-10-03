@@ -29,7 +29,7 @@ local M = Aegis_SBR:NewClassModule("WARRIOR")
 M.uiTitle = "Warrior"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 830
+M.uiHeight = 886
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
 local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
@@ -84,6 +84,9 @@ local TALENT_IMP_EXECUTE = "Improved Execute"
 -- Whirlwind's cost. Below that rank a dance leaves too little rage to spend,
 -- so the Whirlwind dance below is gated on rank, not assumed.
 local TALENT_TACTICAL_MASTERY = "Tactical Mastery"
+local TALENT_RAVAGER = "Ravager"
+local TALENT_IMP_HEROIC_STRIKE = "Improved Heroic Strike"
+local TALENT_FLURRY = "Flurry"
 -- How long the Revenge fallback waits between attempts while the combat log
 -- has not answered even once. Matched to Revenge's own cooldown, so the
 -- fallback can never cost more than one press per cooldown.
@@ -91,6 +94,14 @@ local REVENGE_PROBE_GAP = 5.0
 -- Minimum gap between stance switches; stance changes have a ~1s internal
 -- cooldown, so we never thrash faster than this.
 local STANCE_CD = 1.0
+local OVERPOWER_STANCE_RAGE = 25
+local OVERPOWER_SWING_LOOKAHEAD = 0.5
+-- The Overpower dance must still pay for itself: switching to Battle and
+-- firing the Overpower takes a stance swap plus a GCD. If the learned proc
+-- window has less than this left, the dance would land in Battle as the proc
+-- expires - a wasted press and possibly a wasted rage dump - so it is given
+-- up and the press falls through to the ordinary rotation.
+local OVERPOWER_DANCE_LEAD = 2.0
 -- Light throttle so a rapid press burst does not re-issue the queued
 -- on-next-swing ability several times in the same swing.
 local DUMP_THROTTLE = 0.3
@@ -107,10 +118,33 @@ local AOE_RADIUS = 8
 -- kickable as the target would be at that distance.
 local INTERRUPT_SCAN_YARDS = 10
 
--- Whirlwind is only worth a global in AoE against three or more enemies;
--- below that the single-target strikes beat it, and a stance dance for it
--- is even less worth it. An unknown count lets it through (fail open).
-local WW_MIN_PACK = 3
+-- Whirlwind is worth a global in AoE against two or more enemies (set by
+-- /sbr aoe auto's "two weapon-hits worth" doctrine: two weapon damage hits
+-- out-value the single-target strike the global would replace - count is the
+-- proxy for that payout, no weapon read needed). Three was the old
+-- conservative rule (a "real pack"); two says: once the count reaches two,
+-- Whirlwind beats the single-target alternative. An unknown count lets it
+-- through (fail open) - a count that cannot be taken must not close the gate.
+local WW_MIN_PACK = 2
+
+-- Sweeping Strikes copies the attack that spends its charge. Per charge Mortal
+-- Strike copies more than a Whirlwind hit, and at two or three enemies
+-- Whirlwind already hits them all, so its extra hit lands on an already-hit mob
+-- where Mortal Strike's lands on a second one. Whirlwind only becomes the
+-- better spender once it hits four: then its own AoE plus the extra hit beats a
+-- single Mortal Strike copy. (1.12: one Whirlwind burns one charge and adds one
+-- hit, not one per target.)
+local SS_BIG_PACK = 4
+
+-- A Sweeping Strikes pop is only worth its 30 rage while the pack can survive
+-- the copied hits; a pack whose every member is about to die spends the
+-- charges on corpses. These are the floors: at least SWEEP_MIN_TARGETS
+-- enemies (target or others) must read above SWEEP_MIN_HP or the pop is held
+-- for a better window - one healthy enemy next to a dying one still wastes
+-- the second charge. A health read that cannot be taken stays nil and fails
+-- open - an unknowable pack must not close the gate.
+local SWEEP_MIN_HP = 50
+local SWEEP_MIN_TARGETS = 2
 
 -- How long auto AoE holds before flipping back to single target once the pack
 -- drops below the threshold. Nameplates vanish and reappear (a mob steps out
@@ -124,10 +158,30 @@ local AOE_EXIT_HOLD = 1.0
 -- of seconds, not tenths.
 local CC_SCAN_TTL = 0.5
 
+-- How many swing periods may go by with no white swing before the swing
+-- tracker is called unknown. Mirrors the core's SWING_STALE: a running
+-- auto-attack re-anchors on every swing, so missing this many in a row means
+-- nothing is swinging - there is no next swing to clip, and the modulo below
+-- would otherwise keep producing a perfectly plausible countdown forever.
+local SWING_STALE_PERIODS = 2.5
+
 -- After a Charge opener the warrior is mid-animation and out of Demo Shout
 -- range for a short window. Hold the shout so it does not waste a press on a
 -- client refusal; one successful Shout on arrival covers the same debuff window.
 local CHARGE_DEMO_HOLD = 2.0
+
+-- After the client refuses an Intercept (target beyond its reach), hold it for
+-- a short window. Unlike the kicks there is no cast to key a backoff to, so
+-- the refusal is consumed and the gate reopens after the window: a chase
+-- re-picks at most once per window instead of on every press.
+local INTERCEPT_RESEND = 3.0
+-- Intercept's own reach. The near end is not a number: the gate is
+-- `not InMeleeRange()`, so the weapon you carry sets it (a 2H pushes it past the
+-- old flat 8 yd floor and nothing is ever refused for standing a little far
+-- off). A target inside melee is a strike, not a leap. An UNKNOWN distance
+-- passes (fail open - the client refuses, and the hold above absorbs it), in
+-- line with the rest of the addon.
+local INTERCEPT_MAX_YARDS = 25
 
 -- Stance key -> spell name. Used by the home-stance setting and switching.
 M.STANCES = {
@@ -143,19 +197,30 @@ M.STANCES = {
 -- Rend's applied duration, for telling our bleed from another warrior's.
 local REND_DUR = 21
 
+-- Re-apply Sunder Armor with this much time left on the stack. A fresh Sunder
+-- at max stacks refreshes the duration and keeps the count; dropping it loses
+-- every stack and takes five GCDs to rebuild, so the refresh sits early enough
+-- for a GCD + a press to land short of the drop.
+local SUNDER_REFRESH = 3.0
+
 local RAGE = {
     ["Mortal Strike"] = 30,
     ["Bloodthirst"]   = 30,
     ["Shield Slam"]   = 20,
     ["Whirlwind"]     = 25,
     ["Slam"]          = 15,
+    ["Heroic Strike"] = 15,   -- base, reduced by Improved Heroic Strike talent (1/point)
     ["Execute"]       = 15,   -- untalented client floor: refuses below 15 despite consuming all extra rage (Improved Execute lowers it - see ExecuteCost)
     ["Overpower"]     = 5,
     ["Revenge"]       = 5,
-    ["Sunder Armor"]  = 12,   -- 15 base, often reduced
+    ["Sunder Armor"]  = 10,   -- Turtle 1.18.1
     ["Thunder Clap"]  = 20,
     ["Charge"]        = 0,    -- generates rage; free to attempt
+    -- Intercept: 10 rage, tooltip confirmed on Turtle. Generates rage on hit,
+    -- like Charge. 25 yd reach, 30s cooldown, Berserker Stance only.
+    ["Intercept"]     = 10,
     ["Rend"]          = 10,
+    ["Hamstring"]     = 10,
     ["Battle Shout"]        = 10,
     ["Demoralizing Shout"]  = 10,
     -- Master Strike: 20 rage, tooltip confirmed on Turtle. Was estimated at 25.
@@ -164,8 +229,13 @@ local RAGE = {
     -- (tooltip confirmed). Zero rather than absent so the intent is explicit:
     -- there is no cost to check, not "we never looked".
     ["Concussion Blow"] = 0,
+    ["Cleave"]          = 20,   -- base, reduced by Ravager talent (1/point)
     ["Pummel"]      = 10,   -- forgiving; verify Turtle tooltip if it feels strict
     ["Shield Bash"] = 5,    -- forgiving; verify Turtle tooltip if it feels strict
+    -- Sweeping Strikes: 30 rage, off the GCD. The pop never passes through
+    -- CanCast - it is fired from the off-GCD layer - so until this entry
+    -- existed there was nothing anywhere to check its cost against.
+    ["Sweeping Strikes"] = 30,
 }
 
 -- Stances an ability may be used from (vanilla 1.12). nil = any stance.
@@ -177,12 +247,14 @@ local STANCE_REQ = {
     ["Revenge"]       = { "Defensive Stance" },
     ["Thunder Clap"]  = { "Battle Stance", "Defensive Stance" },
     ["Charge"]        = { "Battle Stance" },
+    ["Intercept"]     = { "Berserker Stance" },
     ["Rend"]          = { "Battle Stance", "Defensive Stance" },
+    ["Hamstring"]     = { "Battle Stance", "Berserker Stance" },
     ["Recklessness"]  = { "Berserker Stance" },
     ["Berserker Rage"]= { "Berserker Stance" },
     ["Shield Block"]  = { "Defensive Stance" },
     ["Sweeping Strikes"]= { "Battle Stance" },
-    ["Pummel"]        = { "Berserker Stance" },
+    ["Pummel"]        = { "Battle Stance", "Berserker Stance" },
     -- Bloodthirst, Shield Slam, Slam, Sunder Armor, Heroic Strike, Cleave,
     -- Death Wish, Bloodrage, Shield Bash (interrupt, any stance): usable in
     -- any stance (Shield Slam and Shield Bash need a shield).
@@ -208,6 +280,7 @@ M.spellAlias = {
     bloodrage = "useBloodrage", bld = "useBloodrage",
     shieldblock = "useShieldBlock", sb = "useShieldBlock",
     charge = "useCharge",
+    intercept = "useIntercept", intc = "useIntercept",
     rend = "useRend",
     battleshout = "useBattleShout", bshout = "useBattleShout",
     demoshout = "useDemoShout", demo = "useDemoShout",
@@ -231,8 +304,8 @@ M.templates = {
         useHeroicStrike = true, dumpRage = 60, wwExcess = 60,
         popCDs = false, autoCDElite = false,
         useDeathWish = false, useRecklessness = false, useBerserkerRage = false,
-        useBloodrage = true, bloodrageRage = 30, useShieldBlock = false,
-        useCharge = false, useRend = false,
+        useBloodrage = true, bloodrageRage = 30, bloodrageHealthPct = 25, useShieldBlock = false,
+        useCharge = false, useIntercept = false, useRend = false,
         usePummel = false, useShieldBash = false,
     },
     fury = {
@@ -246,8 +319,8 @@ M.templates = {
         useHeroicStrike = true, dumpRage = 50, wwExcess = 50,
         popCDs = false, autoCDElite = true,
         useDeathWish = true, useRecklessness = true, useBerserkerRage = true,
-        useBloodrage = true, bloodrageRage = 30, useShieldBlock = false,
-        useCharge = false, useRend = false,
+        useBloodrage = true, bloodrageRage = 30, bloodrageHealthPct = 25, useShieldBlock = false,
+        useCharge = false, useIntercept = false, useRend = false,
         usePummel = true, useShieldBash = true,
     },
     arms = {
@@ -261,8 +334,8 @@ M.templates = {
 useHeroicStrike = true, dumpRage = 50, wwExcess = 55,
         popCDs = false, autoCDElite = true,
         useDeathWish = false, useRecklessness = true, useBerserkerRage = true,
-        useBloodrage = true, bloodrageRage = 30, useShieldBlock = false,
-        useCharge = false, useRend = false,
+        useBloodrage = true, bloodrageRage = 30, bloodrageHealthPct = 25, useShieldBlock = false,
+        useCharge = false, useIntercept = false, useRend = false,
         usePummel = true, useShieldBash = true,
     },
     prot = {
@@ -274,10 +347,11 @@ useHeroicStrike = true, dumpRage = 50, wwExcess = 55,
         aoeMode = false, useSweeping = false, useCleave = true,
         aoeAuto = false, aoeThreshold = 2, aoeCc = true,
         useHeroicStrike = true, dumpRage = 50, wwExcess = 70,
-        popCDs = false, autoCDElite = false,
+popCDs = false, autoCDElite = false,
         useDeathWish = false, useRecklessness = false, useBerserkerRage = false,
-        useBloodrage = true, bloodrageRage = 30, useShieldBlock = true,
-        useCharge = false, useRend = false,
+        burstMinHp = 0,
+        useBloodrage = true, bloodrageRage = 30, bloodrageHealthPct = 25, useShieldBlock = false,
+        useCharge = false, useIntercept = false, useRend = false,
         usePummel = false, useShieldBash = true,
     },
 }
@@ -296,16 +370,19 @@ function M:NormalizeProfile(c)
         useHeroicStrike = true, dumpRage = 60, wwExcess = 60,
         popCDs = false, autoCDElite = false,
         useDeathWish = false, useRecklessness = false, useBerserkerRage = false,
-        useBloodrage = true, bloodrageRage = 30, useShieldBlock = false,
-        useCharge = false, useRend = false,
+        useBloodrage = true, bloodrageRage = 30, bloodrageHealthPct = 25, useShieldBlock = false,
+        useCharge = false, useIntercept = false, useRend = false,
         -- Pummel / Shield Bash interrupts: off until opted into, like every
         -- other reactive here. Both fire only while the target is mid-cast
         -- (SuperWoW cast events), so they change nothing without SuperWoW.
         usePummel = false, useShieldBash = false,
         -- Interrupt tuning: heal-only kicks only confirmed heal casts (built-in
         -- list + interruptHealList inclusions); min-time shortens what is worth
-        -- a kick. All off/zero by default = interrupt anything mid-cast.
+        -- a kick; wait-at holds the kick until the cast reaches the configured
+        -- progress threshold (0-100%). All off/zero by default = interrupt
+        -- anything mid-cast.
         interruptHealsOnly = false, interruptMinTime = 0, interruptHealList = {},
+        interruptWaitAt = 0,
         -- Battle Shout on by default (near-universal AP buff); Demoralizing Shout
         -- off by default (opt-in mitigation debuff, mainly for tanking).
         useBattleShout = true, useDemoShout = false,
@@ -331,6 +408,10 @@ function M:NormalizeProfile(c)
         -- Sap) is on any enemy in the pack. On by default: breaking CC is a
         -- group wipe, and the only cost of a false positive is a missed cast.
         aoeCc = true,
+        -- Hamstring kept on the target (runners, PvP, kiting). Off by default.
+        useHamstring = false,
+        -- Thunder Clap not on a target that already carries its slow.
+        tcSkipIfUp = false,
     }
     for k, v in pairs(b) do
         if c[k] == nil then c[k] = v end
@@ -351,6 +432,51 @@ end
 -- ============================================================
 function M:Rage()
     return UnitMana("player") or 0
+end
+
+-- Cleave cost with Ravager talent reduction (Turtle Fury talent, 1 rage per point).
+function M:CleaveCost()
+    local base = RAGE["Cleave"] or 20
+    local talentRank = self:TalentRank(TALENT_RAVAGER) or 0
+    local cost = base - talentRank
+    if cost < 0 then cost = 0 end
+    return cost
+end
+
+-- Heroic Strike cost with Improved Heroic Strike reduction (Arms talent,
+-- 1 rage per point, three ranks). Base is 15 on this client.
+function M:HeroicStrikeCost()
+    local base = RAGE["Heroic Strike"] or 15
+    local talentRank = self:TalentRank(TALENT_IMP_HEROIC_STRIKE) or 0
+    local cost = base - talentRank
+    if cost < 0 then cost = 0 end
+    return cost
+end
+
+function M:TryRageDump(cfg, aoe, now, skipCleave)
+    if not cfg.useHeroicStrike or (now - (self.lastDump or 0)) <= DUMP_THROTTLE then return false end
+    local rage = self:Rage()
+    if aoe and not skipCleave and cfg.useCleave and self:KnowsSpell("Cleave")
+        and rage >= (cfg.dumpRage or 60) and rage >= self:CleaveCost() then
+        if self:PickExtra("Cleave") then
+            if not Aegis_SBR.deciding then self.lastDump = now end
+            return true
+        end
+    -- The single-target dump is single-target ONLY. In a pack Heroic Strike hits
+    -- one of eight, so spending the rage here is worse than holding it for the
+    -- GCD: wwFirst is the case that reaches this elseif in AoE, and it means
+    -- "Whirlwind owns the next press", not "Whirlwind first, then dump". The
+    -- captured evidence was 2 presses at a 2-pack, rage >= the dump floor, Cleave
+    -- affordable and known - skipCleave the only way the branch above could fail,
+    -- so 15 rage went into a one-target hit on every one of them.
+    elseif not aoe and self:KnowsSpell("Heroic Strike") and rage >= (cfg.dumpRage or 60)
+        and rage >= self:HeroicStrikeCost() then
+        if self:PickExtra("Heroic Strike") then
+            if not Aegis_SBR.deciding then self.lastDump = now end
+            return true
+        end
+    end
+    return false
 end
 
 function M:CurrentStanceName()
@@ -402,6 +528,15 @@ function M:SwitchStance(name)
         p.reason = "stance dance"
         return true
     end
+    -- A real press is the only place a dance has to be recorded: the branch
+    -- above only reports it to the preview window, so on a real press the swap
+    -- used to go out silently and the press it consumed left no trace at all -
+    -- only inferable afterwards from a stance flip in the state line with no
+    -- gcd line between them. Rage is included because the waste from a dance is
+    -- never rage spent ON the swap (a swap costs none) - it is rage the new
+    -- stance cannot spend, which is what 1c's pre-dump exists to prevent, and
+    -- that judgement needs the level at the moment the swap was issued.
+    if self:Tracing() then self:Trace("dance " .. name .. " rage=" .. self:Rage()) end
     CastShapeshiftForm(idx)
     self.lastStanceSwap = now
     return true
@@ -463,6 +598,7 @@ function M:OverpowerLearnTick()
             if self:Tracing() then self:Trace("overpower refused, window stays open") end
         elseif not self:IsReady("Overpower") then
             self.overpowerExpiry = 0
+            self.overpowerStanceHold = true
         end
         self.overpowerAttemptAt = nil
     end
@@ -504,8 +640,16 @@ function M:RevengeResolveTick()
     self.revengeAttemptAt = nil
 end
 
+function M:FlurryHastePct()
+    local rank = self:TalentRank(TALENT_FLURRY) or 0
+    if rank <= 0 or not self:HasBuff("Flurry") then return 0 end
+    return rank * 6
+end
+
 function M:SlamCastTime()
     local t = SLAM_CAST_BASE - SLAM_CAST_PER_RANK * self:TalentRank(TALENT_IMP_SLAM)
+    local haste = self:FlurryHastePct()
+    if haste > 0 then t = t * 100 / (100 + haste) end
     if t < 0.5 then t = 0.5 end
     return t
 end
@@ -600,6 +744,24 @@ function M:CancelSlamForAoE()
     return true
 end
 
+-- Cancel a running Slam so an Intercept can go out.
+--
+-- Intercept is picked only while out of melee, so a Slam mid-cast at that
+-- moment cannot land anyway: the target is out of the range the cast needs. No
+-- timing gate - unlike the interrupt cancel, there is no case where the Slam is
+-- worth keeping while the target has left melee, and the leap must go out NOW
+-- or the target keeps running. The caller has already verified the Intercept
+-- can cast. Through Later, so a preview never cancels a real cast.
+function M:CancelSlamForIntercept()
+    if not self:SlamCasting() then return false end
+    self:Later(function()
+        if self:Tracing() then self:Trace("cancelling Slam, Intercept up") end
+        SpellStopCasting()
+        self.slamCastUntil = nil
+    end)
+    return true
+end
+
 -- The strike Slam should be waiting for, or nil.
 --
 -- Slam sits below the primary strikes already, so the ORDER was never the
@@ -662,14 +824,49 @@ function M:SlamFitsBeforeSwing()
         if elapsed < (self.swingSpeed or 3.0) + 0.5 then return false end
         self.lastDisarmRestart = nil
     end
-    local left = self:SwingTimeLeft()
-    if not left then return true end
+    -- The PERIOD is read live here, not taken from the tracker's latched
+    -- swingSpeed. That value is only refreshed when a white swing lands (core
+    -- OnSwingMessage / UNIT_CASTEVENT MAINHAND), so it lags any attack-speed
+    -- change by up to one whole swing period.
+    --
+    -- Flurry is the case that bites, because it changes the period mid-pull:
+    -- 3.40s -> 2.62s at 5/5 on this client (both measured off the press log),
+    -- and the read taken on the swing landing in the same frame Flurry is
+    -- applied still returns the old number. For one period after that,
+    -- SwingTimeLeft() OVER-reads the time to the next swing by up to 0.78s, so
+    -- a `left >= SlamCastTime` test passes with that much real margin already
+    -- gone and the cast lands on the swing it was meant to leave alone. The
+    -- false-positive band is 0.78s wide in a 2.62s cycle - about 30% of hasted
+    -- swing positions - which is why it read as intermittent and Flurry-only.
+    -- A captured instance: Flurry procs, the swing anchors and latches 3.40,
+    -- the next press sees left=3.32 against a true 2.54.
+    --
+    -- The cast model needed no change and was verified against the server: it
+    -- grants 1923ms at Flurry 5/5, which is exactly 2500 * 100/130, so
+    -- SlamCastTime's Flurry fold-in is right.
+    --
+    -- The ANCHOR stays the event - lastSwing is written by the swing itself and
+    -- is the accurate half. An unknown anchor or period answers yes, in line
+    -- with the rest of the addon: a detection that cannot answer must not close
+    -- a gate.
+    local mh = UnitAttackSpeed("player")
+    if not self.lastSwing or not mh or mh <= 0 then return true end
+    local elapsed = GetTime() - self.lastSwing
+    if elapsed > mh * SWING_STALE_PERIODS then return true end
+    local left = mh - math.mod(elapsed, mh)
     return left >= self:SlamCastTime()
 end
 
 function M:Try(name, reason)
     if WEAPON_REQ[name] and not Aegis_SBR:WeaponAllows(WEAPON_REQ[name]) then return false end
-    if self:CanCast(name, RAGE[name], STANCE_REQ[name]) then
+    -- Execute's floor moves with Improved Execute, so the static table is not
+    -- the cost to check: inExecute (above) already asks ExecuteCost, and Try
+    -- asking the untalented 15 made the two disagree. At 10-14 rage with 2/5
+    -- talented the phase was entered (dump suppressed) and the cast then
+    -- refused, so the press fell through to a strike with rage held away from
+    -- both Execute and the dump.
+    local cost = (name == "Execute") and self:ExecuteCost() or RAGE[name]
+    if self:CanCast(name, cost, STANCE_REQ[name]) then
         return self:Pick(name, reason)
     end
     return false
@@ -733,9 +930,11 @@ end
 --
 -- TargetIsCasting() (core) is true whenever a non-instant cast is in progress.
 -- Pick whichever interrupt is castable in the current stance — no dance, the
--- window is too short for the stance CD. Shield Bash is usable in any stance
--- but needs a shield; Pummel is Berserker-only but free to check. Returns the
--- spell name if castable, nil otherwise.
+-- window is too short for the stance CD. Shield Bash is usable in Battle /
+-- Defensive but needs a shield; Pummel works in Battle or Berserker on Turtle
+-- (vanilla restricted it to Berserker - the in-repo docs/rotations.md flags
+-- Turtle's changes) and costs nothing to check. Returns the spell name if
+-- castable, nil otherwise.
 --
 -- castStart (core TargetCastStart) feeds the refusal backoff: an interrupt that
 -- was refused since this cast began (LOS, not facing) is not re-picked for the
@@ -743,8 +942,9 @@ end
 -- -> the gate stays open, matching the fail-open rule.
 --
 -- No stance dance by design: the ~1s stance internal CD is enough to slip past
--- a fast cast. A tank in Defensive has Shield Bash; a Fury/Arms warrior in
--- Berserker has Pummel. Neither interrupts correctly from the other stance.
+-- a fast cast. A tank in Defensive has Shield Bash; an Arms or Fury warrior
+-- keeps Pummel in either home or Berserker, so the kick usually fires without
+-- one.
 -- ============================================================
 function M:InterruptPick(cfg, castStart)
     if cfg.usePummel and self:KnowsSpell("Pummel") and self:IsReady("Pummel")
@@ -760,6 +960,22 @@ function M:InterruptPick(cfg, castStart)
         return "Shield Bash"
     end
     return nil
+end
+
+-- Second-half interrupt delay (interruptWaitAt): hold the kick until the
+-- enemy cast reaches the configured progress threshold (0-100%, 0 = off).
+-- A cast the enemy drops on its own then spends no interrupt, and kicking
+-- late delays the heal longer - the cast time already spent is the lockout's
+-- head start, and the cooldown after is the same either way.
+--
+-- An unknown start or duration answers TRUE (fail open): the delay must never
+-- remove a kick - the same rule as an unknown duration passing the min-time
+-- check. The ledger's start is the UNIT_CASTEVENT arrival time, so a START
+-- that arrives late reads as slightly more progress than the cast has really
+-- made; the threshold lands a fraction early, never late.
+function M:CastPastThreshold(castStart, castDur, threshold)
+    if not castStart or not castDur or castDur <= 0 or not threshold or threshold <= 0 then return true end
+    return (GetTime() - castStart) >= (castDur * (threshold / 100))
 end
 
 -- The nearby ENEMY (not the current target) that is mid-cast and interruptible,
@@ -779,12 +995,16 @@ function M:NearCaster(cfg)
         if not UnitIsUnit(u, "target") then
             local _, guid = UnitExists(u)
             if guid and Aegis_SBR:EnemyIsCasting(guid) then
-                -- Same filters as the target path: min-time, then heal-only.
+                -- Same filters as the target path: min-time, second-half
+                -- wait, then heal-only.
                 local castDur = Aegis_SBR:EnemyCastDuration(guid)
+                local castStart = Aegis_SBR:EnemyCastStart(guid)
                 if (not castDur) or castDur >= (cfg.interruptMinTime or 0) then
-                    local castName = Aegis_SBR:EnemyCastName(guid)
-                    if (not cfg.interruptHealsOnly) or self:IsHealCast(castName, cfg) then
-                        return { guid = guid, start = Aegis_SBR:EnemyCastStart(guid) }
+if (not cfg.interruptWaitAt) or cfg.interruptWaitAt <= 0 or self:CastPastThreshold(castStart, castDur, cfg.interruptWaitAt) then
+                        local castName = Aegis_SBR:EnemyCastName(guid)
+                        if (not cfg.interruptHealsOnly) or self:IsHealCast(castName, cfg) then
+                            return { guid = guid, start = castStart }
+                        end
                     end
                 end
             end
@@ -804,10 +1024,18 @@ end
 
 function M:NeedSunder(cfg)
     local want = cfg.sunderStacks or 5
-    -- Apply until we reach the configured stacks; once there we let it ride
-    -- and re-apply only after it falls off (precise refresh timing is not
-    -- reliable on 1.12 without extra debuff data).
-    return self:SunderStacksOnTarget() < want
+    -- Apply until we reach the configured stacks, then hold the count: a fresh
+    -- Sunder at max stacks refreshes the duration without losing them. Precise
+    -- refresh timing needs the debuff's remaining time, which ClassicAPI alone
+    -- can read; while it is unknown this falls back to "rides until it drops"
+    -- (the previous behaviour - correct on both paths, just more expensive).
+    local stacks = self:SunderStacksOnTarget()
+    if stacks < want then return true end
+    if Aegis_SBR.TargetDebuffRemaining and stacks > 0 then
+        local remain = Aegis_SBR:TargetDebuffRemaining("Sunder Armor")
+        if remain and remain <= SUNDER_REFRESH then return true end
+    end
+    return false
 end
 
 -- ============================================================
@@ -956,14 +1184,36 @@ function M:AoEPackUnits()
     return list
 end
 
--- Whirlwind is worth a global in AoE only against a real pack (>= 3
--- enemies). A count that cannot be taken must not close the gate - same
--- rule as everywhere else: unknown answers fire, exactly as before.
-function M:AoEWWPack()
+-- Whirlwind is worth a global in AoE against two or more enemies: it lands
+-- weapon damage on every one inside the radius, so two weapon-hits beat the
+-- single-target strike the global would replace, and the gate is a pack
+-- proxy for that payout (count can be taken, so this side cannot lie).
+function M:AoEWWPackAt(n)
     local radius = Aegis_SBR:SpellRadius("Whirlwind") or AOE_RADIUS
+    local c = Aegis_SBR:CountEnemiesNear(radius)
+    if c == nil then return true end   -- cannot tell: fails open
+    return c >= n
+end
+
+function M:AoEWWPack()
+    return self:AoEWWPackAt(WW_MIN_PACK)
+end
+
+-- Thunder Clap only where it hits what was asked for. It is a pulse around the
+-- warrior: the enemies inside its radius are counted against the auto-AoE
+-- "from N" line; with no count, the target has to be in reach - which also
+-- keeps it off a Charge still in flight - and, switched on, it is not cast on a
+-- target that already carries the slow. All three were reported: the pack size
+-- ignored, Thunder Clap thrown during the Charge, and no range check at all.
+local TC_RADIUS = 8
+function M:ThunderClapWorth(cfg)
+    if cfg.tcSkipIfUp and Aegis_SBR:TargetDebuffUp("Thunder Clap", "Spell_Nature_ThunderClap") then
+        return false
+    end
+    local radius = Aegis_SBR:SpellRadius("Thunder Clap") or TC_RADIUS
     local n = Aegis_SBR:CountEnemiesNear(radius)
-    if n == nil then return true end
-    return n >= WW_MIN_PACK
+    if n ~= nil then return n >= (cfg.aoeThreshold or 2) end
+    return Aegis_SBR:InMeleeRange()
 end
 
 -- true when a damage-breakable control is on any readable enemy, false when
@@ -1005,6 +1255,33 @@ function M:ScanPackForCc()
         for j = 1, table.getn(names) do
             local hit = self:UnitHasBreakableCc(names[j])
             if hit then return hit end
+        end
+    end
+    return false
+end
+
+-- true when at least `need` enemies within the AoE radius read above `minPct`
+-- health, false when fewer can be found, nil when the pack could not be
+-- scanned at all. nil never stands a gate down - see the block comment above:
+-- a health read that cannot be taken must not close the pop.
+--
+-- Walks the SAME cached walk the AoE count was built on (the CC scan's
+-- trick), so this costs a few UnitHealth reads, not another nameplate sweep.
+function M:PackHasHealthyEnemy(minPct, need)
+    -- The cached walk from the AoE count decides; without it there is no
+    -- answer - return nil, which must read as "do not act" (fail open).
+    local radius = Aegis_SBR:SpellRadius("Whirlwind") or AOE_RADIUS
+    local list = Aegis_SBR:EnemiesNearCached(radius)
+    if not list then return nil end
+    local healthy = 0
+    for i = 1, table.getn(list) do
+        local u = list[i]
+        if UnitExists(u) then
+            local mx = UnitHealthMax(u)
+            if mx and mx > 0 and UnitHealth(u) / mx * 100 > minPct then
+                healthy = healthy + 1
+                if healthy >= need then return true end
+            end
         end
     end
     return false
@@ -1086,10 +1363,33 @@ function M:Rotate(cfg)
     local inExecute = cfg.useExecute and hp <= 20 and self:KnowsSpell("Execute")
         and rage >= self:ExecuteCost() and not self:InStance("Defensive Stance")
 
+    -- Is an Intercept pending? Same shape as chargePending (an attackable target
+    -- out of melee) but Berserker Stance, and WITHOUT a stance dance: the 1@b
+    -- block fires only from the stance you are already in, so this test carries
+    -- no stance clause and no dance can be spent here.
+    --
+    -- Combat state is deliberately not part of it. In combat the client blocks
+    -- Charge, so a target that left melee has no other answer; out of it a
+    -- berserker with rage spends that rage on the leap rather than on a swap to
+    -- Battle. The far end is the ability's own reach, and an unknown distance
+    -- passes (fail open - see INTERCEPT_MAX_YARDS).
+    --
+    -- The refusal hold is part of the gate so the trace can report it blocked.
+    -- Unlike the kicks there is no cast to key a SpellRefusedSince backoff to,
+    -- so keying it to the attempt time would lock the spell forever: the stamp
+    -- would never advance because the gate is closed. The refusal is consumed in
+    -- the block instead and the gate holds for INTERCEPT_RESEND.
+    local interceptRange = Aegis_SBR:DistanceTo("target")
+    local interceptPending = cfg.useIntercept and self:KnowsSpell("Intercept")
+        and UnitExists("target") and UnitCanAttack("player", "target")
+        and not UnitIsDeadOrGhost("target") and not self:InMeleeRange()
+        and (not interceptRange or interceptRange <= INTERCEPT_MAX_YARDS)
+        and rage >= RAGE["Intercept"]
+        and now >= (self.interceptBlockedUntil or 0)
     -- Interrupt state for the trace, resolved once here: the in-progress cast
     -- name plus which filter (if any) suppressed the kick. intname=none means
-    -- no cast in progress; int=off/range/min/heal/backoff/kick says why the
-    -- interrupt branch did or did not pick.
+    -- no cast in progress; int=off/range/min/wait/heal/backoff/kick says why
+    -- the interrupt branch did or did not pick.
     local intCastName, intState
     if self:Tracing() then
         intCastName = Aegis_SBR:TargetCastName()
@@ -1110,6 +1410,9 @@ function M:Rotate(cfg)
                 intState = "range"
             elseif (Aegis_SBR:TargetCastDuration() or 0) < (cfg.interruptMinTime or 0) then
                 intState = "min"
+            elseif cfg.interruptWaitAt and cfg.interruptWaitAt > 0 and Aegis_SBR:TargetCastDuration()
+                and not self:CastPastThreshold(Aegis_SBR:TargetCastStart(), Aegis_SBR:TargetCastDuration(), cfg.interruptWaitAt) then
+                intState = "wait"
             elseif cfg.interruptHealsOnly and not self:IsHealCast(intCastName, cfg) then
                 intState = "heal"
             else
@@ -1128,10 +1431,15 @@ function M:Rotate(cfg)
                     or (aoeCount and tostring(aoeCount)) or "unknown") or "off")
             .. " cc=" .. ccState
             .. " op=" .. ((now < (self.overpowerExpiry or 0)) and "Y" or "N")
+            .. " ophold=" .. (self.overpowerStanceHold and "Y" or "N")
+            .. " fl=" .. self:FlurryHastePct()
+            .. " sw=" .. (self:SwingTimeLeft() and string.format("%.2f", self:SwingTimeLeft()) or "-")
+            .. " swage=" .. (self.lastSwing and string.format("%.2f", now - self.lastSwing) or "-")
             .. " rev=" .. ((now < (self.revengeExpiry or 0)) and "Y" or "N")
             .. " revseen=" .. (self.revengeSeen and "Y" or "N")
             .. " intname=" .. (intCastName or "none")
             .. " int=" .. intState
+            .. " intc=" .. (interceptPending and "Y" or "N")
             -- Demoralizing Shout, because its upkeep loop on a target that
             -- cannot take the debuff was reported from play and left no trace
             -- at all: "up" is whether the debuff is on the target, "takes" is
@@ -1163,96 +1471,25 @@ function M:Rotate(cfg)
     -- ----------------------------------------------------------------
     -- 0. Off-GCD / on-next-swing layer (fire and continue, no return)
     -- ----------------------------------------------------------------
-    -- 0a. Bloodrage as opening prep: out of combat it front-loads for the next
-    --     engagement (Charge → Bloodrage), and never while a Charge opener is
-    --     pending - see chargePending above. In combat it is NOT a "low rage
-    --     → press" toggle: the value is the 10-rage instant + 1/sec front-load
-    --     unlocking a cast THIS press, so it fires only when a strike is ready
-    --     but unaffordable, an Execute needs the top-up to reach its floor, or
-    --     a Slam fits the swing window but lacks rage. Generating comfortably
-    --     from auto-attacks? Saved for the next pull.
-    --     And never on a low health bar: Bloodrage costs 5% health on this
-    --     server (vanilla charged 16% of BASE health; the 1.18.1 client
-    --     rebalanced it), so a cast below 25% can land at worst at 20% - the
-    --     execute floor. A rage top-up is not worth dying for.
-    if cfg.useBloodrage and not chargePending and self:KnowsSpell("Bloodrage")
-        and self:IsReady("Bloodrage") and rage < (cfg.bloodrageRage or 30)
-        and hp > (cfg.bloodrageHealthPct or 25)
-        -- A real target is required, not just the rage line: out-of-combat pulls
-        -- are the point of the toggle, but standing idly - or running between
-        -- packs with nothing selected - is not a pull, and burning 5% health for
-        -- rage that decays before any fight is a plain loss.
-        and UnitExists("target") and UnitCanAttack("player", "target")
-        and not UnitIsDeadOrGhost("target")
-        and (not inCombat
-            or self:StrikeWaitingOnRage(cfg)
-            or (cfg.useExecute and hp <= 20 and self:KnowsSpell("Execute")
-                and self:Rage() < self:ExecuteCost())
-            or (cfg.useSlam and self:KnowsSpell("Slam")
-                and rage < RAGE["Slam"] and self:SlamFitsBeforeSwing())) then
-        self:PickExtra("Bloodrage")
-    end
 
-    -- 0b. Burst cooldowns, gated by the pop mode and (for the offensive
-    --     ones) by being in combat so they are not wasted pre-pull.
-    local popBurst = cfg.popCDs or (cfg.autoCDElite and isElite)
-    if popBurst and inCombat then
-        if cfg.useDeathWish and self:KnowsSpell("Death Wish") and self:IsReady("Death Wish") then
-            self:PickExtra("Death Wish")
-        end
-        if cfg.useRecklessness and self:InStance("Berserker Stance")
-            and self:KnowsSpell("Recklessness") and self:IsReady("Recklessness") then
-            self:PickExtra("Recklessness")
-        end
-        if cfg.useBerserkerRage and self:InStance("Berserker Stance")
-            and self:KnowsSpell("Berserker Rage") and self:IsReady("Berserker Rage") then
-            self:PickExtra("Berserker Rage")
-        end
-    end
-
-    -- 0c. Sweeping Strikes for cleave windows (off the GCD).
-    if aoe and cfg.useSweeping and self:KnowsSpell("Sweeping Strikes")
-        and self:InAnyStance(STANCE_REQ["Sweeping Strikes"]) and self:IsReady("Sweeping Strikes") then
-        self:PickExtra("Sweeping Strikes")
-    end
-
-    -- 0d. Shield Block to feed Revenge / mitigate (Defensive only, off GCD).
-    if cfg.useShieldBlock and self:InStance("Defensive Stance")
-        and self:KnowsSpell("Shield Block") and self:IsReady("Shield Block")
-        -- Off the GCD, so it never reaches Try: checked here instead.
-        and Aegis_SBR:WeaponAllows("shield") then
-        self:PickExtra("Shield Block")
-    end
-
-    -- 0e. Rage dump on the next swing. Suppressed during the execute phase
-    --     so rage is funneled into Execute instead. Cleave when in AoE mode
-    --     (and known), otherwise Heroic Strike.
-    if cfg.useHeroicStrike and not inExecute and rage >= (cfg.dumpRage or 60)
-        and (now - (self.lastDump or 0)) > DUMP_THROTTLE then
-        -- The throttle stamp is a state change, so it waits for a real press.
-        if aoe and cfg.useCleave and self:KnowsSpell("Cleave") then
-            if self:PickExtra("Cleave") then
-                self:Later(function() self.lastDump = now end)
-            end
-        elseif self:KnowsSpell("Heroic Strike") then
-            if self:PickExtra("Heroic Strike") then
-                self:Later(function() self.lastDump = now end)
-            end
-        end
-    end
-
-    -- ----------------------------------------------------------------
-    -- 1. GCD priority (strict, exactly one cast per press via early return)
-    -- ----------------------------------------------------------------
-
-    -- 1@i. Interrupt (Pummel / Shield Bash). Top priority: an interrupted
-    --      heal or buff is worth more than any strike. Fires only when the
-    --      target is mid-cast (SuperWoW cast events) and the chosen interrupt
-    --      is ready and castable in the CURRENT stance — no stance dance for
-    --      interrupts, the ~1s internal CD is too slow for a fast cast.
-    --      Consumes the press like any other pick; off-GCD means the next
-    --      press gets the strike back immediately. Without SuperWoW this is
-    --      inert (TargetIsCasting answers false = safe: withholds).
+    -- 0@i. Interrupt (Pummel / Shield Bash), FIRST thing on the press.
+    --      A kick is worth more than a burst pop, and the two cannot share the
+    --      frame: both go out as CastSpellByName, and on 1.12 the later call in
+    --      a frame can override the earlier one (the same rule the Sweeping
+    --      Strikes block below is built around). With this below the 0-layer,
+    --      Berserker Rage popped on the press that should have kicked and the
+    --      interrupt went with it - reported as "Berserker Rage shoots before
+    --      interrupt". Off-GCD either way, so the pop loses nothing but one
+    --      press: the next one sees the pop already buffed.
+    --
+    --      Top priority on its own terms: an interrupted heal or buff is worth
+    --      more than any strike. Fires only when the target is mid-cast
+    --      (SuperWoW cast events) and the chosen interrupt is ready and
+    --      castable in the CURRENT stance - no stance dance for interrupts, the
+    --      ~1s internal CD is too slow for a fast cast. Consumes the press like
+    --      any other pick; off-GCD means the next press gets the strike back
+    --      immediately. Without SuperWoW this is inert (TargetIsCasting answers
+    --      false = safe: withholds).
     --
     --      Gated on InMeleeRange: both interrupts are melee abilities, and
     --      without the gate a casting enemy at range got the interrupt picked,
@@ -1264,37 +1501,44 @@ function M:Rotate(cfg)
     --      than the setting - the user's explicit choice, so this may close a
     --      gate where a capability toggle may not. An unknown duration (nil)
     --      is allowed through (fail open).
+    --
+    --      interruptWaitAt (default 0) holds the kick until the cast reaches
+    --      the configured progress % (0-100) - see CastPastThreshold. Same
+    --      fail-open stance: an unknown start or duration passes, so the
+    --      delay never withholds a kick it cannot measure.
     if (cfg.usePummel or cfg.useShieldBash) and Aegis_SBR:TargetIsCasting()
         and self:InMeleeRange() then
         local castStart = Aegis_SBR:TargetCastStart()
         local castDur = Aegis_SBR:TargetCastDuration()
         local castName = Aegis_SBR:TargetCastName()
         if (not castDur) or castDur >= (cfg.interruptMinTime or 0) then
-            if (not cfg.interruptHealsOnly) or self:IsHealCast(castName, cfg) then
-                local ptr = self:InterruptPick(cfg, castStart)
-                if ptr then
-                    -- Slam mid-cast would lock the client out of the kick:
-                    -- cancel it (only when the enemy cast ends first, see
-                    -- CancelSlamForInterrupt) so this press lands the interrupt.
-                    self:CancelSlamForInterrupt(castStart and castStart + (castDur or 0))
-                    if self:Pick(ptr, "target casting") then return end
+            if (not cfg.interruptWaitAt) or cfg.interruptWaitAt <= 0 or self:CastPastThreshold(castStart, castDur, cfg.interruptWaitAt) then
+                if (not cfg.interruptHealsOnly) or self:IsHealCast(castName, cfg) then
+                    local ptr = self:InterruptPick(cfg, castStart)
+                    if ptr then
+                        -- Slam mid-cast would lock the client out of the kick:
+                        -- cancel it (only when the enemy cast ends first, see
+                        -- CancelSlamForInterrupt) so this press lands the interrupt.
+                        self:CancelSlamForInterrupt(castStart and castStart + (castDur or 0))
+                        if self:Pick(ptr, "target casting") then return end
+                    end
                 end
             end
         end
     end
 
-    -- 1@i'. Same interrupt, off-target: the nearest casting enemy in melee
-    --      range that is NOT the current target. Reached only when the target
-    --      path above did not pick (no cast on the target, target out of melee,
-    --      or the filters withheld). Casts at the enemy's GUID without dropping
-    --      your target - SuperWoW's unit argument, so a tank holding aggro does
-    --      not switch targets to kick the caster behind the pack.
+    -- 0@i'. Same interrupt, off-target: the nearest casting enemy in melee
+    --       range that is NOT the current target. Reached only when the target
+    --       path above did not pick (no cast on the target, target out of melee,
+    --       or the filters withheld). Casts at the enemy's GUID without
+    --       dropping your target - SuperWoW's unit argument, so a tank holding
+    --       aggro does not switch targets to kick the caster behind the pack.
     --
-    --      Same filters and the same SpellRefusedSince backoff, keyed to the
-    --      cast being kicked. The nameplate walk already capped the scan at
-    --      INTERRUPT_SCAN_YARDS, so the melee-range gate is structural here.
-    --      Without SuperWoW the walk sees no nameplate GUIDs, answers nil, and
-    --      this path is as inert as the target path.
+    --       Same filters and the same SpellRefusedSince backoff, keyed to the
+    --       cast being kicked. The nameplate walk already capped the scan at
+    --       INTERRUPT_SCAN_YARDS, so the melee-range gate is structural here.
+    --       Without SuperWoW the walk sees no nameplate GUIDs, answers nil, and
+    --       this path is as inert as the target path.
     if (cfg.usePummel or cfg.useShieldBash) then
         local near = self:NearCaster(cfg)
         if near then
@@ -1313,6 +1557,205 @@ function M:Rotate(cfg)
         end
     end
 
+    -- 0a. Bloodrage on the two floors, out of combat and in (v1.2.37). It was
+    --     opening prep only until this release: out of combat it front-loaded
+    --     for the next engagement, in combat it had a 2s window after
+    --     PLAYER_REGEN_DISABLED and nothing after that. Both thresholds are now
+    --     sliders (bloodrageRage, bloodrageHealthPct) and they are the ONLY
+    --     timing gate - there is no window and no special case, so the spell
+    --     fires whenever rage is under the floor and health is over it.
+    --     The Charge hold is untouched and still comes from `not chargePending`
+    --     above: on the pull press Charge goes out first, and Bloodrage follows.
+    --     That is the one ordering rule here that is not a floor.
+    --     The cost is why the health floor is the guard that matters: Bloodrage
+    --     costs 5% health on this server (vanilla charged 16% of BASE health;
+    --     the client rebalanced it), so a cast at the default 25% floor lands at
+    --     worst at 20%. Pre-pull that is nearly free; mid-fight it is not, and
+    --     raising bloodrageHealthPct is the only thing between a top-up and a
+    --     death, so the default is deliberately conservative.
+    if cfg.useBloodrage and not chargePending and self:KnowsSpell("Bloodrage")
+        and self:IsReady("Bloodrage") and rage < (cfg.bloodrageRage or 30)
+        and hp > (cfg.bloodrageHealthPct or 25)
+        -- A real target is required, not just the rage line: out-of-combat pulls
+        -- are the point of the toggle, but standing idly - or running between
+        -- packs with nothing selected - is not a pull, and burning 5% health for
+        -- rage that decays before any fight is a plain loss.
+        and UnitExists("target") and UnitCanAttack("player", "target")
+        and not UnitIsDeadOrGhost("target") then
+        self:PickExtra("Bloodrage")
+    end
+
+    -- 0b. Burst cooldowns, gated by the pop mode and (for the offensive
+    --     ones) by being in combat so they are not wasted pre-pull.
+    --     burstMinHp (0 = off) withholds the pop on a target below the
+    --     threshold - don't waste a long cooldown on a dying mob.
+    local popBurst = cfg.popCDs or (cfg.autoCDElite and isElite)
+    if popBurst and inCombat and (not cfg.burstMinHp or cfg.burstMinHp <= 0 or hp > cfg.burstMinHp) then
+        if cfg.useDeathWish and self:KnowsSpell("Death Wish") and self:IsReady("Death Wish") then
+            self:PickExtra("Death Wish")
+        end
+        if cfg.useRecklessness and self:InStance("Berserker Stance")
+            and self:KnowsSpell("Recklessness") and self:IsReady("Recklessness") then
+            self:PickExtra("Recklessness")
+        end
+        if cfg.useBerserkerRage and self:InStance("Berserker Stance")
+            and self:KnowsSpell("Berserker Rage") and self:IsReady("Berserker Rage") then
+            self:PickExtra("Berserker Rage")
+        end
+    end
+
+    -- 0b2. Fear response. Berserker Rage is immune to fear on Turtle 1.18.1
+    -- (tooltip-confirmed, docs/turtle-mechanics.md), so reacting to a fear the
+    -- player is ALREADY in is the whole point. This sits OUTSIDE the popBurst
+    -- gate above deliberately: the immunity is defensive, and gating it on
+    -- popCDs / autoCDElite / burstMinHp would hide it from every profile
+    -- running those off - several presets do. So it answers only to
+    -- useBerserkerRage (the spell toggle) and the live state.
+    if cfg.useBerserkerRage and self:InStance("Berserker Stance")
+        and self:KnowsSpell("Berserker Rage") and self:IsReady("Berserker Rage")
+        and not self:HasBuff("Berserker Rage") and self:FearActive() then
+        self:PickExtra("Berserker Rage")
+    end
+
+    -- 0b3. Battle dance for the Sweeping Strikes pop. Sweeping Strikes is
+    --      Battle-only (STANCE_REQ), so a warrior whose home stance is
+    --      Berserker could never use it: the 0c gate below asks
+    --      InAnyStance({"Battle Stance"}) and answers no, and nothing in the
+    --      rotation went looking for another way in. An Arms warrior sat in
+    --      Berserker for the whole pack on Whirlwind and Mortal Strike with
+    --      the toggle on and the buff never appeared. This is that way in.
+    --
+    --      At any pack size, deliberately. SS_BIG_PACK (see the comment on it)
+    --      says Whirlwind out-values the copied hits at four or more, so on a
+    --      big pack this dance gives up the AoE strike to buy Mortal Strike
+    --      copies. Approved as it stands - the pop is the point, and one dance
+    --      per cooldown is the price. The size argument is kept here so the
+    --      trade is on record rather than rediscovered later.
+    --
+    --      Tactical Mastery 5/5 is the floor for the same reason as the
+    --      Whirlwind dance at 1c2: below it the swap retains too little and the
+    --      dance spends a press that can cast nothing.
+    --
+    --      From Berserker only. That keeps this from fighting the Overpower and
+    --      Revenge dances, which are already in Battle by the time they run,
+    --      and from dragging a Defensive-stance tank out of its own stance.
+    --
+    --      Not while Slam is casting, like every other dance here: the cast
+    --      locks the client out of the swap.
+    if aoe and cfg.stanceDance and cfg.useSweeping
+        and self:KnowsSpell("Sweeping Strikes") and self:IsReady("Sweeping Strikes")
+        and not self:HasBuff("Sweeping Strikes")
+        and self:InStance("Berserker Stance")
+        and not self:SlamCasting() and not chargePending
+        -- Same hold as 0c: charges spent on a pack that is about to drop are
+        -- charges wasted, and an unreadable pack fails open.
+        and self:PackHasHealthyEnemy(SWEEP_MIN_HP, SWEEP_MIN_TARGETS) ~= false
+        and self:TalentRank(TALENT_TACTICAL_MASTERY) >= 5 then
+        -- The dump clause the Overpower dance has at 1b, for the same reason.
+        -- Tactical Mastery retains 25 rage flat, so every point above that is
+        -- stranded by the swap, and Whirlwind is Berserker-only - the one
+        -- spell that can still take it. Below the dump floor the swap costs
+        -- nothing that the next press was not going to spend anyway.
+        if rage > RAGE["Whirlwind"] and cfg.useWhirlwind
+            and self:Try("Whirlwind", "dump before Battle stance") then
+            return
+        end
+        -- The pop lands on a later press, not this one: the swap keeps 25 rage
+        -- and Sweeping Strikes costs 30, so the client would refuse it. The
+        -- rage gate on 0c turns that refusal into a wait, and ssHold below
+        -- keeps the stance until it can pay.
+        if self:SwitchStance("Battle Stance") then return end
+    end
+
+    -- 0c. Sweeping Strikes for cleave windows (off the GCD).
+    --
+    --     Affordable is part of the gate. PickExtra only asks whether the
+    --     spell is known - it cannot see rage - so without the cost check the
+    --     pop went out under 30 rage, the client refused it, and the press that
+    --     carried it was spent for nothing. Same shape as the Demo Shout charge
+    --     loop: an off-GCD cast that is refused takes the press with it.
+    if aoe and cfg.useSweeping and self:KnowsSpell("Sweeping Strikes")
+        and self:InAnyStance(STANCE_REQ["Sweeping Strikes"]) and self:IsReady("Sweeping Strikes")
+        and rage >= RAGE["Sweeping Strikes"] then
+        -- Off the pull press: Charge owns that frame, and a later Charge call
+        -- would override the pop (the same same-frame rule the strike below
+        -- leans on). And when the pop does go out, end the press HERE: a GCD
+        -- pick a few lines down is a LATER CastSpellByName and could override
+        -- the pop - which is Mortal Strike "firing before Sweeping Strikes
+        -- activates". The next press sees the buff up and fires the strike into
+        -- it. (Preview mode keeps walking so it can show what would follow.)
+        if not chargePending and not self:HasBuff("Sweeping Strikes")
+            -- Hold the pop while too few enemies are healthy: charges spent
+            -- on a mob about to drop are charges wasted (SWEEP_MIN_HP x
+            -- SWEEP_MIN_TARGETS). A pack whose health cannot be read returns
+            -- nil and still pops.
+            and self:PackHasHealthyEnemy(SWEEP_MIN_HP, SWEEP_MIN_TARGETS) ~= false
+            and self:PickExtra("Sweeping Strikes") and not Aegis_SBR.deciding then
+            return
+        end
+    end
+
+    -- 0d. Shield Block to feed Revenge / mitigate (Defensive only, off GCD).
+    if cfg.useShieldBlock and self:InStance("Defensive Stance")
+        and self:KnowsSpell("Shield Block") and self:IsReady("Shield Block")
+        -- Off the GCD, so it never reaches Try: checked here instead.
+        and Aegis_SBR:WeaponAllows("shield") then
+        self:PickExtra("Shield Block")
+    end
+
+    local ssWantsMs = cfg.useSweeping and cfg.useMortalStrike
+        and self:HasBuff("Sweeping Strikes")
+        and not self:AoEWWPackAt(SS_BIG_PACK)
+        and self:CanCast("Mortal Strike", RAGE["Mortal Strike"], nil)
+    -- Whether the stance now belongs to Sweeping Strikes: the pop waiting to be
+    -- paid for, or the charges waiting to be spent. Read without a pack-size
+    -- term on purpose - the dance at 0b3 fires at any size, so a hold that
+    -- dropped out at four would undo it on the very next press.
+    local ssHold = aoe and cfg.useSweeping and self:KnowsSpell("Sweeping Strikes")
+        and (self:IsReady("Sweeping Strikes") or self:HasBuff("Sweeping Strikes"))
+    local wwFirst = aoe and cfg.useWhirlwind and self:AoEWWPack() and not ssWantsMs
+        and self:CanCast("Whirlwind", RAGE["Whirlwind"], STANCE_REQ["Whirlwind"])
+
+    -- 0e. Rage dump on the next swing. Suppressed during the execute phase
+    --     so rage is funneled into Execute instead. Cleave in AoE, Heroic
+    --     Strike in single target - never Heroic Strike in a pack, and never
+    --     a dump at all when wwFirst says Whirlwind already owns the press.
+    local rageDumped = false
+    if not inExecute then rageDumped = self:TryRageDump(cfg, aoe, now, wwFirst) end
+
+    -- 1@b. Intercept (toggle). The gap closer, Berserker Stance, and no stance
+    --     dance anywhere in it: it fires only from the stance you are already
+    --     in, so it never costs a press or a swap to get there. Combat state
+    --     is not part of the test - in combat the client blocks Charge and this
+    --     is the only answer for a target that left melee, and out of it a
+    --     berserker with rage spends the rage on the leap instead of on a
+    --     dance to Battle and a free Charge.
+    --
+    --     Sits BEFORE the Charge block for exactly that reason: already in
+    --     Berserker with 10 rage, this takes the pull press and the Charge
+    --     dance below never starts. From any other stance the gate simply does
+    --     not answer and Charge below stays the opener.
+    --
+    --     Refusal hold: past the ability's reach the client refuses, and no cast
+    --     starts to key a SpellRefusedSince backoff to, so a refused leap holds
+    --     for INTERCEPT_RESEND seconds instead of re-picking on every press of
+    --     the chase.
+    if interceptPending then
+        -- Consume a refusal since the last attempt and hold for the window;
+        -- SpellRefusedSince keys to nil after the consume, so the hold is
+        -- the duration, not the refusal stamp (which would never expire).
+        if Aegis_SBR:SpellRefusedSince("Intercept", self.lastInterceptAt) then
+            self.interceptBlockedUntil = GetTime() + INTERCEPT_RESEND
+            self.lastInterceptAt = nil
+        elseif self:InStance("Berserker Stance") and self:IsReady("Intercept") then
+            self:CancelSlamForIntercept()
+            if self:Pick("Intercept", "gap closer, Berserker") then
+                self.lastInterceptAt = GetTime()
+                return
+            end
+        end
+    end
+
     -- 1@. Charge opener (toggle). Battle Stance only, and only as a pull: you
     --     must be OUT of melee range (so it is a gap-closer, never mid-fight)
     --     with an attackable target. Stance-dances to Battle if enabled and
@@ -1326,13 +1769,32 @@ function M:Rotate(cfg)
                     return
                 end
             end
-        elseif cfg.stanceDance or cfg.homeStance == "battle" then
+        elseif cfg.stanceDance and not self:SlamCasting()
+            and self:IsReady("Charge")
+            and self:TalentRank(TALENT_TACTICAL_MASTERY) >= 2 then
+            -- TM 2/5 keeps 10 rage through the swap.
             if self:SwitchStance("Battle Stance") then return end
         end
     end
 
     self:OverpowerLearnTick()
     self:RevengeResolveTick()
+
+    -- Sunder Armor (toggle). Leads the ordinary GCD rotation in single target -
+    -- approved, and the reason this block sits above everything below it.
+    --
+    -- It is a SINGLE-TARGET debuff, so it stands down in a pack the same way Slam
+    -- and Rend do. Without the clause it took the lead global in 6-8 packs
+    -- (captured: 3 casts at count=6, 1 at 7, 3 at 8) and debuffed one
+    -- mob out of eight while Whirlwind, which hits all of them, waited - and
+    -- docs/rotations.md names Thunder Clap, not Sunder, as the AoE answer for
+    -- every warrior spec. The debuff is not lost by standing down: it re-applies
+    -- on the first press back to single target, and NeedSunder only asks for a
+    -- refresh it can still get.
+    if cfg.useSunder and not aoe and self:CanCast("Sunder Armor", RAGE["Sunder Armor"], nil)
+        and self:NeedSunder(cfg) then
+        if self:Pick("Sunder Armor", "first GCD, single target") then return end
+    end
 
     -- 1a. Revenge (Defensive). Mainly a tank reactive; only pursued while
     --     in Defensive, or stance-danced to it when home stance is Defensive.
@@ -1369,19 +1831,22 @@ function M:Rotate(cfg)
         end
     end
 
-    -- 1b. Execute below 20% (highest single-target priority per design).
+    -- 1b. Overpower (Battle), reactive. Stance-dance in when enabled.
     --
-    -- A Slam still casting is cancelled first, so the press that would have been
-    -- spent waiting out the cast lands the Execute instead. Off by setting
-    -- slamCancelForExecute to false.
-    if inExecute then
-        if cfg.slamCancelForExecute then self:CancelSlamForExecute() end
-        if self:Try("Execute", "target below 20%") then return end
-    end
-
-    -- 1c. Overpower (Battle), reactive. Stance-dance in when enabled.
+    --      ABOVE Execute (1b2), which was the bug: Execute returns on every
+    --      press it can pay for, so while it sat above the proc an
+    --      execute-phase press never reached the dance below and the warrior
+    --      stayed in Berserker until the proc window closed - the reported
+    --      "Overpower proc sometimes missed, seems to stay in zerker during
+    --      execute". The proc is the shorter window of the two and expires
+    --      unused; Execute is still cast on the press after, once the proc is
+    --      spent or the dance has happened.
+    --
+    --      Not Bloodthirst: 1d is already below this block, so a ready
+    --      Bloodthirst never kept the proc waiting.
     if cfg.useOverpower and self:KnowsSpell("Overpower") and now < (self.overpowerExpiry or 0)
-        and self:IsReady("Overpower") and rage >= RAGE["Overpower"] then
+        and self:IsReady("Overpower") and rage >= RAGE["Overpower"]
+        and not rageDumped and (now - (self.lastDump or 0)) > DUMP_THROTTLE then
         -- A press that lands inside Slam's cast is a refused attempt: the cast
         -- locks the client, and the refusal teaches the learned window to
         -- shrink to the 2.5s floor that Slam's own 2.5s cast then consumes
@@ -1406,27 +1871,52 @@ function M:Rotate(cfg)
                 return
             end
         elseif cfg.stanceDance then
-            if self:SwitchStance("Battle Stance") then return end
+            -- The dance gives up when the proc window can no longer carry it:
+            -- a stance swap plus a GCD is roughly OVERPOWER_DANCE_LEAD, so a
+            -- window any closer to closing than that would fire into a proc
+            -- the server has already dropped - a wasted swap and a wasted
+            -- rage dump before it. Let the press fall through instead.
+            if (self.overpowerExpiry or 0) - now <= OVERPOWER_DANCE_LEAD then
+                if self:Tracing() then self:Trace("overpower dance lost: window closing") end
+            elseif rage > RAGE["Whirlwind"] then
+                if cfg.useWhirlwind and self:Try("Whirlwind", "dump before Battle stance") then return end
+                if self:TryRageDump(cfg, aoe, now) then return end
+            elseif self:SwitchStance("Battle Stance") then return end
         end
     end
 
-    -- 1c2. Whirlwind FIRST while in AoE mode, against a real pack (3+ enemies
-    --      - AoEWWPack). It sits at 1e below for the single-target rage dump,
-    --      which is the right place for that job - but against several targets
-    --      it hits all of them and Mortal Strike hits one, so letting the
-    --      primary strike take the press there is a plain loss. Reported as
+    -- 1b2. Execute below 20% (highest single-target priority per design, below
+    --       the Overpower proc above).
+    --
+    -- A Slam still casting is cancelled first, so the press that would have been
+    -- spent waiting out the cast lands the Execute instead. Off by setting
+    -- slamCancelForExecute to false.
+    if inExecute then
+        if cfg.slamCancelForExecute then self:CancelSlamForExecute() end
+        if self:Try("Execute", "target below 20%") then return end
+    end
+
+    -- 1c2. Whirlwind FIRST while in AoE mode, against a real pack (two or more
+    --      enemies - AoEWWPack). It sits at 1e below for the single-target rage
+    --      dump, which is the right place for that job - but against several
+    --      targets it hits all of them and Mortal Strike hits one, so letting
+    --      the primary strike take the press there is a plain loss. Reported as
     --      Mortal Strike still going first in AoE.
+    --
+    --      The one exception is Sweeping Strikes on a small pack: Mortal Strike
+    --      spends the charge better than Whirlwind there (see SS_BIG_PACK), so
+    --      the jump is held and the primary strike at 1d takes the charge.
+    --      Resolved here, once, so the cast and the dance below agree.
     --
     --      Only in AoE, and the copy below still handles the rage dump: if this
     --      does not fire (cooldown, rage, wrong stance) the press falls through
     --      exactly as before. A Slam still casting is stopped so the Whirlwind
     --      goes out now instead of after the cast.
-    if aoe and cfg.useWhirlwind and self:AoEWWPack()
-        and self:CanCast("Whirlwind", RAGE["Whirlwind"], STANCE_REQ["Whirlwind"]) then
+    if wwFirst then
         self:CancelSlamForAoE()
         if self:Pick("Whirlwind", "AoE, ahead of the primary strike") then return end
     elseif aoe and cfg.useWhirlwind and cfg.stanceDance and not self:SlamCasting()
-        and self:AoEWWPack()
+        and self:AoEWWPack() and not ssWantsMs
         and self:TalentRank(TALENT_TACTICAL_MASTERY) >= 5
         and rage >= RAGE["Whirlwind"]
         and self:KnowsSpell("Whirlwind") and self:IsReady("Whirlwind")
@@ -1442,7 +1932,7 @@ function M:Rotate(cfg)
     --      stance on 1.12, so a berserker falls through to the strikes - the
     --      stance gate is what keeps the two AoE jumps from competing for the
     --      same press. Cancels a stale Slam like the Whirlwind jump does.
-    if aoe and cfg.useThunderClap
+    if aoe and cfg.useThunderClap and self:ThunderClapWorth(cfg)
         and self:CanCast("Thunder Clap", RAGE["Thunder Clap"], STANCE_REQ["Thunder Clap"]) then
         self:CancelSlamForAoE()
         if self:Pick("Thunder Clap", "AoE, ahead of the primary strike") then return end
@@ -1537,6 +2027,21 @@ function M:Rotate(cfg)
         end
     end
 
+    -- 1d3. Hamstring (toggle, off by default): the slow kept on the target, for
+    --      runners and PvP. Shared - anybody's Hamstring is the same slow - and
+    --      not re-sent on the same target for a few seconds, so an immune or
+    --      unreadable target cannot take every press.
+    if cfg.useHamstring and not inExecute and not aoe and self:KnowsSpell("Hamstring")
+        and self:CanCast("Hamstring", RAGE["Hamstring"], STANCE_REQ["Hamstring"])
+        and not Aegis_SBR:TargetDebuffUp("Hamstring", "Ability_ShockWave")
+        and not (self.hamstringId == Aegis_SBR:TargetId() and GetTime() - (self.hamstringAt or 0) < 4) then
+        if self:Pick("Hamstring", "slow missing") then
+            local id = Aegis_SBR:TargetId()
+            self:Later(function() self.hamstringId = id; self.hamstringAt = GetTime() end)
+            return
+        end
+    end
+
     -- 1e. Whirlwind: against a real 3+ pack in AoE, or as a single-target rage
     --     dump when rage is running high. Berserker stance only.
     if cfg.useWhirlwind and not self:SlamCasting()
@@ -1544,13 +2049,6 @@ function M:Rotate(cfg)
         if (aoe and self:AoEWWPack()) or rage >= (cfg.wwExcess or 60) then
             if self:Pick("Whirlwind", aoe and "AoE" or "rage dump") then return end
         end
-    end
-
-    -- 1g. Sunder Armor upkeep (threat / armor reduction). Skipped in AoE mode:
-    --     a GCD spent sundering one target does nothing for the three around it.
-    if cfg.useSunder and not aoe and self:CanCast("Sunder Armor", RAGE["Sunder Armor"], nil)
-        and self:NeedSunder(cfg) then
-        if self:Pick("Sunder Armor", "stack upkeep") then return end
     end
 
     -- 1h. Slam filler (Arms), behind two gates it did not have before, and
@@ -1585,7 +2083,33 @@ function M:Rotate(cfg)
     -- 1i. Drift back to the home stance when nothing reactive is pending.
     if cfg.stanceDance and cfg.homeStance ~= "none" then
         local home = self.STANCES[cfg.homeStance]
+        -- Hold the drift while staying in Berserker pays: while Berserker Rage
+        -- is up (rage and fear-immunity), or Whirlwind is stood ready as the
+        -- next hit - the same gate 1e uses, the AoE pack or the rage-excess
+        -- dump - so the Whirlwind fires without a re-dance and its Tactical
+        -- Mastery cost. Drift resumes when neither holds.
+        --
+        -- ssHold is the third hold, and it is the one that makes the Sweeping
+        -- Strikes dance at 0b3 worth anything: the pop cannot be paid for on
+        -- the press after the swap (25 retained, 30 spent), so without it the
+        -- stance drifted straight back to Berserker and the buff was never
+        -- bought. It holds for the charges too, so they are spent in the stance
+        -- that can spend them.
+        local wwComing = cfg.useWhirlwind and not self:SlamCasting()
+            and not ssWantsMs
+            and self:KnowsSpell("Whirlwind") and self:IsReady("Whirlwind")
+            and ((aoe and self:AoEWWPack()) or rage >= (cfg.wwExcess or 60))
+        local holdHome = false
+        if self.overpowerStanceHold then
+            local left = self:SwingTimeLeft()
+            holdHome = rage > OVERPOWER_STANCE_RAGE
+                or (left and left <= OVERPOWER_SWING_LOOKAHEAD)
+            if not holdHome then self.overpowerStanceHold = nil end
+        end
         if home and not self:InStance(home)
+            and not (self:InStance("Berserker Stance")
+                and (self:HasBuff("Berserker Rage") or wwComing))
+            and not chargePending and not holdHome and not ssHold
             and now >= (self.overpowerExpiry or 0)
             and now >= (self.revengeExpiry or 0) then
             self:SwitchStance(home)
@@ -1621,9 +2145,27 @@ function M:CmdAoe(arg, onoff)
         -- With auto on, /sbr aoe FORCES a side: first press off, next on,
         -- then off again. nil (the idle hand) means the count decides.
         cfg.aoeMode = false
-        cfg.aoeOverride = (cfg.aoeOverride == nil) and false or not cfg.aoeOverride
-        msgOut("AoE forced " .. (cfg.aoeOverride and "ON" or "OFF") .. " over auto "
-            .. "(next /sbr aoe flips it).")
+        -- Cycle nil -> false -> true -> nil by explicit branch. Do NOT
+        -- rewrite this as and/or chaining: `X and false` is false for every X,
+        -- and a false that reaches the final `or nil` gets absorbed (false or
+        -- nil = nil), which latches the state on nil and kills the cycle.
+        -- nil = idle hand: the enemy count decides. Reachable again each full
+        -- pass, so a manual press can never strand autoaoe.
+        local cur = cfg.aoeOverride
+        if cur == nil then
+            cfg.aoeOverride = false
+        elseif cur == false then
+            cfg.aoeOverride = true
+        else
+            cfg.aoeOverride = nil
+        end
+        if cfg.aoeOverride == nil then
+            msgOut("AoE back to auto (enemy count decides).")
+        elseif cfg.aoeOverride then
+            msgOut("AoE forced ON over auto (next /sbr aoe: back to auto).")
+        else
+            msgOut("AoE forced OFF over auto (next /sbr aoe: ON, then auto).")
+        end
     else
         cfg.aoeMode = not cfg.aoeMode
         msgOut("AoE mode " .. (cfg.aoeMode and "on (Cleave + Whirlwind)" or "off (single target)")
@@ -1742,6 +2284,7 @@ castFrame:RegisterEvent("SPELLCAST_STOP")
 castFrame:RegisterEvent("SPELLCAST_FAILED")
 castFrame:RegisterEvent("SPELLCAST_INTERRUPTED")
 castFrame:SetScript("OnEvent", function()
+    if M.logging then M:LogWrite("slamend " .. tostring(event)) end
     M.slamCastUntil = nil
 end)
 
@@ -1761,6 +2304,7 @@ reactFrame:SetScript("OnEvent", function()
     -- whole window dead on this client. Listen on both; only the word decides.
     if event == "CHAT_MSG_COMBAT_SELF_MISSES" or event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
         if string.find(string.lower(arg1), "dodge") then
+            if M.logging then M:LogWrite("dodge " .. arg1) end
             -- Both: the expiry the rotation gates on, and the moment itself, so
             -- the age of an attempt can be worked out afterwards.
             M.overpowerAt = GetTime()

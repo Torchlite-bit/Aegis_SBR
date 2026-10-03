@@ -269,6 +269,8 @@ The probe log collects most of this passively — `/sbr probe on`, play, `/reloa
   - `docs/turtle-mechanics.md` — confirmed Turtle-specific class-change facts.
   - `docs/architecture.md` — module layout, conventions, key APIs, UI primitives.
   - `docs/roadmap.md` — phased plan; the rebrand steps; what's next.
+  - `docs/roadmap-dio.md` — the Warrior contributor's parked ideas with their research done
+    (Disarm gating, among others). Read before starting anything listed there.
   - `docs/sources.md` — where the game/dependency knowledge comes from, which links are
     fetchable vs. paste-only, and the two update commands. **For talents, read the in-repo
     `docs/TALENTS_1_18_1.md` — do NOT try to scrape the talent calculators (they block bots).**
@@ -422,3 +424,21 @@ calculators block automated access.
     drops the spellbook index (`CHARACTER_POINTS_CHANGED` cleared only the derived caches and
     left `spellIndex` to `SPELLS_CHANGED`, which arrives later). Assume any 1.12 API that
     takes a spell NAME can throw when the name is not in the book.
+  - **Edits are applied by text match, and `verify.py` cannot catch a misplaced one.** An
+    insert anchored on an indented `end` landed in a different function, balance and ordering
+    still passed, and the feature silently did nothing. Anchor on a unique line (a section
+    comment) and confirm which `function` encloses the new code after any structural edit.
+  - `PickExtra` asks only whether a spell is known - no cost, cooldown or stance - and ends
+    the press either way. A new off-GCD cast needs its cost in the module's table AND a gate
+    that reads it (Warrior Sweeping Strikes was refused on every attempt until v1.2.43).
+  - A stance-restricted ability needs a way into its stance, or its gate just answers no for
+    every player whose home stance excludes it (Sweeping Strikes from a Berserker home).
+  - Every slider needs an `onChange` writer AND a `RefreshBody` `SetValue`; without the second
+    it opens at its construction default after a relog and looks like lost data. A threshold
+    belongs in the presets and on a control in the same change - a key only the `or` fallback
+    knows cannot be tuned in game.
+  - A talent-adjusted cost answers "can this cast", never "should this dump now": keep the
+    dump floor separate from the affordability check.
+  - `UnitAttackSpeed` is the current swing interval - no manual haste multiplier on top - but
+    a value latched when a swing lands lags a haste change by up to one swing (Flurry moved a
+    warrior's period 3.40 s to 2.62 s); a "fits before the next swing" gate has to allow for it.

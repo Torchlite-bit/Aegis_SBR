@@ -15,22 +15,20 @@ class-change notes, forum theorycrafters, and community guides. Turtle is active
 ## WARRIOR
 
 ### Arms / 2H (raid DPS) `[T]` baseline, `[V]` rotation
-Maintain Battle Shout → keep Rend up (2H) → Mortal Strike on CD → Whirlwind → Overpower on
-proc (target dodge; Improved Overpower valued) → Slam on free swings → Heroic Strike as
-rage dump above ~50 rage → Execute phase <20% HP.
+Sunder Armor first (10 rage, five stacks) → maintain Battle Shout → Mortal Strike on CD → Whirlwind → Overpower on proc (target dodge; Improved Overpower valued) → Slam on free swings → Heroic Strike as rage dump above ~50 rage → Execute phase <20% HP.
+
+**Sweeping Strikes is Battle-only and the baseline line above does not mention it.** A
+zerker could therefore never pop it, which is what v1.2.38 changed: with Stance dancing
+on, AoE mode on and the buff down, the rotation now dances to Battle to pop it and
+holds the stance until the charges are spent, at any pack size. The `SS_BIG_PACK`
+argument still stands — at four or more, Whirlwind out-values the copied hits — so
+that trade is deliberate and the size question is open, not settled.
 
 ### Fury (raid DPS) `[T]`
-Bloodthirst on CD → Whirlwind → Heroic Strike dump (queue >~50 rage) → Execute <20%.
-Keep Battle Shout; Death Wish / Recklessness / trinkets in burst windows. Priority-list
-model: after each cast, re-evaluate from the top.
+Sunder Armor first (10 rage, five stacks) → Execute <20% HP → Bloodthirst on CD → Whirlwind → Heroic Strike dump (queue >~50 rage). Keep Battle Shout; Death Wish / Recklessness / trinkets in burst windows. Priority-list model: after each cast, re-evaluate from the top.
 
 ### Protection (tank) `[T]`
-Charge opener → Sunder Armor to 5 stacks → **Shield Slam = top single-target threat**
-(Turtle: scales with attack power in addition to block value; Improved Shield Slam reduces
-CD and grants block chance) → Revenge when available (Reprisal talent: +Revenge damage,
-chance to refund its rage) → Shield Bash / Shield Slam to dispel magic (Gag Order) →
-Heroic Strike rage dump. **Thunder Clap is usable in Defensive Stance** = primary AoE
-threat. Demoralizing Shout for AoE mitigation.
+Sunder Armor first (10 rage, five stacks) → Shield Slam = top single-target threat (Turtle: scales with attack power in addition to block value; Improved Shield Slam reduces CD and grants block chance) → Revenge when available (Reprisal talent: +Revenge damage, chance to refund its rage) → Shield Bash / Shield Slam to dispel magic (Gag Order) → Heroic Strike rage dump. **Thunder Clap is usable in Defensive Stance** = primary AoE threat. Demoralizing Shout for AoE mitigation.
 - **Known Turtle weakness:** warrior ability threat (Revenge, Sunder) is fixed and does not
   scale with gear — factor this into threat expectations, not the rotation.
 
