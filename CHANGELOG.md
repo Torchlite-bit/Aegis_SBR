@@ -4,6 +4,29 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.44 — a cooldown is not a cast
+
+### 🐛 Druid: Faerie Fire on cooldown stopped the rotation
+
+*Faerie Fire (Feral)* leads both feral priority lists, gated on the debuff being missing from
+the target. The cast helper reports whether a spell is **known**, not whether it can be cast,
+so a press that reached that step while the 6s cooldown was running ended there having cast
+nothing.
+
+A debuff that lands hides this — it closes the gate by itself. It shows when the debuff does
+not land: a resist, or a target immune to it. Then every press for six seconds did nothing at
+all. Cat never reached its builder or finisher; bear never reached Enrage, Demoralizing Roar,
+Swipe or Maul.
+
+Both sites now also require the ability's own cooldown to be free, so a missing debuff plus a
+running cooldown falls through to the rest of the list. The global cooldown deliberately does
+not count: during it nothing further down the list can be cast either, so skipping would only
+move the press onto a different refusal. The trace separates the two states as well (`FF=cd`
+against `FF=n`) — both printed `n` before, which is why the log could not show why a press did
+nothing.
+
+---
+
 ## v1.2.43 — the warrior plays Octo's rotation, Kill Command stays with its target
 
 ### ⚔️ Warrior — reworked (contributed by Dio)

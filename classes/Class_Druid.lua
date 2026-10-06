@@ -633,7 +633,11 @@ function M:RotateCat(cfg)
             .. " energy=" .. energy .. " cp=" .. cp
             .. " prowl=" .. (self:HasBuff("Prowl") and "Y" or "N")
             .. " TF=" .. (cfg.useTigersFury and string.format("%.0fs", self:BuffTime("Tiger's Fury")) or "-")
-            .. " FF=" .. (cfg.ffCat and (self:DebuffUp("Faerie Fire (Feral)") and "Y" or "n") or "-")
+            -- "cd" and "n" are distinct on purpose: a missing debuff that is
+            -- NOT castable is the state that used to look identical to a
+            -- missing debuff about to be applied.
+            .. " FF=" .. (cfg.ffCat and (self:DebuffUp("Faerie Fire (Feral)") and "Y"
+                or (self:OwnCDReady("Faerie Fire (Feral)") and "n" or "cd")) or "-")
             .. " immune=" .. (self:TargetIsBleedImmune() and "Y" or "N")
             .. " rake=" .. (bleed and (self:DebuffUp("Rake") and "Y" or "n") or "-")
             .. " rip=" .. (bleed and (self:DebuffUp("Rip") and "Y" or "n") or "-")
@@ -647,8 +651,19 @@ function M:RotateCat(cfg)
         -- no affordable opener: fall through, the builder breaks stealth
     end
 
-    -- P1 Faerie Fire (Feral), free, keeps the armor debuff up
-    if cfg.ffCat and not self:DebuffUp("Faerie Fire (Feral)") then
+    -- P1 Faerie Fire (Feral), free, keeps the armor debuff up.
+    --
+    -- The cooldown is part of the gate, not just the missing debuff. CastSafe
+    -- answers "known", not "ready", so a press that reached here while the 6s
+    -- cooldown was running consumed the press and cast nothing: the rotation
+    -- stopped dead for six seconds at a time. It only shows up when the debuff
+    -- does not land - a resist, or a target immune to it - because otherwise
+    -- the debuff is up and the gate is closed anyway. The GCD deliberately does
+    -- not count (OwnCDReady reads it as ready): during the GCD nothing further
+    -- down the list can be cast either, so skipping would only move the press
+    -- onto a different refusal.
+    if cfg.ffCat and not self:DebuffUp("Faerie Fire (Feral)")
+        and self:OwnCDReady("Faerie Fire (Feral)") then
         if self:CastSafe("Faerie Fire (Feral)") then return end
     end
 
@@ -739,7 +754,8 @@ function M:RotateBear(cfg)
     if self:Tracing() then
         self:Trace("bear rage=" .. rage
             .. " def=" .. (self.hpDefenseActive and "Y" or "N")
-            .. " FF=" .. (cfg.ffBear and (self:DebuffUp("Faerie Fire (Feral)") and "Y" or "n") or "-")
+            .. " FF=" .. (cfg.ffBear and (self:DebuffUp("Faerie Fire (Feral)") and "Y"
+                or (self:OwnCDReady("Faerie Fire (Feral)") and "n" or "cd")) or "-")
             .. " demo=" .. (cfg.useDemo and (self:DebuffUp("Demoralizing Roar") and "Y" or "n") or "-")
             .. " aoe=" .. (cfg.aoeSwipe and "Y" or "N")
             .. " enrage=" .. (cfg.useEnrage and self:CDInfo("Enrage") or "-"))
@@ -757,7 +773,12 @@ function M:RotateBear(cfg)
     -- P2 Faerie Fire (Feral): the bear's ranged opener. Instant, 30yd, applies
     -- the armor debuff and deals threat+damage, so it starts the pull from
     -- range (Moonfire cannot be cast in bear form; this is its bear analog).
-    if cfg.ffBear and not self:DebuffUp("Faerie Fire (Feral)") then
+    -- Cooldown-gated for the same reason as the cat's P1 above: without it a
+    -- press during the 6s cooldown returned having cast nothing, so Enrage,
+    -- Demoralizing Roar, Swipe and Maul were all unreachable while the debuff
+    -- was missing and the cooldown was running.
+    if cfg.ffBear and not self:DebuffUp("Faerie Fire (Feral)")
+        and self:OwnCDReady("Faerie Fire (Feral)") then
         if self:CastSafe("Faerie Fire (Feral)") then return end
     end
 
