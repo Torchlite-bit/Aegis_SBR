@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.44",
+    ver = "1.2.45",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -3625,9 +3625,9 @@ function Aegis_SBR:RunRotation(mode)
     -- actively mirrors a chosen group/raid member's target every press, even
     -- while you already have some target selected, so it runs unconditionally
     -- here rather than only when you have none. "auto" only ever grabs when
-    -- you have nothing, behind the same per-module opt-out as before
-    -- (autoAcquireTarget == false, e.g. the Hunter, so a ranged class never
-    -- grabs and pulls a random mob). "manual" defers entirely, only dropping
+    -- you have nothing; the mode is the player's choice and applies to every
+    -- class (the Hunter used to opt out here, which overrode a player who had
+    -- chosen "auto"). "manual" defers entirely, only dropping
     -- a corpse so a separate assist addon can reassign you.
     local mode = self:TargetMode()
     if mode == "assist" then

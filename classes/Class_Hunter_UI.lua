@@ -19,7 +19,7 @@ M.useScrollLayout = true
 M.specTabs = {
     field = "spec", default = "bm",
     tabs = {
-        { key = "bm",   label = "Beast Mastery", tip1 = "Ranged, built around the pet: Kill Command, Baited Shot, Bestial Wrath." },
+        { key = "bm",   label = "Beast Mastery", tip1 = "Ranged, built around the pet: Kill Command, Bestial Wrath." },
         { key = "mm",   label = "Marksmanship",  tip1 = "Ranged: Aimed Shot, Lock and Load, Steady Shot weave." },
         { key = "surv", label = "Survival",      tip1 = "Melee: Raptor Strike, Mongoose Bite, Lacerate, traps placed in combat." },
     },
@@ -150,7 +150,6 @@ function M:BuildBody(ui, parent)
     -- ---------------------------------------------------------------- 4. spec abilities
     L:Header("Beast Mastery", { bm = true })
     self.kcRow = L:Row{ key = "useKillCommand", label = "Kill Command", spell = "Kill Command", onToggle = set("useKillCommand") }
-    self.baitedRow = L:Row{ key = "useBaitedShot", label = "Baited Shot on pet crit", spell = "Baited Shot", onToggle = set("useBaitedShot") }
     -- The spec's own cooldown, a talent: it belongs with the spec, not in the
     -- shared list below, where the other two tabs would only show it unlearned.
     self.bwRow = L:Row{ key = "useBestialWrath", label = "Bestial Wrath with cooldowns", spell = "Bestial Wrath", onToggle = set("useBestialWrath") }
@@ -166,6 +165,9 @@ function M:BuildBody(ui, parent)
     -- and lives per character rather than per profile.
     self.petWinRow = L:Row{ key = "petWindow", label = "Show pet window", onToggle = function(on)
         if Aegis_SBR_Pet then Aegis_SBR_Pet:SetShown(on) end
+    end }
+    self.petSoundRow = L:Row{ key = "petSound", label = "Sound when the mood drops", onToggle = function(on)
+        if Aegis_SBR_Pet then Aegis_SBR_Pet:SetSound(on) end
     end }
 
     -- ---------------------------------------------------------------- 6. cooldowns
@@ -243,7 +245,6 @@ function M:BuildBody(ui, parent)
     end
 
     ui:Tip(self.kcRow.cb, "Kill Command", "Fired the moment it becomes usable: after you land a critical strike on the current target.")
-    ui:Tip(self.baitedRow.cb, "Baited Shot", "Fired in the short window after your pet lands a critical strike.")
     ui:Tip(self.rfRow.cb, "Rapid Fire", "Included when cooldowns fire. At range only - it speeds up ranged attacks and nothing else, so in melee it is kept for when you step back.")
     ui:Tip(self.bwRow.cb, "Bestial Wrath", "Situational: press it yourself when the tank's aggro is safe, or for a fear, sleep or execute phase. Switched on, it fires together with the cooldowns.", "Skipped without a live pet - it grants the pet Scent of Blood.")
     ui:Tip(self.petRow.cb, "Pet attack", "Sends your pet onto the target each press.")
@@ -252,6 +253,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.mendRow.slider, "Mend Pet below", "Pet health percent under which Mend Pet is cast.")
     ui:Tip(self.tauntRow.cb, "Smart Pet Taunt", "When the mob peels off your pet onto you, sends the pet's Growl to grab it back (throttled). Leave it off for melee builds where you want the aggro.")
     ui:Tip(self.petWinRow.cb, "Show pet window", "A small movable readout: level, experience toward the next level, and happiness.")
+    ui:Tip(self.petSoundRow.cb, "Sound when the mood drops", "With the pet window shown, when the pet's happiness drops: the raid-warning sound (a second sound on Unhappy), a warning text in the middle of the screen, and the window's border flashing for a few seconds.")
     ui:Tip(self.cdRow.cb, "Pop cooldowns every press", "Fires the cooldowns listed below whenever they are ready, on every target - and the spec's own, such as Bestial Wrath, where its switch is on.")
     ui:Tip(self.cdEliteRow.cb, "Pop on elites and bosses", "Fires the cooldowns listed below against elite and boss targets, without the switch above.")
 end
@@ -338,7 +340,6 @@ function M:RefreshBody(ui, buf)
 
     -- spec abilities, pet, cooldowns
     ui:BindCheck(self.kcRow, get("useKillCommand"))
-    ui:BindCheck(self.baitedRow, get("useBaitedShot"))
     ui:BindCheck(self.bwRow, get("useBestialWrath"))
     ui:BindCheck(self.petRow, get("petAttack"))
     ui:BindCheck(self.petMeleeRow, get("petMeleeOnly"))
@@ -362,6 +363,9 @@ function M:RefreshBody(ui, buf)
         ui:SliderEnable(pair[2].slider, ttkOn)
     end
     if Aegis_SBR_Pet then self.petWinRow.cb:SetChecked(Aegis_SBR_Pet:Enabled()) end
+    if Aegis_SBR_Pet then
+        self.petSoundRow.cb:SetChecked(Aegis_SBR_Pet:SoundOn())
+    end
     local mhp = get("mendPetHp") or 50
     self.mendRow.slider:SetValue(mhp)
     if self.mendRow.slider.valText then self.mendRow.slider.valText:SetText(mhp .. "%") end

@@ -4,6 +4,48 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.45 — the priest heals in order, the hunter follows the targeting mode
+
+### 🔧 Priest (requested and confirmed by a priest player; the maintainers have no priest)
+
+- **Heal order:** below the Flash Heal line Power Word: Shield goes out first (no Weakened
+  Soul, no shield up), then Flash Heal. Above it a missing Renew comes before the direct heal.
+  Both used to sit behind the direct heals, which always found an affordable rank, so Renew and
+  the shield never went out.
+- **Smite and Holy Fire are stopped for a heal:** in heal mode a weave nuke still casting is
+  cancelled as soon as somebody drops under the heal line. Before, the heal waited for the cast
+  to end, and heals started well below the line.
+- **Holy Nova between heals** (new, off by default): with nobody to heal, the mana above the
+  weave line and at least the set number of enemies within 10 yards. Needs the talent.
+
+### 🔧 Hunter
+
+- **The targeting mode applies to the hunter too.** The module overrode *auto* and never took
+  a target itself, so after a kill the rotation stood still until one was clicked. Players who
+  want to pick every target set *manual*.
+- **Pet only in melee range** is now honoured. The switch was on the panel, but the rotation
+  sent the pet at any distance.
+- **Baited Shot removed:** it exists in no hunter spec on Turtle WoW; the switch never did
+  anything.
+- **Pet window:** when the happiness drops, the raid-warning sound plays (a second sound on
+  Unhappy), a warning appears in the middle of the screen and the window's border flashes.
+  *Sound when the mood drops* switches the sound off.
+
+### 🔧 Rogue — Subtlety
+
+- **Expose Armor only if the target lives** now waits for the time-to-kill estimate. An
+  unknown estimate (the first seconds on a target) counted as "lives long enough", so after the
+  opener Expose Armor went on raid trash that died seconds later, with the energy at the cap
+  while the points were held for it. Bosses keep Expose Armor at once. The trace shows
+  `/ttk?` while the estimate is missing.
+
+### 🐛 Warrior
+
+- The warrior's cast-end watcher wrote a line into every class's press log; it is limited to
+  the warrior.
+
+---
+
 ## v1.2.44 — a cooldown is not a cast
 
 ### 🐛 Druid: Faerie Fire on cooldown stopped the rotation

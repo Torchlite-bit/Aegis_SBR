@@ -20,8 +20,7 @@
 --  * Mana aspect swap: at a low-mana threshold the rotation swaps to the
 --    mana-regenerating aspect, then back to the combat aspect once recovered
 --    (hysteresis, so it does not flap at the boundary).
---  * Pet: attack, Mend Pet when hurt, Kill Command on cooldown (BM), and an
---    optional Baited Shot reaction when the pet crits.
+--  * Pet: attack, Mend Pet when hurt, Kill Command on cooldown (BM).
 -- Exact spell strings are gated by KnowsSpell, so an ability the character or
 -- the server does not have simply no-ops instead of breaking the chain.
 -- ============================================================
@@ -32,14 +31,12 @@ M.uiTitle = "Hunter"
 M.previewReady = true
 M.uiHeight = 1326
 M.meleeAutoAttack = false   -- managed here: Auto Shot (ranged) or Attack (melee)
-M.autoAcquireTarget = false -- a ranged class should not auto-pull random mobs; pick targets
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
 local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
 local floor = math.floor
 
 local MEND_PET_CD = 12   -- Mend Pet HoT lasts ~15s, refresh a little early
-local PETCRIT_WINDOW = 4.0
 local MANA_ASPECT_HYST = 15   -- swap back to the combat aspect this far above the low mark
 -- Steady Shot weave margin: it must finish this far before the next Auto Shot
 -- launches to clear the ~0.5s shot windup plus latency, so it never clips.
@@ -149,7 +146,6 @@ M.spellAlias = {
     explosive = "useExplosiveTrap",
     aspect = "useAspect",
     killcommand = "useKillCommand", kc = "useKillCommand",
-    baited = "useBaitedShot",
     mend = "useMendPet",
 }
 
@@ -169,7 +165,7 @@ M.templates = {
         useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = false, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 50,
-        useKillCommand = false, useBaitedShot = false,
+        useKillCommand = false,
         popCDs = false, autoCDElite = false,
     },
     beastmastery = {
@@ -182,7 +178,7 @@ M.templates = {
         useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = true, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 60,
-        useKillCommand = true, useBaitedShot = true,
+        useKillCommand = true,
         -- Situational: when the tank's aggro is safe, or for a fear, sleep or
         -- execute phase. That is the player's call, not the rotation's.
         useBestialWrath = false,
@@ -198,7 +194,7 @@ M.templates = {
         useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = true, manaAspectPct = 25,
         petAttack = true, useMendPet = true, mendPetHp = 40,
-        useKillCommand = false, useBaitedShot = false,
+        useKillCommand = false,
         popCDs = false, autoCDElite = true,
     },
     survival = {  -- melee: strikes, bleed, traps in combat
@@ -211,7 +207,7 @@ M.templates = {
         useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = true, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 50,
-        useKillCommand = false, useBaitedShot = false,
+        useKillCommand = false,
         popCDs = false, autoCDElite = true,
     },
     melee = {  -- BM / melee weave
@@ -224,7 +220,7 @@ M.templates = {
         useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
         useManaAspect = false, manaAspectPct = 30,
         petAttack = true, useMendPet = true, mendPetHp = 60,
-        useKillCommand = true, useBaitedShot = true,
+        useKillCommand = true,
         popCDs = false, autoCDElite = true,
     },
 }
@@ -252,7 +248,7 @@ function M:NormalizeProfile(c)
         petAttack = true, useMendPet = true, mendPetHp = 50,
         petTaunt = false, useLacerate = false, useCarve = false, useAimedOpener = false,
         useRapidFire = true,
-        useKillCommand = false, useBaitedShot = false,
+        useKillCommand = false,
         popCDs = false, autoCDElite = false,
         -- Hunter's Mark and the sting only on a target that lives long enough
         -- to repay them (see LivesFor). Off by default.
@@ -1320,7 +1316,11 @@ function M:Rotate(cfg)
     -- ----------------------------------------------------------------
     -- 0. Off-GCD / fire-and-continue layer
     -- ----------------------------------------------------------------
-    if cfg.petAttack and UnitExists("pet") then PetAttack() end
+    -- "Pet only in melee range": the pet is sent only while the target is
+    -- within melee range of the hunter, so a far target picked up by the
+    -- targeting mode does not pull the pet away. The switch was on the panel
+    -- but never read here.
+    if cfg.petAttack and UnitExists("pet") and (not cfg.petMeleeOnly or inMeleeNow) then PetAttack() end
 
     -- Smart pet taunt (opt-in): if the mob peels onto us, send the pet's Growl
     -- to grab it back. Off the GCD, throttled internally.
@@ -1367,11 +1367,6 @@ function M:Rotate(cfg)
         and self:KillCommandArmed() then
         self:PickExtra("Kill Command")
         self:Later(function() self.killCommandSentAt = GetTime() end)
-    end
-    -- Baited Shot reaction inside the short window after the pet crits.
-    if cfg.useBaitedShot and not casting and self:KnowsSpell("Baited Shot")
-        and now < (self.petCritUntil or 0) and self:IsReady("Baited Shot") then
-        self:PickExtra("Baited Shot")
     end
 
     -- ----------------------------------------------------------------
@@ -1725,12 +1720,10 @@ end
 -- ============================================================
 -- Event tracking: precise Auto Shot / Steady Shot timing from SuperWoW's
 -- UNIT_CASTEVENT (arg1 casterGUID, arg3 type, arg4 spell id, arg5 cast ms),
--- the Auto Shot reset on leaving combat, and the pet-crit window for Baited
--- Shot.
+-- and the Auto Shot reset on leaving combat.
 -- ============================================================
 local hunterFrame = CreateFrame("Frame")
 hunterFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-hunterFrame:RegisterEvent("CHAT_MSG_COMBAT_PET_HITS")                 -- our pet's damage
 hunterFrame:RegisterEvent("UNIT_CASTEVENT")                           -- SuperWoW: exact cast/shot timing
 -- A resisted, missed or immune shot of ours is reported here. Without it those
 -- look exactly like a sting that had just landed and not yet registered, so the
@@ -1810,10 +1803,6 @@ hunterFrame:SetScript("OnEvent", function()
                 M.debuffThrottle[shot] = nil
                 M.stingTry = nil
             end
-        end
-    elseif event == "CHAT_MSG_COMBAT_PET_HITS" then
-        if arg1 and string.find(string.lower(arg1), "crit") then
-            M.petCritUntil = GetTime() + PETCRIT_WINDOW
         end
     elseif event == "UNIT_CASTEVENT" then
         -- Only the player's own casts matter; filter by GUID before the spell

@@ -35,6 +35,16 @@ local HAPPY = {
     [3] = { label = "Happy",   r = 0.25, g = 0.80, b = 0.30 },
 }
 
+-- When the happiness DROPS, three signals at once, so it is not missed in a
+-- fight: the raid-warning sound (a second one, the quest-failed sound, when it
+-- drops to Unhappy), a raid-warning text in the middle of the screen, and the
+-- window's border flashing white for a few seconds. A rise is silent. Not on
+-- the first reading of a pet (login, summon), only on a change while the same
+-- pet is out.
+local SOUND_WORSE   = "RaidWarning"
+local SOUND_UNHAPPY = "igQuestFailed"
+local FLASH_SECS    = 5
+
 local COL_BG    = { 0.05, 0.05, 0.07, 0.92 }
 local COL_TEXT  = { 0.85, 0.86, 0.90 }
 local COL_MUTE  = { 0.55, 0.57, 0.62 }
@@ -51,6 +61,40 @@ function AP:DB()
     -- restarted on every zone line and the estimate was worthless. Loyalty is
     -- shown as the level it is; the game does not know more than that either.
     return db
+end
+
+-- Sound on a mood change: on unless switched off (per character).
+function AP:SoundOn()
+    local db = self:DB()
+    return not (db and db.sound == false)
+end
+
+function AP:SetSound(on)
+    local db = self:DB()
+    if db then db.sound = on and true or false end
+end
+
+function AP:NoteHappiness(h)
+    local pet = UnitName("pet")
+    if pet ~= self.lastPet then
+        self.lastPet = pet
+        self.lastHappy = h
+        return
+    end
+    local before = self.lastHappy
+    self.lastHappy = h
+    if not (before and h) or h >= before or not self:SoundOn() then return end
+    PlaySound(SOUND_WORSE)
+    if h == 1 then PlaySound(SOUND_UNHAPPY) end
+    local hap = HAPPY[h]
+    local msg = (pet or "Pet") .. " is " .. (hap and hap.label or "less happy")
+        .. (h == 1 and " - feed it" or "")
+    if RaidNotice_AddMessage and RaidWarningFrame then
+        RaidNotice_AddMessage(RaidWarningFrame, msg, { r = hap and hap.r or 1, g = hap and hap.g or 0.3, b = hap and hap.b or 0.3 })
+    elseif DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage(msg, 1, 0.3, 0.3)
+    end
+    self.flashUntil = GetTime() + FLASH_SECS
 end
 
 function AP:Enabled()
@@ -185,6 +229,7 @@ function AP:Refresh()
         f.happyText:SetText("")
         f.loyalText:SetText("")
         self:BorderColor(0.30, 0.30, 0.33, 0.9)
+        self.lastPet = nil
         return
     end
 
@@ -209,8 +254,12 @@ function AP:Refresh()
     local h, dmg
     if GetPetHappiness then h, dmg = GetPetHappiness() end
     local hap = h and HAPPY[h]
+    self:NoteHappiness(hap and h or nil)
     if hap then
-        self:BorderColor(hap.r, hap.g, hap.b, 1)
+        -- The flash after a drop: white on every other tick, the mood colour
+        -- between, for FLASH_SECS.
+        self.flashOn = (GetTime() < (self.flashUntil or 0)) and not self.flashOn
+        if self.flashOn then self:BorderColor(1, 1, 1, 1) else self:BorderColor(hap.r, hap.g, hap.b, 1) end
         f.happyText:SetText(hap.label .. (dmg and ("   " .. dmg .. "% dmg") or ""))
         f.happyText:SetTextColor(hap.r, hap.g, hap.b)
 

@@ -535,12 +535,19 @@ end
 -- target lives")? Raid trash dies in six seconds with forty people on it, and
 -- every new mob came without the debuff: a log had it missing on two thirds of
 -- the presses, the reserve holding every finisher for it, and with that no
--- Rupture, no Taste for Blood, no Mark, no sigil and no Preparation. An unknown
--- time to kill (the first seconds on a target) answers yes.
+-- Rupture, no Taste for Blood, no Mark, no sigil and no Preparation.
+--
+-- An unknown time to kill (the first seconds on a target) answers no, except
+-- on a boss, which always lives long enough: the opener reaches five points in
+-- about three seconds, and a later log had Expose Armor spent there on trash
+-- that died two to twelve seconds later, while the reserve held the energy at
+-- the cap. Until the estimate stands, the points go to the other finishers.
+-- The second return says the answer is "not known yet" rather than "too short".
 function M:ExposeWorth(cfg)
     if not cfg.useExposeTTK then return true end
+    if UnitClassification("target") == "worldboss" then return true end
     local ttk = Aegis_SBR:TargetTTK()
-    if not ttk then return true end
+    if not ttk then return false, true end
     return ttk >= (cfg.exposeMinTTK or 20)
 end
 
@@ -1107,7 +1114,12 @@ function M:DecideSubtlety(cfg, tracing)
             .. " stealth=" .. (stealthed and "Y" or "n")
             .. " immune=" .. (immune and "Y" or "n")
             .. " ea=" .. (eaLeft and string.format("%.1fs", eaLeft) or "none") .. (eaDue and "/due" or "") .. (reserve and "/reserve" or "")
-            .. ((cfg.useExposeArmor and not self:ExposeWorth(cfg)) and "/short" or "")
+            .. (function()
+                if not cfg.useExposeArmor then return "" end
+                local worth, unknown = self:ExposeWorth(cfg)
+                if worth then return "" end
+                return unknown and "/ttk?" or "/short"
+            end)()
             .. " cps=" .. string.format("%.1f", self:ComboSecs())
             .. " snd=" .. (useSnd and string.format("%.1fs", sndLeft) or "-")
             .. " tfb=" .. (useRup and string.format("%.0fs", self:TasteLeft()) or "-")
@@ -1349,7 +1361,7 @@ function M:DecideSubtlety(cfg, tracing)
     end
 
     -- P9 build
-    local why = reserve and string.format("building for Expose Armor in %s", eaLeft and string.format("%.1fs", eaLeft) or "?")
+    local why = reserve and (eaLeft and string.format("building for Expose Armor in %.1fs", eaLeft) or "building for Expose Armor (none up)")
         or ("building to " .. (cfg.cpFinish or 5) .. " CP")
     return plan(builder, why, extras)
 end
