@@ -71,16 +71,51 @@ end)
 -- press heals. Checked ten times a second, only while such a cast runs.
 local NUKE_TICK = 0.1
 local NUKES = { ["Smite"] = true, ["Holy Fire"] = true }
+-- The same events also give the running cast's end (castUntil, for the hold
+-- in Rotate) and settle the pending-heal ledger (see CommitHeal): a heal the
+-- client refused before it started, or that was interrupted, will not land.
 local prNukeFrame = CreateFrame("Frame")
 prNukeFrame:RegisterEvent("SPELLCAST_START")
 prNukeFrame:RegisterEvent("SPELLCAST_STOP")
 prNukeFrame:RegisterEvent("SPELLCAST_FAILED")
 prNukeFrame:RegisterEvent("SPELLCAST_INTERRUPTED")
+prNukeFrame:RegisterEvent("SPELLCAST_DELAYED")
 prNukeFrame:SetScript("OnEvent", function()
+    local now = GetTime()
     if event == "SPELLCAST_START" then
         M.nukeCasting = (arg1 and NUKES[arg1]) and true or nil
-    else
+        M.castUntil = now + (tonumber(arg2) or 0) / 1000
+        -- The heal sent last has started: it is the one now casting.
+        local e = M.lastCommit and M.pending[M.lastCommit]
+        if e and not e.started then
+            e.started = true
+            M.castEntry = M.lastCommit
+        else
+            M.castEntry = nil
+        end
+    elseif event == "SPELLCAST_DELAYED" then
+        -- Pushback moves the end of the cast.
+        if M.castUntil then M.castUntil = M.castUntil + (tonumber(arg1) or 0) / 1000 end
+    elseif event == "SPELLCAST_FAILED" then
+        local e = M.lastCommit and M.pending[M.lastCommit]
+        if e and not e.started then
+            -- Refused before it began (another cast running, range, line of
+            -- sight): only that heal's mark goes, the running cast stays.
+            M.pending[M.lastCommit] = nil
+            M.lastCommit = nil
+        else
+            M.nukeCasting = nil
+            M.castUntil = nil
+            if M.castEntry then M.pending[M.castEntry] = nil; M.castEntry = nil end
+        end
+    elseif event == "SPELLCAST_INTERRUPTED" then
         M.nukeCasting = nil
+        M.castUntil = nil
+        if M.castEntry then M.pending[M.castEntry] = nil; M.castEntry = nil end
+    else -- SPELLCAST_STOP: finished; the heal lands, its mark runs out by itself
+        M.nukeCasting = nil
+        M.castUntil = nil
+        M.castEntry = nil
     end
 end)
 prNukeFrame:SetScript("OnUpdate", function()
@@ -450,19 +485,35 @@ end
 -- ============================================================
 -- Healing engine (adapted from the paladin; self-contained).
 -- ============================================================
+-- Heals on their way, one mark per member: the amount and until when it
+-- counts. There used to be one mark for everybody, so a second heal sent while
+-- the first was still casting - refused by the client - overwrote it, the
+-- member under the running heal read as unhealed again, and the next press
+-- queued a second full heal on top: reported as the priest overhealing itself
+-- while the paladin had to drink a potion. A refused or interrupted heal
+-- removes only its own mark (see the cast events above).
+M.pending = {}
 function M:CommitHeal(unit, amount, castTime)
     self:Later(function()
-        self.healTarget = UnitName(unit)
-        self.healAmount = amount or 0
-        self.healUntil = GetTime() + (castTime or 0) + 1.0
+        local name = UnitName(unit)
+        if not name then return end
+        self.pending[name] = { amount = amount or 0, untilT = GetTime() + (castTime or 0) + 1.0 }
+        self.lastCommit = name
     end)
 end
 
 function M:PendingFor(unit)
-    if self.healTarget and GetTime() < self.healUntil and UnitName(unit) == self.healTarget then
-        return self.healAmount
-    end
+    local e = self.pending[UnitName(unit) or "?"]
+    if e and GetTime() < e.untilT then return e.amount end
     return 0
+end
+
+function M:AnyPending()
+    local now = GetTime()
+    for _, e in pairs(self.pending) do
+        if now < e.untilT then return true end
+    end
+    return false
 end
 
 function M:GroupUnits()
@@ -569,7 +620,7 @@ function M:HurtCount(ratio)
 end
 
 function M:HealDemand(cfg)
-    if self.healUntil and GetTime() < self.healUntil then return true end
+    if self:AnyPending() then return true end
     return self:HurtCount((cfg.healThreshold or 85) / 100) > 0
 end
 
@@ -730,6 +781,7 @@ function M:RunsWithoutTarget(cfg)
 end
 
 local HOLY_NOVA_RADIUS = 10
+local CAST_QUEUE_WINDOW = 0.3
 
 -- ============================================================
 -- Rotation entry point
@@ -747,6 +799,12 @@ function M:Rotate(cfg)
 
     -- ---------------- HEAL MODE ----------------
     if cfg.healMode then
+        -- Nothing new while a cast runs: the client refuses it anyway, and the
+        -- decision would be made on a health bar the running heal is about to
+        -- change. Spamming the key mid-cast used to pick a second target or a
+        -- second heal on the same one. The last moment of the cast is left
+        -- open, so the next spell joins Nampower's queue without a gap.
+        if self.castUntil and GetTime() < self.castUntil - CAST_QUEUE_WINDOW then return end
         if self:DoHeal(cfg) then return end
 
         -- No one needs healing: optional offensive support / maintenance.
