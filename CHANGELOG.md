@@ -4,6 +4,21 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.46 — no second heal on top of the first
+
+### 🐛 Priest
+
+- **Overheal while spamming the key:** the priest remembered only one incoming heal. With a
+  heal on itself still casting, the next press tried another member, the client refused it,
+  and that attempt replaced the mark of the running heal - so the press after read the priest
+  as unhealed and queued a second full heal on it while the partner waited. Incoming heals are
+  now counted per member, and a refused or interrupted heal removes only its own mark.
+- **No new decision while a cast runs:** in heal mode a press during a cast does nothing,
+  except in the last 0.3 seconds so the next spell joins Nampower's queue without a gap.
+  Pushback moves the end of the cast.
+
+---
+
 ## v1.2.45 — the priest heals in order, the hunter follows the targeting mode
 
 ### 🔧 Priest (requested and confirmed by a priest player; the maintainers have no priest)
