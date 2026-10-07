@@ -45,6 +45,8 @@ function M:BuildBody(ui, parent)
     self.offensiveRow = L:Row{ key = "offensiveWeave", label = "Weave Smite/Holy Fire above mana", spell = "Smite", onToggle = set("offensiveWeave"),
         slider = { key = "healNukeMana", min = 0, max = 100, step = 5, suffix = "%", onChange = set("healNukeMana") } }
     self.healWandRow = L:Row{ key = "healWand", label = "Wand between heals", onToggle = set("healWand") }
+    self.holyNovaRow = L:Row{ key = "useHolyNova", label = "Holy Nova between heals, enemies", spell = "Holy Nova", onToggle = set("useHolyNova"),
+        slider = { key = "holyNovaCount", min = 1, max = 10, step = 1, onChange = set("holyNovaCount") } }
     self.lightwellRow = L:Row{ key = "useLightwell", label = "Place Lightwell", spell = "Lightwell", onToggle = set("useLightwell") }
 
 
@@ -105,13 +107,15 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.flashHealRow.cb, "Flash Heal", "Fast, expensive heal reserved for emergencies so it does not drain your mana.")
     ui:Tip(self.greaterHealRow.cb, "Greater Heal", "Big, slow heal used (downranked) for large deficits.")
     ui:Tip(self.flashHealRow.slider, "Flash only below", "Health percent under which Flash Heal is allowed as an emergency heal.")
-    ui:Tip(self.pwShieldRow.cb, "Power Word: Shield", "Shield a hurt member, but only when there is no Weakened Soul - the over-bubble guard.")
-    ui:Tip(self.renewRow.cb, "Renew", "Keep the heal-over-time on a hurt member as efficient maintenance.")
+    ui:Tip(self.pwShieldRow.cb, "Power Word: Shield", "Below the Flash Heal line: the shield first, then Flash Heal - but only when there is no Weakened Soul, the over-bubble guard.")
+    ui:Tip(self.renewRow.cb, "Renew", "On a member under the heal line but above the Flash Heal line: Renew first when it is missing, the direct heal on the next press.")
     ui:Tip(self.prayerRow.cb, "Prayer of Healing", "Group heal when several members are hurt at once.")
     ui:Tip(self.innerFocusRow.cb, "Inner Focus on AoE", "Pop Inner Focus before Prayer of Healing to negate its mana cost.")
-    ui:Tip(self.offensiveRow.cb, "Weave Smite/Holy Fire", "When no one needs healing, cast Holy Fire and Smite on your target - while your mana is above the value on the right.", "Heals always come first. Skipped in Shadowform. Needs an enemy targeted (or the Assist targeting mode).")
+    ui:Tip(self.offensiveRow.cb, "Weave Smite/Holy Fire", "When no one needs healing, cast Holy Fire and Smite on your target - while your mana is above the value on the right.", "Heals always come first: a Smite or Holy Fire still casting is stopped as soon as somebody drops under the heal line. Skipped in Shadowform. Needs an enemy targeted (or the Assist targeting mode).")
     ui:Tip(self.offensiveRow.slider, "Smite above mana", "Mana percent above which the weave nukes. Below it the wand takes over, if switched on.")
     ui:Tip(self.healWandRow.cb, "Wand between heals", "When no one needs healing and the weave is off or under its mana line: the wand on your target. No mana is spent, so the five-second rule brings it back.", "A heal that is needed goes first and stops the wand.")
+    ui:Tip(self.holyNovaRow.cb, "Holy Nova between heals", "When no one needs healing: Holy Nova while at least the number of enemies on the right stand within 10 yards of you, and your mana is above the weave line. It also heals the group.", "Heals come first. Needs the Holy Nova talent. Without nameplates to count, an enemy target in melee range counts as one.")
+    ui:Tip(self.holyNovaRow.slider, "Enemies within 10 yards", "How many enemies must stand around you for Holy Nova.")
     ui:Tip(self.lightwellRow.cb, "Place Lightwell", "Place a Lightwell when out of combat, off cooldown, and known.")
 end
 
@@ -174,6 +178,10 @@ function M:RefreshBody(ui, buf)
     else
         self.healWandRow.label:SetText("Wand between heals")
     end
+    ui:BindCheck(self.holyNovaRow, buf.useHolyNova, "Holy Nova")
+    local hnc = buf.holyNovaCount or 3
+    self.holyNovaRow.slider:SetValue(hnc); self.holyNovaRow.slider.valText:SetText(hnc .. "+")
+    ui:SliderEnable(self.holyNovaRow.slider, (buf.healMode and buf.useHolyNova) and true or false)
     ui:BindCheck(self.lightwellRow, buf.useLightwell, "Lightwell")
     -- heal sliders matter in heal mode
     ui:SliderEnable(self.healAtRow.slider, buf.healMode)

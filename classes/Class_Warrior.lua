@@ -2284,6 +2284,9 @@ castFrame:RegisterEvent("SPELLCAST_STOP")
 castFrame:RegisterEvent("SPELLCAST_FAILED")
 castFrame:RegisterEvent("SPELLCAST_INTERRUPTED")
 castFrame:SetScript("OnEvent", function()
+    -- Only on a warrior: the frame exists for every class, and on a hunter it
+    -- wrote a line into the press log for every Steady Shot.
+    if Aegis_SBR.active ~= M then return end
     if M.logging then M:LogWrite("slamend " .. tostring(event)) end
     M.slamCastUntil = nil
 end)

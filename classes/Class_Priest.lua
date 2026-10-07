@@ -39,7 +39,7 @@ local M = Aegis_SBR:NewClassModule("PRIEST")
 M.uiTitle = "Priest"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 788
+M.uiHeight = 816
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
@@ -60,6 +60,40 @@ prChannelFrame:SetScript("OnEvent", function()
         M.channeling = true; M.chanStart = GetTime()
     elseif event == "SPELLCAST_CHANNEL_STOP" then
         M.channeling = false
+    end
+end)
+
+-- ---------- weave nuke: stopped for a heal ----------
+-- In heal mode a Smite or Holy Fire is cast only while nobody needs healing,
+-- but it runs for 2.5 to 3.5 seconds, and a member who dropped under the heal
+-- line meanwhile waited for it to finish - reported as heals starting near
+-- half health with the line at 70. The cast is stopped instead, and the next
+-- press heals. Checked ten times a second, only while such a cast runs.
+local NUKE_TICK = 0.1
+local NUKES = { ["Smite"] = true, ["Holy Fire"] = true }
+local prNukeFrame = CreateFrame("Frame")
+prNukeFrame:RegisterEvent("SPELLCAST_START")
+prNukeFrame:RegisterEvent("SPELLCAST_STOP")
+prNukeFrame:RegisterEvent("SPELLCAST_FAILED")
+prNukeFrame:RegisterEvent("SPELLCAST_INTERRUPTED")
+prNukeFrame:SetScript("OnEvent", function()
+    if event == "SPELLCAST_START" then
+        M.nukeCasting = (arg1 and NUKES[arg1]) and true or nil
+    else
+        M.nukeCasting = nil
+    end
+end)
+prNukeFrame:SetScript("OnUpdate", function()
+    if not M.nukeCasting or Aegis_SBR.active ~= M then return end
+    local now = GetTime()
+    if (M.nukeTick or 0) > now then return end
+    M.nukeTick = now + NUKE_TICK
+    local cfg = Aegis_SBR:GetActiveProfile()
+    if cfg then cfg = Aegis_SBR:EffectiveConfig(cfg) end
+    if not cfg or not cfg.healMode then return end
+    if M:WorstHurt((cfg.healThreshold or 85) / 100, cfg) then
+        M.nukeCasting = nil
+        SpellStopCasting()
     end
 end)
 
@@ -218,6 +252,10 @@ function M:NormalizeProfile(c)
     -- bring the mana back. Requested for a duo priest healing a paladin.
     if c.healNukeMana == nil then c.healNukeMana = 50 end
     if c.healWand == nil then c.healWand = false end
+    -- Heal mode, between heals: Holy Nova with this many enemies within its
+    -- radius (and the mana above the weave line). Off by default.
+    if c.useHolyNova == nil then c.useHolyNova = false end
+    if c.holyNovaCount == nil then c.holyNovaCount = 3 end
     if c.useLightwell == nil then c.useLightwell = false end
     if c.healPower == nil then c.healPower = 0 end
     return c
@@ -603,8 +641,8 @@ function M:RenewDue(unit)
 end
 
 -- Heal decision. Returns true when a heal was cast (or the GCD is held) this
--- press. Triage order: AoE -> emergency Flash -> big Greater Heal -> efficient
--- Heal/Flash -> maintenance (Renew, then a Weakened-Soul-gated shield).
+-- press. Triage order: AoE -> emergency (shield, then Flash Heal) -> Renew on
+-- a mildly hurt unit -> big Greater Heal -> efficient Heal/Flash/Lesser Heal.
 function M:DoHeal(cfg)
     local ratio = (cfg.healThreshold or 85) / 100
     local unit, deficit, pct = self:WorstHurt(ratio, cfg)
@@ -634,11 +672,25 @@ function M:DoHeal(cfg)
         self:Queue("Prayer of Healing", "group healing"); return true
     end
 
-    -- Emergency: a target near death gets Flash Heal (reserved for this so it
-    -- does not drain the pool on routine damage).
-    if cfg.useFlashHeal and self:KnowsSpell("Flash Heal") and pct <= (cfg.flashHealPct or 40) / 100 then
+    -- Emergency, below the Flash Heal line: the shield first - instant, and
+    -- it stops the damage while the Flash Heal is cast on the next press -
+    -- then Flash Heal (reserved for this so it does not drain the pool on
+    -- routine damage). Renew and the shield used to sit behind the direct
+    -- heals, which always found an affordable rank, so they never went out.
+    local emergency = pct <= (cfg.flashHealPct or 40) / 100
+    if emergency and cfg.usePWShield and self:ShieldOK(unit) then
+        self:CastOn("Power Word: Shield", unit); return true
+    end
+    if emergency and cfg.useFlashHeal and self:KnowsSpell("Flash Heal") then
         local fh, amt = self:PickRank("Flash Heal", fhEff, self.FH_MANA, deficit, mana)
         if fh then self:CommitHeal(unit, amt, 1.5); self:CastOn(fh, unit); return true end
+    end
+
+    -- Mildly hurt: Renew first when it is missing, the direct heal after it.
+    if not emergency and cfg.useRenew and self:KnowsSpell("Renew") and self:RenewDue(unit)
+        and not self:UnitHasAura(unit, "Renew", false, "Spell_Holy_Renew") then
+        self.renewThrottle[UnitName(unit) or "?"] = GetTime()
+        self:CastOn("Renew", unit); return true
     end
 
     -- Big deficit: Greater Heal, downranked.
@@ -657,25 +709,27 @@ function M:DoHeal(cfg)
     local lh, amt3 = self:PickRank("Lesser Heal", lhEff, self.LH_MANA, deficit, mana)
     if lh then self:CommitHeal(unit, amt3, 2.0); self:CastOn(lh, unit); return true end
 
-    -- Maintenance for a mildly hurt unit: keep Renew up, then shield if there is
-    -- no Weakened Soul (the over-bubble guard).
-    if cfg.useRenew and self:KnowsSpell("Renew") and self:RenewDue(unit)
-        and not self:UnitHasAura(unit, "Renew", false, "Spell_Holy_Renew") then
-        self.renewThrottle[UnitName(unit) or "?"] = GetTime()
-        self:CastOn("Renew", unit); return true
-    end
-    if cfg.usePWShield and self:KnowsSpell("Power Word: Shield")
-        and not self:UnitHasAura(unit, "Weakened Soul", true, nil)
-        and not self:UnitHasAura(unit, "Power Word: Shield", false, "Spell_Holy_PowerWordShield") then
+    -- No direct heal affordable: the shield still costs less than any of them.
+    if cfg.usePWShield and self:ShieldOK(unit) then
         self:CastOn("Power Word: Shield", unit); return true
     end
     return false
+end
+
+-- The shield can go on this unit: known, no Weakened Soul (the over-bubble
+-- guard) and no shield already up.
+function M:ShieldOK(unit)
+    return self:KnowsSpell("Power Word: Shield")
+        and not self:UnitHasAura(unit, "Weakened Soul", true, nil)
+        and not self:UnitHasAura(unit, "Power Word: Shield", false, "Spell_Holy_PowerWordShield")
 end
 
 -- Heal mode runs even with no attackable target, so the priest heals at range.
 function M:RunsWithoutTarget(cfg)
     return cfg.healMode == true
 end
+
+local HOLY_NOVA_RADIUS = 10
 
 -- ============================================================
 -- Rotation entry point
@@ -710,6 +764,17 @@ function M:Rotate(cfg)
         -- Heals above still go first at any mana.
         local hasEnemy = UnitExists("target") and not UnitIsDead("target") and UnitCanAttack("player", "target")
         local nukeOK = self:ManaPct() >= (cfg.healNukeMana or 50)
+        -- Holy Nova between heals: with enough enemies around the priest, above
+        -- the same mana line. It also heals the group. Requested by a priest
+        -- who pressed it by hand between the rotation's heals. With no count
+        -- from the nameplates, the target in melee range counts as one.
+        if cfg.useHolyNova and nukeOK and not shadowform and self:KnowsSpell("Holy Nova") then
+            local n = Aegis_SBR:CountEnemiesNear(HOLY_NOVA_RADIUS)
+            if n == nil then n = (hasEnemy and Aegis_SBR:InMeleeRange()) and 1 or 0 end
+            if n >= (cfg.holyNovaCount or 3) then
+                if self:Pick("Holy Nova", n .. " enemies within " .. HOLY_NOVA_RADIUS .. " yd") then return end
+            end
+        end
         if cfg.offensiveWeave and hasEnemy and not shadowform and nukeOK then
             if self:KnowsSpell("Holy Fire") then
                 local r = self:ApplyDot("Holy Fire", "Spell_Holy_SearingLight", 4)
