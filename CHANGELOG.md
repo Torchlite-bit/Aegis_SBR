@@ -4,6 +4,26 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.47 — far members out of range, mobs behind you still counted
+
+### 🐛 Healers (Priest, Paladin, Druid, Shaman)
+
+- **A group member far away is no longer healed.** The client reports a party member's health
+  at any distance but gives no range answer for one it has not loaded, and no answer counted as
+  "in range". A member nearly a zone away was healed and shielded on every press. A unit the
+  client has not loaded now counts as out of range.
+
+### 🔧 Core — enemy count
+
+- **Mobs behind you still count.** Enemies are counted from the nameplates, which the client
+  draws only for units on screen, so a mob that walked behind the player dropped out of the
+  count (reported as Holy Nova starting only after turning around). A mob seen on a nameplate
+  in the last eight seconds is now kept and measured live while it is alive, hostile and in
+  range. A mob that was never on screen is still not counted. This applies to every AoE count:
+  Holy Nova, Thunder Clap, Whirlwind, Smart AoE, Consecration and auto AoE.
+
+---
+
 ## v1.2.46 — no second heal on top of the first
 
 ### 🐛 Priest

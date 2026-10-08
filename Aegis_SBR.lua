@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.46",
+    ver = "1.2.47",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1017,6 +1017,11 @@ end
 function Aegis_SBR:SpellReaches(spell, unit)
     if not spell or spell == "" then return true end
     if not unit or not UnitExists(unit) then return false end
+    -- A unit the client has not loaded is far beyond any spell's reach. Party
+    -- members report their health at any distance, and IsSpellInRange answers
+    -- nothing for them, which below counts as "in range" - so a member almost
+    -- a zone away was healed and shielded on every press.
+    if UnitIsVisible and not UnitIsVisible(unit) then return false end
     if not IsSpellInRange then return CheckInteractDistance(unit, 4) and true or false end
     -- pcall: an unresolvable name throws here rather than answering -1, and a
     -- thrown error aborts the press outright - strictly worse than the -1 case
@@ -1648,6 +1653,12 @@ end
 -- same way sting / debuff / cast-event detection is established elsewhere.
 -- ============================================================
 local ENEMY_CACHE_TTL = 0.3
+-- A nameplate is drawn only for a unit on screen, so a mob that walked behind
+-- the player dropped out of the count - reported as Holy Nova starting only
+-- after turning around. Every mob seen on a nameplate stays on this list for a
+-- few seconds and is measured live like the rest; one never on screen is not
+-- counted.
+local ENEMY_RECENT_SECS = 8
 
 -- Distance to any unit, not just the target. Same source order and the same
 -- reasoning as the range window's own measurement.
@@ -1673,6 +1684,7 @@ end
 --
 -- Returned tokens are GUIDs where the nameplate resolved, plain tokens
 -- otherwise. Both answer to the vanilla unit APIs on this client.
+Aegis_SBR.recentEnemies = {}
 function Aegis_SBR:EnemiesNear(yards)
     if not yards or yards <= 0 then return nil end
 
@@ -1712,9 +1724,22 @@ function Aegis_SBR:EnemiesNear(yards)
                 local ok, guid = pcall(f.GetName, f, 1)
                 if ok and type(guid) == "string" and guid ~= "" and UnitExists(guid) then
                     self.enemyScanSeen = true
+                    self.recentEnemies[guid] = GetTime()
                     consider(guid)
                 end
             end
+        end
+    end
+
+    -- Seen on a nameplate a moment ago, off screen now: still counted while it
+    -- exists, is hostile, alive and inside the radius (consider checks all of
+    -- that live). Older entries are dropped.
+    local now = GetTime()
+    for guid, t in pairs(self.recentEnemies) do
+        if now - t > ENEMY_RECENT_SECS then
+            self.recentEnemies[guid] = nil
+        else
+            consider(guid)
         end
     end
 
