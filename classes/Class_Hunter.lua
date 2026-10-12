@@ -713,22 +713,28 @@ end
 -- ClassicAPI answer), not of any one mob, so it is kept for the session.
 M.debuffSeen = {}
 
--- May Lacerate be tried right now? Yes once a crit of ours has landed since the
--- last time the client refused it. The refusal is read the same way the throttle
--- reads it: any refusal naming Lacerate after the send.
+-- May Lacerate be tried right now? The same rule as Kill Command: armed by a
+-- crit of ours on the target landing AFTER the last send, whether that send
+-- went through or was refused.
+--
+-- It used to be disarmed only by a refusal. A send that went through left it
+-- armed, so the next one went out without a new crit and was refused - most of
+-- the 29 "You can't do that yet" lines in a Survival log of sixteen minutes.
 function M:LacerateArmed()
     -- The button first, as for Kill Command: a log had 22 of 215 Lacerates
     -- refused as "not yet" on the crit-line reading.
     local b = self:ReactiveReady("Lacerate", self.lacerateSentAt)
     if b ~= nil then return b end
-    local sent = self.lacerateSentAt
-    if sent and Aegis_SBR.SpellRefusedAnySince and Aegis_SBR:SpellRefusedAnySince("Lacerate", sent) then
-        self.lacerateDisarmedAt = sent
-        self.lacerateSentAt = nil
-    end
-    local dis = self.lacerateDisarmedAt
-    if not dis then return true end
-    return (M.lastCritAt or 0) > dis
+    if (M.lastCritAt or 0) <= (self.lacerateSentAt or 0) then return false end
+    return M.lastCritName ~= nil and M.lastCritName == UnitName("target")
+end
+
+-- For the trace: which reading decides, whether it is armed, and the cooldown.
+function M:LacerateText()
+    local armed = self:LacerateArmed()
+    local r = self.reactive["Lacerate"]
+    return ((r and r.byButton) and "btn" or "log") .. (armed and "+" or "-")
+        .. "/" .. (self:IsReady("Lacerate") and "rdy" or "cd")
 end
 
 -- Volley is aimed at the ground, and the placement - under the mouse, only
@@ -1299,6 +1305,7 @@ function M:Rotate(cfg)
             .. " inMelee=" .. (inMeleeNow and "Y" or "n")
             .. " mark=" .. (cfg.useHuntersMark and (self:DebuffUpAny("Hunter's Mark") and "Y" or "n") or "-")
             .. (cfg.useKillCommand and (" kc=" .. self:KillCommandText()) or "")
+            .. ((cfg.useLacerate and self:KnowsSpell("Lacerate")) and (" lac=" .. self:LacerateText()) or "")
             .. " ttk=" .. (Aegis_SBR:TargetTTK() and string.format("%.0fs", Aegis_SBR:TargetTTK()) or "?")
             .. (cfg.useDebuffTTK and ((markWorth and "" or " markSkip") .. (self:LivesFor(cfg, cfg.stingMinTTK) and "" or " stingSkip")) or "")
             -- Seconds still to run on each reapply throttle, which is the one
@@ -1537,8 +1544,9 @@ function M:Rotate(cfg)
         -- With "Lacerate before Mongoose Bite" the bleed goes first (strong
         -- gear makes it the bigger hit); by default the Bite leads.
         local function lacerate()
-            if cfg.useLacerate and self:KnowsSpell("Lacerate") and self:LacerateArmed() then
-                if self:MaintainDebuff("Lacerate", 8) then
+            if cfg.useLacerate and self:KnowsSpell("Lacerate") and self:LacerateArmed()
+                and self:IsReady("Lacerate") then
+                if self:Pick("Lacerate", "after a crit") then
                     self:Later(function() self.lacerateSentAt = GetTime() end)
                     return true
                 end
@@ -1550,15 +1558,19 @@ function M:Rotate(cfg)
             and self:IsReady("Mongoose Bite") then
             if self:Pick("Mongoose Bite", "on cooldown") then return end
         end
-        -- Lacerate bleed upkeep. The tooltip on this client: an 8 second bleed on
-        -- a 10 second cooldown, usable only after critically striking the target.
+        -- Lacerate. The tooltip on this client: 40% of melee attack power as a
+        -- hit, plus a bleed of 20% of that hit over 8 seconds, on a 10 second
+        -- cooldown, usable only after critically striking the target.
         --
-        -- The cooldown outlasts the bleed, so "when it falls off" and "when it is
-        -- ready" are the same moment, and upkeep by debuff is the right shape.
-        -- The crit requirement is the part that needs evidence: offered without
-        -- it, Lacerate took the press and was refused on every one until a crit
-        -- happened to land. So it is ARMED by a crit of ours and DISARMED by a
-        -- refusal - each refusal waits for the next crit, no guessed window.
+        -- The hit is the damage, so it is sent on its cooldown whenever a crit
+        -- has armed it - not kept up as a debuff. As a debuff upkeep it checked
+        -- no cooldown at all: whenever the bleed was not read on the target it
+        -- was re-sent every 1.5 seconds through the whole cooldown, the client
+        -- answered "not ready yet" (which is not traced), and a Survival log had
+        -- 148 of 244 sends come 1.5 seconds after the previous one.
+        --
+        -- ARMED by a crit of ours on the target after the last send; see
+        -- LacerateArmed.
         if not cfg.lacerateFirst and lacerate() then return end
         -- Carve as a single-target filler, BELOW every rotational attack, so it
         -- can only take a press nothing else wanted. Requested from play.

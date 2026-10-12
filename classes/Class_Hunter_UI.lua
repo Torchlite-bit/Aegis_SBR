@@ -228,8 +228,8 @@ function M:BuildBody(ui, parent)
     wingTip(self.wingRow); wingTip(self.wingRow2)
     ui:Tip(self.smartRow.cb, "Smart single/AoE", "The single macro switches to the AoE column by itself from this many enemies, and back below it. Needs enemy nameplates shown (V): without them there is no count and the single macro stays single.", "The AoE macro still forces AoE, so two macros keep working as before.")
     ui:Tip(self.smartRow.slider, "Enemies for AoE", "Enemies near you from which the AoE column is used: in melee range for a hunter in melee, in shot range otherwise.")
-    ui:Tip(self.lacFirstRow.cb, "Lacerate before Mongoose Bite", "The bleed ahead of the Bite. Worth it with strong gear (Naxxramas and above); off, Mongoose Bite leads.")
-    ui:TipRow(self.lacerateRow, "Lacerate", "An 8 second bleed on a 10 second cooldown, re-applied when it falls off.", "Only usable after you critically strike the target: it is armed by a crit of yours and stands down again when the client refuses it, until the next crit.")
+    ui:Tip(self.lacFirstRow.cb, "Lacerate before Mongoose Bite", "Lacerate ahead of the Bite. Worth it with strong gear (Naxxramas and above); off, Mongoose Bite leads.")
+    ui:TipRow(self.lacerateRow, "Lacerate", "A hit for 40% of melee attack power plus a short bleed, used on its 10 second cooldown.", "Only usable after you critically strike the target: each crit of yours on the target allows one Lacerate.")
     ui:TipRow(self.carveRow, "Carve", "Melee cone. Leads the melee attacks on an AoE press; a single-target filler otherwise.")
 
     -- The AoE column, one tooltip for all of it.

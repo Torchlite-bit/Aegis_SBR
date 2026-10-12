@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.47",
+    ver = "1.2.48",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -985,6 +985,14 @@ end
 function Aegis_SBR:TargetDebuffUp(name, texFrag)
     local up = self:ScanTargetDebuff(name, texFrag)
     return up
+end
+
+-- How many debuffs the target carries (from the same snapshot).
+function Aegis_SBR:TargetDebuffCount()
+    if not (self.tdebuffSnap and self.tdebuffSnapT == GetTime()) then
+        self:SnapshotTargetDebuffs()
+    end
+    return table.getn(self.tdebuffSnap.list)
 end
 
 function Aegis_SBR:TargetDebuffStacks(name, texFrag)

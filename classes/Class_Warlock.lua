@@ -328,6 +328,7 @@ wlCastEventFrame:SetScript("OnEvent", function()
     if event == "PLAYER_REGEN_ENABLED" then
         M.dotImmune = {}
         M.dotLanded = {}
+        M.dotSeenOn = {}
         return
     end
     if event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
@@ -1574,6 +1575,10 @@ end
 -- call every DoT immune after two casts.
 M.dotLanded = {}
 M.dotSeenEver = {}
+-- Our DoT read back on this target at least once, by "target|spell".
+M.dotSeenOn = {}
+-- A target carries at most this many debuffs (Turtle WoW).
+local DEBUFF_CAP = 16
 
 -- Immunity with no message. Some mobs take a DoT's cast - the client confirms
 -- it, mana is spent - and never carry the debuff, and say nothing: reported on
@@ -1687,9 +1692,22 @@ end
 
 function M:ApplyDot(spellName, texFrag, interval)
     interval = interval or 3
+    local dotKey = tostring(self:TargetId()) .. "|" .. spellName
     if self:TargetDebuffUp(spellName, texFrag) and self:DotIsMine(spellName) then
         self.dotSeenEver[spellName] = true
-        self.dotLanded[tostring(self:TargetId()) .. "|" .. spellName] = nil
+        self.dotLanded[dotKey] = nil
+        self.dotSeenOn[dotKey] = true
+        return "up"
+    end
+    -- Pushed off by the debuff limit: ours was on this target and should still
+    -- be running (the ledger says so), but it is gone and the target is full.
+    -- In a larger group every new debuff from somebody else pushes one off, and
+    -- recasting ours only pushes it off again - reported as Siphon Life cast
+    -- over and over. It is left until its own duration would have ended; a
+    -- free slot ends the hold at once.
+    if self.dotSeenOn[dotKey] and Aegis_SBR:DebuffMine(spellName, self:TargetId())
+        and Aegis_SBR:TargetDebuffCount() >= DEBUFF_CAP then
+        if self:Tracing() then self:Trace(spellName .. " pushed off, target at the debuff limit") end
         return "up"
     end
     -- Immune to this one: report it as handled so the DoT chain moves on to the

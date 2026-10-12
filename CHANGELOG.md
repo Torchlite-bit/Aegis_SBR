@@ -4,6 +4,35 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.48 — Lacerate on its cooldown, once per crit; DoTs at the debuff limit
+
+### 🐛 Hunter (Survival)
+
+- **Lacerate is no longer re-sent during its cooldown.** It was handled as a bleed to keep up
+  and checked no cooldown: whenever the bleed was not read on the target, it was sent again
+  every 1.5 seconds for the whole 10 second cooldown. In a Survival log of sixteen minutes,
+  148 of 244 sends came 1.5 seconds after the previous one. Lacerate is now sent when it is
+  ready and armed. Its damage is mainly the hit (40% of melee attack power); the bleed is 20%
+  of that hit over 8 seconds.
+- **One Lacerate per crit.** Lacerate is only usable after a critical strike on the target.
+  Without its action button, a send that went through did not use up the crit, so the next
+  one went out without a new crit and was refused as "You can't do that yet". Each send now
+  waits for the next crit of yours on the target, the same rule Kill Command already follows.
+- **Trace:** the per-press line shows `lac=` with the reading (button or crit lines), whether
+  Lacerate is armed, and its cooldown.
+
+### 🐛 Warlock
+
+- **No DoT loop at the debuff limit.** A target carries at most 16 debuffs. In a larger group
+  other players' debuffs pushed a DoT of ours off, the rotation read it as missing and recast
+  it, and the next debuff pushed it off again - reported as Siphon Life cast over and over,
+  with the next-ability window showing it each time. A DoT that was on this target, should
+  still be running and is gone while the target is full is now left until its own duration
+  would have ended; a free slot ends the hold at once. Applies to every warlock DoT. The trace
+  says `pushed off, target at the debuff limit`.
+
+---
+
 ## v1.2.47 — far members out of range, mobs behind you still counted
 
 ### 🐛 Healers (Priest, Paladin, Druid, Shaman)
