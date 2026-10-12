@@ -4,7 +4,7 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
-## v1.2.48 — Lacerate on its cooldown, once per crit
+## v1.2.48 — Lacerate on its cooldown, once per crit; DoTs at the debuff limit
 
 ### 🐛 Hunter (Survival)
 
@@ -20,6 +20,16 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
   waits for the next crit of yours on the target, the same rule Kill Command already follows.
 - **Trace:** the per-press line shows `lac=` with the reading (button or crit lines), whether
   Lacerate is armed, and its cooldown.
+
+### 🐛 Warlock
+
+- **No DoT loop at the debuff limit.** A target carries at most 16 debuffs. In a larger group
+  other players' debuffs pushed a DoT of ours off, the rotation read it as missing and recast
+  it, and the next debuff pushed it off again - reported as Siphon Life cast over and over,
+  with the next-ability window showing it each time. A DoT that was on this target, should
+  still be running and is gone while the target is full is now left until its own duration
+  would have ended; a free slot ends the hold at once. Applies to every warlock DoT. The trace
+  says `pushed off, target at the debuff limit`.
 
 ---
 

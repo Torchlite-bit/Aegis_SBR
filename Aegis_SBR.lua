@@ -987,6 +987,14 @@ function Aegis_SBR:TargetDebuffUp(name, texFrag)
     return up
 end
 
+-- How many debuffs the target carries (from the same snapshot).
+function Aegis_SBR:TargetDebuffCount()
+    if not (self.tdebuffSnap and self.tdebuffSnapT == GetTime()) then
+        self:SnapshotTargetDebuffs()
+    end
+    return table.getn(self.tdebuffSnap.list)
+end
+
 function Aegis_SBR:TargetDebuffStacks(name, texFrag)
     local up, st = self:ScanTargetDebuff(name, texFrag)
     if up then return st or 0 end
