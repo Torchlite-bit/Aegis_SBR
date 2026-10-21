@@ -19,11 +19,18 @@ function M:BuildBody(ui, parent)
     L:MacroNote()
 
     L:Header("Damage over time")
-    self.immoRow = L:Row{ key = "useImmolate", label = "Immolate", spell = "Immolate", onToggle = set("useImmolate") }
-    self.corrRow = L:Row{ key = "useCorruption", label = "Corruption", spell = "Corruption", onToggle = set("useCorruption") }
-    self.siphRow = L:Row{ key = "useSiphonLife", label = "Siphon Life", spell = "Siphon Life", onToggle = set("useSiphonLife") }
+    -- Each DoT carries its place in the order (1 first) on the slider.
+    local function order(key, field) return { key = key, min = 1, max = 5, step = 1, onChange = set(field) } end
+    self.immoRow = L:Row{ key = "useImmolate", label = "Immolate", spell = "Immolate", onToggle = set("useImmolate"),
+        slider = order("ordImmolate", "orderImmolate") }
+    self.corrRow = L:Row{ key = "useCorruption", label = "Corruption", spell = "Corruption", onToggle = set("useCorruption"),
+        slider = order("ordCorruption", "orderCorruption") }
+    self.siphRow = L:Row{ key = "useSiphonLife", label = "Siphon Life", spell = "Siphon Life", onToggle = set("useSiphonLife"),
+        slider = order("ordSiphonLife", "orderSiphonLife") }
     self.curseDD = L:Dropdown("curse", "Curse", 200, set("curse"))
-    self.coaRow = L:Row{ key = "coaSecondary", label = "Keep Curse of Agony up too (Malediction)", spell = "Curse of Agony", onToggle = set("coaSecondary") }
+    self.curseOrderRow = L:Row{ label = "Curse: place in the order", slider = order("ordCurse", "orderCurse") }
+    self.coaRow = L:Row{ key = "coaSecondary", label = "Keep Curse of Agony up too (Malediction)", spell = "Curse of Agony", onToggle = set("coaSecondary"),
+        slider = order("ordCoaSecondary", "orderCoaSecondary") }
 
     L:Header("Filler and pet")
     self.fillerDD = L:Dropdown("filler", "Filler", 200, set("filler"))
@@ -79,9 +86,12 @@ function M:BuildBody(ui, parent)
 
     L:Finish()
 
-    ui:Tip(self.immoRow.cb, "Immolate", "Direct fire damage plus a fire damage over time.", "Kept up first in the priority.")
-    ui:Tip(self.corrRow.cb, "Corruption", "Shadow damage over time, applied after the curse.")
+    ui:Tip(self.immoRow.cb, "Immolate", "Direct fire damage plus a fire damage over time.")
+    ui:Tip(self.corrRow.cb, "Corruption", "Shadow damage over time.")
     ui:Tip(self.siphRow.cb, "Siphon Life", "Shadow damage over time that also heals you.")
+    for _, row in ipairs({ self.immoRow, self.corrRow, self.siphRow, self.curseOrderRow, self.coaRow }) do
+        ui:Tip(row.slider, "Place in the DoT order", "1 goes on first. The missing DoT with the lowest number is applied first; equal numbers keep the default order.", "Default: Immolate 1, curse 2, Corruption 3, Siphon Life 4, the Malediction Curse of Agony 5.")
+    end
     ui:Tip(self.curseDD, "Curse", "One curse per target. Curse of Agony has exact upkeep,", "others are reapplied on a timer for now.")
     ui:Tip(self.coaRow.cb, "Keep Curse of Agony up too", "Malediction lets Curse of Agony run beside your main curse but it expires sooner.", "When on, only Curse of Agony is recast as it falls off. Not used with Curse of Doom or when it already is the main curse.")
     ui:Tip(self.fillerDD, "Filler", "Used when every enabled DoT is up.", "Wand conserves mana, Shadow Bolt and Drain Life spend it. Drain Soul is for a low-level warlock with no wand: a channel, so it yields whenever a DoT would lapse during it.")
@@ -169,6 +179,15 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.corrRow, buf.useCorruption)
     ui:BindCheck(self.siphRow, buf.useSiphonLife)
     ui:BindCheck(self.coaRow, buf.coaSecondary)
+    local function bindOrder(row, v, on)
+        row.slider:SetValue(v); row.slider.valText:SetText("#" .. v)
+        ui:SliderEnable(row.slider, on and true or false)
+    end
+    bindOrder(self.immoRow, buf.orderImmolate or 1, buf.useImmolate)
+    bindOrder(self.curseOrderRow, buf.orderCurse or 2, (buf.curse or "") ~= "")
+    bindOrder(self.corrRow, buf.orderCorruption or 3, buf.useCorruption)
+    bindOrder(self.siphRow, buf.orderSiphonLife or 4, buf.useSiphonLife)
+    bindOrder(self.coaRow, buf.orderCoaSecondary or 5, buf.coaSecondary)
     -- The secondary Curse of Agony is pointless when it already is the main
     -- curse and impossible with Curse of Doom, so grey it out in those cases.
     if buf.curse == "Curse of Agony" or buf.curse == "Curse of Doom" then

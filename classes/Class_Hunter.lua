@@ -29,7 +29,7 @@ local M = Aegis_SBR:NewClassModule("HUNTER")
 M.uiTitle = "Hunter"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 1326
+M.uiHeight = 1354
 M.meleeAutoAttack = false   -- managed here: Auto Shot (ranged) or Attack (melee)
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
@@ -55,7 +55,8 @@ local STING_HP_FLOOR = 30
 -- already in flight and immediately competes for the one queue slot.
 local STING_QUEUE_HOLD = 1.5
 -- Arcane Shot is mana-inefficient, so the stationary filler only fires above this
--- mana% (it always fires while moving, when Auto Shot cannot).
+-- mana% (it always fires while moving, when Auto Shot cannot). The default of
+-- the panel's "Arcane Shot above mana" slider (cfg.arcaneManaFloor).
 local ARCANE_MANA_FLOOR = 50
 
 -- The mana-regenerating aspect. Turtle teaches Aspect of the Viper at level 56;
@@ -258,6 +259,8 @@ function M:NormalizeProfile(c)
         smartAoe = false, smartAoeN = 3,
         -- Survival: Lacerate ahead of Mongoose Bite (strong gear).
         lacerateFirst = false,
+        -- Arcane Shot as a filler only above this mana (0 = always).
+        arcaneManaFloor = ARCANE_MANA_FLOOR,
     }
     for k, v in pairs(b) do
         if c[k] == nil then c[k] = v end
@@ -1646,7 +1649,7 @@ function M:Rotate(cfg)
     if cfg.useArcaneShot and self:KnowsSpell("Arcane Shot") and self:IsReady("Arcane Shot") then
         local autoStale = not (self.lastAutoShot and self.lastAutoShot > 0
             and (now - self.lastAutoShot) < (self:RangedSpeed() + 1.0))
-        if (self:ManaPct() >= ARCANE_MANA_FLOOR and room) or autoStale then
+        if (self:ManaPct() >= (cfg.arcaneManaFloor or ARCANE_MANA_FLOOR) and room) or autoStale then
             if self:Queue("Arcane Shot", "instant filler") then return end
         end
     end

@@ -102,6 +102,8 @@ function M:BuildBody(ui, parent)
     self.markRow   = both("r_mark", "useHuntersMark", "Hunter's Mark", "Hunter's Mark")
     self.steadyRow = both("r_steady", "useSteadyShot", "Steady Shot", "Steady Shot")
     self.arcaneRow = both("r_arcane", "useArcaneShot", "Arcane Shot", "Arcane Shot")
+    self.arcaneManaRow = L:Row{ label = "Arcane Shot above mana",
+        slider = { key = "arcaneManaFloor", min = 0, max = 100, step = 5, suffix = "%", onChange = set("arcaneManaFloor") } }
     self.multiRow  = both("r_multi", "useMultiShot", "Multi-Shot", "Multi-Shot")
     self.aimedRow  = both("r_aimed", "useAimedShot", "Aimed Shot", "Aimed Shot")
     self.volleyRow = both("r_volley", "useVolley", "Volley", "Volley")
@@ -210,6 +212,7 @@ function M:BuildBody(ui, parent)
     ui:TipRow(self.steadyRow, "Steady Shot", "The 1:1 weave after each Auto Shot and the main filler. Queued so it does not clip the shot.")
     local function arcaneTip(row) ui:Tip(row.cb, "Arcane Shot", "Filler: only where it leaves a global cooldown of room before the next Auto Shot, so the Steady weave is never delayed.") end
     arcaneTip(self.arcaneRow); arcaneTip(self.arcaneRow2)
+    ui:Tip(self.arcaneManaRow.slider, "Arcane Shot above mana", "Arcane Shot goes out as a filler only while your mana is at least this. 0 = at any mana.", "While moving or out of Auto Shot range, and as a finisher on a low target, it ignores this line.")
     local function multiTip(row) ui:Tip(row.cb, "Multi-Shot", "AoE: on cooldown, ahead of Steady Shot. Single target: filler below Kill Command and Steady Shot, only with room before the next Auto Shot.") end
     multiTip(self.multiRow); multiTip(self.multiRow2)
     ui:TipRow(self.aimedRow, "Aimed Shot", "Only fired when Lock and Load procs (cast time drop + line cleave), so it never clips Auto Shot.")
@@ -318,6 +321,10 @@ function M:RefreshBody(ui, buf)
     b2(self.markRow, "useHuntersMark");     b2(self.markRow2, "useHuntersMark")
     b2(self.steadyRow, "useSteadyShot")
     b2(self.arcaneRow, "useArcaneShot");    b2(self.arcaneRow2, "useArcaneShot")
+    local amf = get("arcaneManaFloor") or 50
+    self.arcaneManaRow.slider:SetValue(amf)
+    if self.arcaneManaRow.slider.valText then self.arcaneManaRow.slider.valText:SetText(amf .. "%") end
+    ui:SliderEnable(self.arcaneManaRow.slider, get("useArcaneShot") and true or false)
     b2(self.multiRow, "useMultiShot");      b2(self.multiRow2, "useMultiShot")
     b2(self.aimedRow, "useAimedShot")
     b2(self.volleyRow, "useVolley")
