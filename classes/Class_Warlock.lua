@@ -47,7 +47,7 @@ local M = Aegis_SBR:NewClassModule("WARLOCK")
 M.uiTitle = "Warlock"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 1022
+M.uiHeight = 1050
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Talent that turns on the free instant Shadow Bolt proc (Shadow Trance).
@@ -574,6 +574,12 @@ function M:NormalizeProfile(c)
     if c.curse == nil then c.curse = "Curse of Agony" end
     if c.useCorruption == nil then c.useCorruption = true end
     if c.useSiphonLife == nil then c.useSiphonLife = false end
+    -- DoT order, 1 first. Equal numbers keep the order listed here.
+    if c.orderImmolate == nil then c.orderImmolate = 1 end
+    if c.orderCurse == nil then c.orderCurse = 2 end
+    if c.orderCorruption == nil then c.orderCorruption = 3 end
+    if c.orderSiphonLife == nil then c.orderSiphonLife = 4 end
+    if c.orderCoaSecondary == nil then c.orderCoaSecondary = 5 end
     if c.filler == nil then c.filler = "Shoot" end
     if c.petAttack == nil then c.petAttack = true end
     if c.petMeleeOnly == nil then c.petMeleeOnly = false end
@@ -2477,16 +2483,17 @@ function M:Rotate(cfg)
     --     the head start; Curse of the Elements/Shadow amplify damage taken and
     --     are applied per tick (not snapshot at cast), so landing them before
     --     the DoTs means every later tick is already buffed.
-    --  3. Siphon Life. It only pays its mana back if it runs most of its 30s,
-    --     so a late application is a straight loss - it has to go on early.
-    --  4. The Malediction Curse of Agony, back-loaded like the main curse and
-    --     therefore ahead of flat-damage Corruption.
-    --  5. Corruption. Instant and the best damage-per-mana of the set, so it
-    --     loses the least by being applied last.
+    --  3. Corruption. Instant and the strongest of the shadow DoTs, so it goes
+    --     on ahead of Siphon Life (requested by a warlock player; it used to
+    --     come last as the best damage per mana).
+    --  4. Siphon Life.
+    --  5. The Malediction Curse of Agony.
+    -- That is the default. Each DoT has an "order" slider on the panel, and the
+    -- list is sorted by it; equal numbers keep the default order.
     local order = {}
     if cfg.useImmolate and not (cfg.immolateStopHp and cfg.immolateStopHp > 0 and thp < cfg.immolateStopHp)
         and not (cfg.immolateNoAggro and self:HasAggro()) then
-        table.insert(order, { "Immolate", self.dotTex["Immolate"], 3 })
+        table.insert(order, { "Immolate", self.dotTex["Immolate"], 3, cfg.orderImmolate or 1, 1 })
     end
     if cfg.curse ~= "" then
         local tex = self:CurseTex(cfg.curse)
@@ -2494,9 +2501,10 @@ function M:Rotate(cfg)
         -- name resolution); only a curse we cannot see at all falls back to the
         -- 20s blind reapply timer.
         local detectable = tex or Aegis_SBR:CanResolveDebuffNames()
-        table.insert(order, { cfg.curse, tex, detectable and 3 or 20 })
+        table.insert(order, { cfg.curse, tex, detectable and 3 or 20, cfg.orderCurse or 2, 2 })
     end
-    if cfg.useSiphonLife then table.insert(order, { "Siphon Life", self.dotTex["Siphon Life"], 3 }) end
+    if cfg.useCorruption then table.insert(order, { "Corruption", self.dotTex["Corruption"], 3, cfg.orderCorruption or 3, 3 }) end
+    if cfg.useSiphonLife then table.insert(order, { "Siphon Life", self.dotTex["Siphon Life"], 3, cfg.orderSiphonLife or 4, 4 }) end
     -- Malediction secondary curse: with that talent Curse of Agony coexists
     -- with the main curse, but expires sooner and is otherwise unmonitored.
     -- When enabled, keep it up on its own. Skipped if the main curse already
@@ -2506,9 +2514,13 @@ function M:Rotate(cfg)
         and cfg.curse ~= "Curse of Agony" and cfg.curse ~= "Curse of Doom" then
         local coaTex = self:CurseTex("Curse of Agony")
         local coaDetectable = coaTex or Aegis_SBR:CanResolveDebuffNames()
-        table.insert(order, { "Curse of Agony", coaTex, coaDetectable and 3 or 20 })
+        table.insert(order, { "Curse of Agony", coaTex, coaDetectable and 3 or 20, cfg.orderCoaSecondary or 5, 5 })
     end
-    if cfg.useCorruption then table.insert(order, { "Corruption", self.dotTex["Corruption"], 3 }) end
+    -- By the panel's order numbers; a tie keeps the default position (5th field).
+    table.sort(order, function(a, b)
+        if a[4] ~= b[4] then return a[4] < b[4] end
+        return a[5] < b[5]
+    end)
 
     -- Execute phase: stop RE-APPLYING DoTs once the target is nearly dead. A
     -- fresh DoT never pays its mana back on a mob with seconds to live - Siphon

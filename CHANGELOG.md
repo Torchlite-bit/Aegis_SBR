@@ -4,6 +4,27 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.49 — your own DoT order, Arcane Shot at the mana you choose
+
+### 🔧 Warlock
+
+- **Corruption before Siphon Life:** the default DoT order is now Immolate, the curse,
+  Corruption, Siphon Life, the Malediction Curse of Agony. Corruption used to come last as the
+  best damage per mana; a warlock player asked for it ahead of Siphon Life for its damage.
+- **Your own DoT order:** every DoT row in the panel has a *place in the order* slider (1 goes
+  on first), the curse on its own row below the curse dropdown. The missing DoT with the lowest
+  number is applied first; equal numbers keep the default order.
+
+### 🔧 Hunter
+
+- **Arcane Shot above mana** (new slider, default 50%, 0 = always): the mana line for Arcane
+  Shot as a filler was fixed at 50%. Moving, out of Auto Shot range and as a finisher on a low
+  target it still ignores the line. As before it only goes out where its global cooldown
+  leaves room for the next Steady Shot before the next Auto Shot, so with a fast bow it stays
+  rare.
+
+---
+
 ## v1.2.48 — Lacerate on its cooldown, once per crit; DoTs at the debuff limit
 
 ### 🐛 Hunter (Survival)
