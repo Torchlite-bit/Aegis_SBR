@@ -58,6 +58,18 @@ local STING_QUEUE_HOLD = 1.5
 -- mana% (it always fires while moving, when Auto Shot cannot). The default of
 -- the panel's "Arcane Shot above mana" slider (cfg.arcaneManaFloor).
 local ARCANE_MANA_FLOOR = 50
+-- Aimed Shot on cooldown is skipped on a target measured to die sooner.
+local AIMED_MIN_TTK = 5
+
+-- Experimental Ammunition (Marksmanship talent): each Aimed Shot leaves one
+-- effect that empowers the next shot of one kind - Enchanted Ammunition the
+-- next Arcane Shot (+100% damage), Explosive the next Multi-Shot, Poisonous
+-- the next Serpent Sting. The client shows them as DEBUFFS on the hunter,
+-- lasting a minute, until used, or until the next Aimed Shot replaces them.
+local TALENT_EXP_AMMO = "Experimental Ammunition"
+local AMMO_ENCHANTED  = "Enchanted Ammunition"
+local AMMO_EXPLOSIVE  = "Explosive Ammunition"
+local AMMO_POISONOUS  = "Poisonous Ammunition"
 
 -- The mana-regenerating aspect. Turtle teaches Aspect of the Viper at level 56;
 -- below that there is nothing to swap to and this whole branch stays inert,
@@ -188,8 +200,8 @@ M.templates = {
     marksmanship = {
         spec = "mm", rangeSwitch = true,
         useHuntersMark = true, sting = "Serpent Sting",
-        useSteadyShot = true, useArcaneShot = true, useMultiShot = true,
-        useAimedShot = true, aimedOnlyOnProc = true,
+        useSteadyShot = true, useArcaneShot = true, useMultiShot = false,
+        useAimedShot = true, aimedOnlyOnProc = false,
         aoeMode = false, useVolley = false, useImmolationTrap = false, useExplosiveTrap = false,
         useRaptorStrike = false, useMongooseBite = false, useWingClip = false,
         useAspect = true, rangedAspect = "Aspect of the Hawk", meleeAspect = "Aspect of the Wolf",
@@ -225,6 +237,11 @@ M.templates = {
         popCDs = false, autoCDElite = true,
     },
 }
+
+-- Marksmanship tab defaults (single column, then the AoE column); see
+-- NormalizeProfile.
+M.MM_DEFAULTS = { useAimedShot = true, aimedOnlyOnProc = false, useMultiShot = false, useVolley = false }
+M.MM_AOE_DEFAULTS = { useMultiShot = true, useVolley = false }
 
 -- The talent that lets traps be placed in combat. Name as the client shows it.
 local TALENT_UNTAMED_TRAPPER = "Untamed Trapper"
@@ -264,6 +281,19 @@ function M:NormalizeProfile(c)
     }
     for k, v in pairs(b) do
         if c[k] == nil then c[k] = v end
+    end
+    -- The Marksmanship tab's own defaults, after the MM guide the maintainers
+    -- play by: Aimed Shot on its cooldown rather than only on Lock and Load,
+    -- Multi-Shot for packs and not on a single target, no Volley in the fight.
+    -- Written into the tab's layer only where the tab has no value of its own,
+    -- so a switch already flipped there stays as it is.
+    if type(c.mm) ~= "table" then c.mm = {} end
+    if type(c.mm.aoe) ~= "table" then c.mm.aoe = {} end
+    for k, v in pairs(M.MM_DEFAULTS) do
+        if c.mm[k] == nil then c.mm[k] = v end
+    end
+    for k, v in pairs(M.MM_AOE_DEFAULTS) do
+        if c.mm.aoe[k] == nil then c.mm.aoe[k] = v end
     end
     -- Migration from the playstyle field. Melee was Survival; ranged and auto
     -- could be either shooting spec, so the talent tree decides, and the old
@@ -497,6 +527,33 @@ function M:LivesFor(cfg, need)
     local ttk = Aegis_SBR:TargetTTK()
     if ttk then return ttk >= need end
     return self:TargetHPPct() >= 100
+end
+
+-- Is this ammunition effect on the hunter? Read by name from the player's
+-- debuffs (SuperWoW spell id); without the id there is no answer.
+function M:AmmoUp(name)
+    if not SpellInfo then return false end
+    for i = 1, 16 do
+        local tex, _, d3, d4, d5 = UnitDebuff("player", i)
+        if not tex then break end
+        local id
+        if type(d3) == "number" then id = d3
+        elseif type(d4) == "number" then id = d4
+        elseif type(d5) == "number" then id = d5 end
+        if id then
+            if id < -1 then id = id + 65536 end
+            if SpellInfo(id) == name then return true end
+        end
+    end
+    return false
+end
+
+-- For the trace: which ammunition effect is up.
+function M:AmmoText()
+    if self:AmmoUp(AMMO_ENCHANTED) then return "enchanted" end
+    if self:AmmoUp(AMMO_EXPLOSIVE) then return "explosive" end
+    if self:AmmoUp(AMMO_POISONOUS) then return "poisonous" end
+    return "-"
 end
 
 -- May a filler go out now without breaking the weave?
@@ -1309,6 +1366,7 @@ function M:Rotate(cfg)
             .. " mark=" .. (cfg.useHuntersMark and (self:DebuffUpAny("Hunter's Mark") and "Y" or "n") or "-")
             .. (cfg.useKillCommand and (" kc=" .. self:KillCommandText()) or "")
             .. ((cfg.useLacerate and self:KnowsSpell("Lacerate")) and (" lac=" .. self:LacerateText()) or "")
+            .. ((self:TalentRank(TALENT_EXP_AMMO) > 0) and (" ammo=" .. self:AmmoText()) or "")
             .. " ttk=" .. (Aegis_SBR:TargetTTK() and string.format("%.0fs", Aegis_SBR:TargetTTK()) or "?")
             .. (cfg.useDebuffTTK and ((markWorth and "" or " markSkip") .. (self:LivesFor(cfg, cfg.stingMinTTK) and "" or " stingSkip")) or "")
             -- Seconds still to run on each reapply throttle, which is the one
@@ -1625,6 +1683,31 @@ function M:Rotate(cfg)
         end
     end
 
+    -- Aimed Shot on its cooldown, right behind the Steady weave and ahead of the
+    -- fillers - the Marksmanship guide's third step. Only when neither the
+    -- proc-only guard nor the opener mode owns it. Not on a target measured to
+    -- die within AIMED_MIN_TTK: the cast would land on a corpse or barely
+    -- before one. It used to sit below Multi-Shot and Arcane Shot, so with
+    -- either of them on it rarely went out.
+    if cfg.useAimedShot and not cfg.aimedOnlyOnProc and not cfg.useAimedOpener
+        and self:KnowsSpell("Aimed Shot") and self:IsReady("Aimed Shot") then
+        local ttk = Aegis_SBR:TargetTTK()
+        if not (ttk and ttk < AIMED_MIN_TTK) then
+            if self:Queue("Aimed Shot", "on cooldown") then return end
+        end
+    end
+
+    -- Enchanted Ammunition up: the next Arcane Shot deals double damage, so it
+    -- goes ahead of Multi-Shot and at any mana - still only where its global
+    -- cooldown leaves room for the next Steady Shot (the guide: not clipping
+    -- comes first). On an AoE press Multi-Shot has already led above.
+    local expAmmo = self:TalentRank(TALENT_EXP_AMMO) > 0
+    local enchanted = expAmmo and self:AmmoUp(AMMO_ENCHANTED)
+    if enchanted and cfg.useArcaneShot and self:KnowsSpell("Arcane Shot") and self:IsReady("Arcane Shot")
+        and self:FillerRoom(nil, cfg) then
+        if self:Queue("Arcane Shot", "Enchanted Ammunition") then return end
+    end
+
     -- Multi-Shot woven into the post-Steady downtime (single-target burst when you
     -- have the GCDs to spare): Auto Shot -> Steady -> Multi-Shot.
     --
@@ -1649,17 +1732,14 @@ function M:Rotate(cfg)
     if cfg.useArcaneShot and self:KnowsSpell("Arcane Shot") and self:IsReady("Arcane Shot") then
         local autoStale = not (self.lastAutoShot and self.lastAutoShot > 0
             and (now - self.lastAutoShot) < (self:RangedSpeed() + 1.0))
-        if (self:ManaPct() >= (cfg.arcaneManaFloor or ARCANE_MANA_FLOOR) and room) or autoStale then
+        -- With Experimental Ammunition the plain filler stands down: Arcane
+        -- Shot is worth its global cooldown only empowered (see above).
+        local plainOK = not expAmmo
+        if (plainOK and self:ManaPct() >= (cfg.arcaneManaFloor or ARCANE_MANA_FLOOR) and room) or autoStale then
             if self:Queue("Arcane Shot", "instant filler") then return end
         end
     end
 
-    -- Aimed Shot on cooldown ONLY when neither the proc-only guard nor the opener
-    -- mode owns it (it clips Auto Shot otherwise; Lock and Load is the safe path).
-    if cfg.useAimedShot and not cfg.aimedOnlyOnProc and not cfg.useAimedOpener
-        and self:KnowsSpell("Aimed Shot") and self:IsReady("Aimed Shot") then
-        if self:Queue("Aimed Shot", "on cooldown") then return end
-    end
 end
 
 -- ============================================================

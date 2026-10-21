@@ -4,6 +4,28 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.50 — the Marksmanship rotation
+
+### 🔧 Hunter — Marksmanship
+
+Matched against a Marksmanship rotation guide.
+
+- **Aimed Shot on cooldown, ahead of the fillers:** it was the last step, below Multi-Shot and
+  Arcane Shot, so with either on it rarely went out. It now comes right behind the Steady Shot
+  weave, and not on a target measured to die within 5 seconds. Lock and Load still fires it at
+  once.
+- **Enchanted Ammunition:** with Experimental Ammunition talented, the next Arcane Shot after
+  an Aimed Shot that left Enchanted Ammunition deals double damage. That Arcane Shot now goes
+  ahead of Multi-Shot and at any mana, within the room before the next Steady Shot. Without the
+  effect, Arcane Shot is no longer a plain filler for this build (moving, out of Auto Shot range
+  and as a finisher it still goes). The three ammunition effects are read from the debuffs the
+  client puts on the hunter; the trace shows `ammo=`. Builds without the talent are unchanged.
+- **Marksmanship tab defaults:** Aimed Shot on cooldown (*Aimed only on Lock and Load* off),
+  Multi-Shot in the AoE column only, no Volley. Applied only where the tab has no value of its
+  own; the marksmanship template matches.
+
+---
+
 ## v1.2.49 — your own DoT order, Arcane Shot at the mana you choose
 
 ### 🔧 Warlock
