@@ -210,13 +210,13 @@ function M:BuildBody(ui, parent)
     end
     ttkTip(self.ttkMarkRow, self.ttkStingRow); ttkTip(self.ttkMarkRow2, self.ttkStingRow2)
     ui:TipRow(self.steadyRow, "Steady Shot", "The 1:1 weave after each Auto Shot and the main filler. Queued so it does not clip the shot.")
-    local function arcaneTip(row) ui:Tip(row.cb, "Arcane Shot", "Filler: only where it leaves a global cooldown of room before the next Auto Shot, so the Steady weave is never delayed.") end
+    local function arcaneTip(row) ui:Tip(row.cb, "Arcane Shot", "Filler: only where it leaves a global cooldown of room before the next Auto Shot, so the Steady weave is never delayed.", "With Experimental Ammunition talented it goes out only while Enchanted Ammunition is on you - then ahead of Multi-Shot and at any mana. Moving or out of Auto Shot range it still fills.") end
     arcaneTip(self.arcaneRow); arcaneTip(self.arcaneRow2)
     ui:Tip(self.arcaneManaRow.slider, "Arcane Shot above mana", "Arcane Shot goes out as a filler only while your mana is at least this. 0 = at any mana.", "While moving or out of Auto Shot range, and as a finisher on a low target, it ignores this line.")
     local function multiTip(row) ui:Tip(row.cb, "Multi-Shot", "AoE: on cooldown, ahead of Steady Shot. Single target: filler below Kill Command and Steady Shot, only with room before the next Auto Shot.") end
     multiTip(self.multiRow); multiTip(self.multiRow2)
-    ui:TipRow(self.aimedRow, "Aimed Shot", "Only fired when Lock and Load procs (cast time drop + line cleave), so it never clips Auto Shot.")
-    ui:Tip(self.aimedProcRow.cb, "Aimed only on Lock and Load", "Recommended on. Off, Aimed Shot is also hard-cast on cooldown, which clips Auto Shot.")
+    ui:TipRow(self.aimedRow, "Aimed Shot", "Always fired when Lock and Load procs (cast time drop + line cleave). With \"Aimed only on Lock and Load\" off it is also cast on its cooldown, right behind the Steady Shot weave and ahead of the fillers - not on a target measured to die within 5 seconds.")
+    ui:Tip(self.aimedProcRow.cb, "Aimed only on Lock and Load", "On: Aimed Shot only on the Lock and Load proc. Off: also on its cooldown, ahead of Multi-Shot and Arcane Shot.", "The Marksmanship tab defaults to off, as the MM rotation casts Aimed Shot whenever it is ready. The hard cast delays the next Auto Shot.")
     ui:Tip(self.aimedOpenerRow.cb, "Aimed Shot opener", "Open the pull with a hard-cast Aimed Shot before combat, then never clip Auto Shot during the fight.")
     ui:TipRow(self.volleyRow, "Volley", "Lands under the mouse. Hold the mouse on the feet of the pack when pressing; with the mouse off any enemy the press skips Volley.")
     local function immoTip(row) ui:Tip(row.cb, "Immolation Trap", "Dropped on cooldown against a single target.", "In combat only with the Untamed Trapper talent - that is what allows a trap to be placed while fighting. Without it, only on the pull.") end
