@@ -4,6 +4,25 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.52 — Book of Prayer and Inspiration
+
+### 🔧 Priest
+
+- **Book of Prayer:** the talent refunds 30% mana when a healing spell differs from the previous
+  one, but the rotation mostly repeated Heal on steady damage. With the talent, the direct heal
+  above the Flash Heal line is now swapped when it would repeat the last healing spell: Greater
+  Heal and Heal stand in for each other, Flash Heal for both, each downranked and only where its
+  smallest rank does not overheal the deficit. Counted by spell name (the rank does not make it a
+  different spell); Renew and Prayer of Healing count too. A heal the client refuses does not count.
+  Below the Flash Heal line nothing changes. The trace shows `Book of Prayer: X after Y`.
+- **Keep Inspiration on the tank** (new, off by default, mana line 60%): in combat, while no one
+  is under the heal line, a rank 1 Flash Heal goes on the tank while Inspiration is missing on it,
+  so a crit puts the armor buff up. With Book of Prayer it alternates with rank 1 Heal. The tank is
+  the first name on the priority list, else your friendly target. It comes ahead of Lightwell,
+  Holy Nova, Smite and the wand.
+
+---
+
 ## v1.2.51 — pets are healed, trinkets go with the cooldowns
 
 ### 🔧 Priest, Druid, Shaman — pet healing
