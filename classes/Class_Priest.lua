@@ -39,7 +39,7 @@ local M = Aegis_SBR:NewClassModule("PRIEST")
 M.uiTitle = "Priest"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 844
+M.uiHeight = 872
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
@@ -97,6 +97,11 @@ prNukeFrame:SetScript("OnEvent", function()
         -- Pushback moves the end of the cast.
         if M.castUntil then M.castUntil = M.castUntil + (tonumber(arg1) or 0) / 1000 end
     elseif event == "SPELLCAST_FAILED" then
+        -- A heal refused right after it was sent was never cast: Book of
+        -- Prayer still counts the one before it.
+        if M.lastHealT and (now - M.lastHealT) < 0.5 then
+            M.lastHeal = M.healBefore; M.lastHealT = nil
+        end
         local e = M.lastCommit and M.pending[M.lastCommit]
         if e and not e.started then
             -- Refused before it began (another cast running, range, line of
@@ -293,6 +298,12 @@ function M:NormalizeProfile(c)
     -- radius (and the mana above the weave line). Off by default.
     if c.useHolyNova == nil then c.useHolyNova = false end
     if c.holyNovaCount == nil then c.holyNovaCount = 3 end
+    -- Heal mode, nobody hurt: a rank 1 Flash Heal / Heal on the tank (first
+    -- on the priority list, else your friendly target) while Inspiration is
+    -- missing on it and the mana is above the line - a crit puts the armor
+    -- buff up. Off by default: about 7 to 10 casts per proc.
+    if c.useInspiration == nil then c.useInspiration = false end
+    if c.inspirationMana == nil then c.inspirationMana = 60 end
     if c.useLightwell == nil then c.useLightwell = false end
     if c.healPower == nil then c.healPower = 0 end
     return c
@@ -666,6 +677,13 @@ function M:PickRank(baseName, effHeals, manas, deficit, mana)
     return baseName .. "(Rank " .. chosen .. ")", (effHeals[chosen] or 0)
 end
 
+-- Book of Prayer (talent): a healing spell different from the previous one
+-- refunds 30% of its mana. These are the spells it counts.
+local HEAL_SPELLS = { ["Lesser Heal"] = true, ["Heal"] = true, ["Greater Heal"] = true,
+    ["Flash Heal"] = true, ["Renew"] = true, ["Prayer of Healing"] = true }
+local TALENT_BOP = "Book of Prayer"
+local TALENT_INSPIRATION = "Inspiration"
+
 -- Cast a heal on a unit without dropping the current target (SuperWoW unit arg).
 -- Targeted heal. Under a preview it is reported rather than cast; the unit
 -- goes into the reason so the window says who would be healed.
@@ -677,6 +695,14 @@ function M:CastOn(spell, unit, reason)
         return
     end
     Aegis_SBR:NoteUnitCast(unit)
+    -- Book of Prayer: the healing spell sent last, by name (the rank does
+    -- not make it a different spell).
+    local base = string.gsub(spell, "%(Rank %d+%)$", "")
+    if HEAL_SPELLS[base] then
+        self.healBefore = self.lastHeal
+        self.lastHeal = base
+        self.lastHealT = GetTime()
+    end
     -- The spell too: OnCastError compares the two stamps to decide whether a
     -- refusal about a unit really belongs to this cast or to something the
     -- rotation sent afterwards.
@@ -731,7 +757,10 @@ function M:DoHeal(cfg)
             and not self:HasBuff("Inner Focus") then
             self:Pick("Inner Focus", "free cast next"); return true
         end
-        self:Queue("Prayer of Healing", "group healing"); return true
+        if self:Queue("Prayer of Healing", "group healing") and not Aegis_SBR.deciding then
+            self.healBefore = self.lastHeal; self.lastHeal = "Prayer of Healing"; self.lastHealT = GetTime()
+        end
+        return true
     end
 
     -- Emergency, below the Flash Heal line: the shield first - instant, and
@@ -755,6 +784,32 @@ function M:DoHeal(cfg)
         self:CastOn("Renew", unit); return true
     end
 
+    -- Book of Prayer: the direct heal the steps below would choose is swapped
+    -- for another one when it repeats the previous healing spell. Greater
+    -- Heal and Heal stand in for each other, Flash Heal for both - each only
+    -- while its smallest rank does not overheal the deficit.
+    if not emergency and self:TalentRank(TALENT_BOP) > 0 and self.lastHeal then
+        local wantGH = cfg.useGreaterHeal and self:KnowsSpell("Greater Heal") and deficit >= (cfg.greaterHealDeficit or 1000)
+        local nxt = wantGH and "Greater Heal" or "Heal"
+        if nxt == self.lastHeal then
+            local alts = {
+                { "Greater Heal", ghEff, self.GH_MANA, 3.0, cfg.useGreaterHeal },
+                { "Heal", healEff, self.HEAL_MANA, 3.0, true },
+                { "Flash Heal", fhEff, self.FH_MANA, 1.5, cfg.useFlashHeal },
+            }
+            for i = 1, table.getn(alts) do
+                local a = alts[i]
+                if a[1] ~= self.lastHeal and a[5] and self:KnowsSpell(a[1]) and (a[2][1] or 0) <= deficit then
+                    local sp, amt = self:PickRank(a[1], a[2], a[3], deficit, mana)
+                    if sp then
+                        if self:Tracing() then self:Trace("Book of Prayer: " .. a[1] .. " after " .. self.lastHeal) end
+                        self:CommitHeal(unit, amt, a[4]); self:CastOn(sp, unit, "Book of Prayer"); return true
+                    end
+                end
+            end
+        end
+    end
+
     -- Big deficit: Greater Heal, downranked.
     if cfg.useGreaterHeal and self:KnowsSpell("Greater Heal") and deficit >= (cfg.greaterHealDeficit or 1000) then
         local gh, amt = self:PickRank("Greater Heal", ghEff, self.GH_MANA, deficit, mana)
@@ -776,6 +831,43 @@ function M:DoHeal(cfg)
         self:CastOn("Power Word: Shield", unit); return true
     end
     return false
+end
+
+-- The tank for Inspiration: the first name on the priority list when it is
+-- in the group, else a friendly target that is not the priest.
+function M:InspirationUnit(cfg)
+    local list = cfg.healPrioList
+    local first = list and list[1]
+    if first then
+        local units = self:GroupUnits()
+        for i = 1, table.getn(units) do
+            if UnitName(units[i]) == first then return units[i] end
+        end
+    end
+    if UnitExists("target") and UnitIsFriend("player", "target") and UnitIsPlayer("target")
+        and not UnitIsUnit("target", "player") then
+        return "target"
+    end
+    return nil
+end
+
+-- Nobody hurt: a rank 1 heal on the tank to proc Inspiration (armor +25%
+-- for 15 s after a critical Flash Heal, Heal or Greater Heal). Only in
+-- combat, above the mana line, while the buff is missing. With Book of
+-- Prayer, Flash Heal and Heal alternate.
+function M:InspirationStep(cfg)
+    if not cfg.useInspiration or not self.inCombat then return false end
+    if self:TalentRank(TALENT_INSPIRATION) < 1 then return false end
+    if self:ManaPct() < (cfg.inspirationMana or 60) then return false end
+    local u = self:InspirationUnit(cfg)
+    if not u or not UnitExists(u) or UnitIsDeadOrGhost(u) or not self:Reachable(u) then return false end
+    if self:UnitHasAura(u, "Inspiration", false, nil) then return false end
+    if not self:GcdReady() then return true end
+    local sp = "Flash Heal"
+    if not self:KnowsSpell(sp) or (self:TalentRank(TALENT_BOP) > 0 and self.lastHeal == sp) then sp = "Heal" end
+    if not self:KnowsSpell(sp) then return false end
+    self:CastOn(sp .. "(Rank 1)", u, "Inspiration on " .. (UnitName(u) or u))
+    return true
 end
 
 -- The shield can go on this unit: known, no Weakened Soul (the over-bubble
@@ -817,6 +909,7 @@ function M:Rotate(cfg)
         -- open, so the next spell joins Nampower's queue without a gap.
         if self.castUntil and GetTime() < self.castUntil - CAST_QUEUE_WINDOW then return end
         if self:DoHeal(cfg) then return end
+        if self:InspirationStep(cfg) then return end
 
         -- No one needs healing: optional offensive support / maintenance.
         -- Lightwell first (placed when enabled, known, off cooldown, out of

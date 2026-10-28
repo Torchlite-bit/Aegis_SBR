@@ -47,6 +47,8 @@ function M:BuildBody(ui, parent)
     self.healWandRow = L:Row{ key = "healWand", label = "Wand between heals", onToggle = set("healWand") }
     self.holyNovaRow = L:Row{ key = "useHolyNova", label = "Holy Nova between heals, enemies", spell = "Holy Nova", onToggle = set("useHolyNova"),
         slider = { key = "holyNovaCount", min = 1, max = 10, step = 1, onChange = set("holyNovaCount") } }
+    self.inspirationRow = L:Row{ key = "useInspiration", label = "Keep Inspiration on the tank above mana", spell = "Flash Heal", onToggle = set("useInspiration"),
+        slider = { key = "inspirationMana", min = 0, max = 100, step = 5, suffix = "%", onChange = set("inspirationMana") } }
     self.lightwellRow = L:Row{ key = "useLightwell", label = "Place Lightwell", spell = "Lightwell", onToggle = set("useLightwell") }
 
 
@@ -119,6 +121,8 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.healWandRow.cb, "Wand between heals", "When no one needs healing and the weave is off or under its mana line: the wand on your target. No mana is spent, so the five-second rule brings it back.", "A heal that is needed goes first and stops the wand.")
     ui:Tip(self.holyNovaRow.cb, "Holy Nova between heals", "When no one needs healing: Holy Nova while at least the number of enemies on the right stand within 10 yards of you, and your mana is above the weave line. It also heals the group.", "Heals come first. Needs the Holy Nova talent. Without nameplates to count, an enemy target in melee range counts as one.")
     ui:Tip(self.holyNovaRow.slider, "Enemies within 10 yards", "How many enemies must stand around you for Holy Nova.")
+    ui:Tip(self.inspirationRow.cb, "Keep Inspiration on the tank", "In combat, when no one needs healing: a rank 1 Flash Heal or Heal on the tank while Inspiration is missing on it, so a crit puts the armor buff up.", "The tank is the first name on the priority list, else your friendly target. Off by default: a proc takes about 7 to 10 casts. Needs the Inspiration talent. With Book of Prayer the two heals alternate.")
+    ui:Tip(self.inspirationRow.slider, "Inspiration above mana", "Mana percent above which the Inspiration casts go out.")
     ui:Tip(self.lightwellRow.cb, "Place Lightwell", "Place a Lightwell when out of combat, off cooldown, and known.")
 end
 
@@ -185,6 +189,10 @@ function M:RefreshBody(ui, buf)
     local hnc = buf.holyNovaCount or 3
     self.holyNovaRow.slider:SetValue(hnc); self.holyNovaRow.slider.valText:SetText(hnc .. "+")
     ui:SliderEnable(self.holyNovaRow.slider, (buf.healMode and buf.useHolyNova) and true or false)
+    ui:BindCheck(self.inspirationRow, buf.useInspiration, "Flash Heal")
+    local ism = buf.inspirationMana or 60
+    self.inspirationRow.slider:SetValue(ism); self.inspirationRow.slider.valText:SetText(ism .. "%")
+    ui:SliderEnable(self.inspirationRow.slider, (buf.healMode and buf.useInspiration) and true or false)
     ui:BindCheck(self.lightwellRow, buf.useLightwell, "Lightwell")
     -- heal sliders matter in heal mode
     ui:SliderEnable(self.healAtRow.slider, buf.healMode)
