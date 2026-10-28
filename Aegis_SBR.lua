@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.50",
+    ver = "1.2.51",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -392,6 +392,73 @@ function Aegis_SBR:PickExtra(name)
     if self:Tracing() then self:Trace("+ " .. name .. " (off the global cooldown)") end
     CastSpellByName(name)
     return true
+end
+
+-- ============================================================
+-- Trinkets with a "Use:" effect
+--
+-- The two trinket slots (13 and 14), used together with a class's cooldowns
+-- where the panel's "Trinket 1/2 with cooldowns" switch is on. Off by default
+-- and never guessed: many usable trinkets are no damage buff at all (the PvP
+-- insignia, Carrot on a Stick, heals and shields), so whether one belongs in
+-- the rotation is the player's call. A "Use:" line in the item's own tooltip
+-- says whether it can be used at all; the panel greys the row out otherwise.
+-- Not on a target measured to die within TRINKET_MIN_TTK, and like the other
+-- off-GCD extras not while a cast runs (the caller checks that).
+-- ============================================================
+local TRINKET_SLOTS = { 13, 14 }
+local TRINKET_MIN_TTK = 5
+local trinketTip = CreateFrame("GameTooltip", "Aegis_SBR_TrinketScan", nil, "GameTooltipTemplate")
+trinketTip:SetOwner(trinketTip, "ANCHOR_NONE")
+Aegis_SBR.trinketUse = {}   -- item link -> has a "Use:" line
+
+-- Name of the trinket in slot 1 or 2, and whether it has a "Use:" effect.
+function Aegis_SBR:TrinketInfo(i)
+    local slot = TRINKET_SLOTS[i]
+    local link = slot and GetInventoryItemLink("player", slot)
+    if not link then return nil, false end
+    local _, _, name = string.find(link, "%[(.+)%]")
+    local use = self.trinketUse[link]
+    if use == nil then
+        use = false
+        trinketTip:ClearLines()
+        trinketTip:SetInventoryItem("player", slot)
+        for l = 1, trinketTip:NumLines() do
+            local fs = getglobal("Aegis_SBR_TrinketScanTextLeft" .. l)
+            local t = fs and fs:GetText()
+            if t and string.find(t, "^Use:") then use = true; break end
+        end
+        self.trinketUse[link] = use
+    end
+    return name or link, use
+end
+
+function Aegis_SBR:TrinketReady(i)
+    local slot = TRINKET_SLOTS[i]
+    local _, use = self:TrinketInfo(i)
+    if not use then return false end
+    local start, dur, enable = GetInventoryItemCooldown("player", slot)
+    if enable == 0 then return false end
+    if not start or start == 0 then return true end
+    return (start + (dur or 0) - GetTime()) <= 0
+end
+
+-- Use the trinkets switched on in cfg (useTrinket1 / useTrinket2) that are
+-- ready. Off the global cooldown, so it rides along with the press.
+function Aegis_SBR:UseTrinkets(cfg)
+    local ttk = self:TargetTTK()
+    if ttk and ttk < TRINKET_MIN_TTK then return end
+    for i = 1, 2 do
+        if cfg["useTrinket" .. i] and self:TrinketReady(i) then
+            local name = self:TrinketInfo(i)
+            if self.deciding then
+                table.insert(self.decidePlan.extras, name)
+            else
+                if self:Tracing() then self:Trace("+ " .. tostring(name) .. " (trinket " .. i .. ")") end
+                UseInventoryItem(TRINKET_SLOTS[i])
+            end
+        end
+    end
 end
 
 -- Area spells that are aimed at the GROUND - Volley, Blizzard, Flamestrike,
@@ -1989,6 +2056,36 @@ end
 --
 -- Appended rather than interleaved on purpose: within one affliction type the
 -- order decides who is cured first, and a player outranks a pet there.
+-- Pet healing for the priest, druid and shaman, the paladin's model: the
+-- "Pet priority" slider. 0 never heals a pet, 1 (the default) heals one only
+-- when no player is under the heal line - or when it is the target - and 2
+-- ranks pets like players (and lets the priority list put a pet first, like a
+-- tank). Requested by a priest playing beside a hunter, whose pet was never
+-- healed.
+function Aegis_SBR:IsPetToken(u)
+    return u and ((u == "pet") or string.find(u, "^partypet") or string.find(u, "^raidpet")) and true or false
+end
+
+-- The heal candidates: the group, with the pets appended unless the slider
+-- is at 0.
+function Aegis_SBR:HealUnits(cfg, units)
+    if ((cfg and cfg.petPriority) or 1) > 0 then return self:AppendPets(units) end
+    return units
+end
+
+-- A pet ranked apart from the players (slider at 1)?
+function Aegis_SBR:PetRankedApart(cfg, u)
+    return self:IsPetToken(u) and ((cfg and cfg.petPriority) or 1) < 2
+end
+
+-- With no player to heal: may this pet have the cast? At 1 only then, or
+-- whenever it is targeted.
+function Aegis_SBR:PetMayHave(cfg, petU, anyPlayerHurt)
+    if not petU then return false end
+    if UnitExists("target") and UnitIsUnit(petU, "target") then return true end
+    return not anyPlayerHurt
+end
+
 function Aegis_SBR:AppendPets(units)
     if not units then return units end
     local out = {}

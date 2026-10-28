@@ -4,6 +4,26 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.51 — pets are healed, trinkets go with the cooldowns
+
+### 🔧 Priest, Druid, Shaman — pet healing
+
+- **Pets are healed.** Only the paladin healed pets; the other healers only dispelled them,
+  so a priest beside a hunter never healed the pet. The paladin's **Pet priority** slider is now
+  in all three heal panels: 0 never, 1 (default) only when no player is under the heal line or
+  when the pet is your target, 2 like players. At 2 a pet on the priority list is healed first
+  like a tank. Group heal counts (Prayer of Healing, Chain Heal) still count players only.
+
+### 🔧 Hunter — trinkets
+
+- **Trinket 1 / Trinket 2 with cooldowns** (new, off by default): a trinket with a *Use:*
+  effect is used together with Rapid Fire and Bestial Wrath whenever its own cooldown is ready,
+  on the same cooldown setting (every press, or elites and bosses). Not on a target measured to
+  die within 5 seconds, not during a cast. The row shows the trinket's name and is greyed out
+  without a *Use:* effect. The logic sits in the core, so the other classes can follow.
+
+---
+
 ## v1.2.50 — the Marksmanship rotation
 
 ### 🔧 Hunter — Marksmanship

@@ -33,7 +33,7 @@ local M = Aegis_SBR:NewClassModule("DRUID")
 M.uiTitle = "Druid"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 794
+M.uiHeight = 822
 
 -- Each panel tab keeps its own settings layer (Aegis_SBR:TabView): a change
 -- made on one tab stays on that tab.
@@ -153,6 +153,8 @@ function M:NormalizeProfile(c)
     -- list decides who is dispelled first, where order is the only lever.
     if c.healPrio == nil then c.healPrio = false end
     if c.healPrioTarget == nil then c.healPrioTarget = false end
+    -- Pets in the heal list: 0 never, 1 when no player needs it, 2 like players.
+    if c.petPriority == nil then c.petPriority = 1 end
     if type(c.healPrioList) ~= "table" then c.healPrioList = {} end
     -- Dispelling. Off by default: it spends a global cooldown that would
     -- otherwise be a heal, and which afflictions are worth removing is a
@@ -1116,8 +1118,11 @@ function M:CureStep(cfg, worst)
 end
 
 function M:WorstHurt(ratio, cfg)
-    local units = self:GroupUnits()
+    local units = Aegis_SBR:HealUnits(cfg, self:GroupUnits())
     local wU, wDef, wPct, wBest = nil, 0, 1, 0
+    -- A pet ranked apart (Pet priority 1) is kept on its own and only gets the
+    -- cast when no player wants it, or while it is the target.
+    local pU, pDef, pPct, pBest = nil, 0, 1, 0
     for i = 1, table.getn(units) do
         local u = units[i]
         if UnitExists(u) and not UnitIsDeadOrGhost(u) and UnitIsFriend("player", u)
@@ -1134,10 +1139,14 @@ function M:WorstHurt(ratio, cfg)
                 -- than padding a percentage - the same idea in this module's own
                 -- currency.
                 local weight = def * (1 - Aegis_SBR:PrioListHandicap(cfg, u) / 100)
-                if weight > wBest then wU, wDef, wPct, wBest = u, def, pct, weight end
+                if Aegis_SBR:PetRankedApart(cfg, u) then
+                    if weight > pBest then pU, pDef, pPct, pBest = u, def, pct, weight end
+                elseif weight > wBest then wU, wDef, wPct, wBest = u, def, pct, weight end
             end
         end
     end
+    if not wU and Aegis_SBR:PetMayHave(cfg, pU, false) then return pU, pDef, pPct end
+    if wU and pU and UnitExists("target") and UnitIsUnit(pU, "target") then return pU, pDef, pPct end
     return wU, wDef, wPct
 end
 

@@ -39,7 +39,7 @@ local M = Aegis_SBR:NewClassModule("PRIEST")
 M.uiTitle = "Priest"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 816
+M.uiHeight = 844
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
@@ -287,6 +287,8 @@ function M:NormalizeProfile(c)
     -- bring the mana back. Requested for a duo priest healing a paladin.
     if c.healNukeMana == nil then c.healNukeMana = 50 end
     if c.healWand == nil then c.healWand = false end
+    -- Pets in the heal list: 0 never, 1 when no player needs it, 2 like players.
+    if c.petPriority == nil then c.petPriority = 1 end
     -- Heal mode, between heals: Holy Nova with this many enemies within its
     -- radius (and the mana above the weave line). Off by default.
     if c.useHolyNova == nil then c.useHolyNova = false end
@@ -583,8 +585,11 @@ function M:CureStep(cfg, worst)
 end
 
 function M:WorstHurt(ratio, cfg)
-    local units = self:GroupUnits()
+    local units = Aegis_SBR:HealUnits(cfg, self:GroupUnits())
     local bestU, bestPct, bestDef, bestAdj = nil, 1, 0, 99
+    -- A pet ranked apart (Pet priority 1) is kept on its own and only gets the
+    -- cast when no player wants it.
+    local petU, petPct, petDef, petAdj = nil, 1, 0, 99
     for i = 1, table.getn(units) do
         local u = units[i]
         if UnitExists(u) and UnitIsConnected(u) and not UnitIsDeadOrGhost(u)
@@ -597,11 +602,17 @@ function M:WorstHurt(ratio, cfg)
             -- may reorder the queue but never remove anyone from it.
             local adj = pct + (Aegis_SBR:PrioListHandicap(cfg, u) / 100)
             if adj > 1 then adj = 1 end
-            if pct < ratio and adj < bestAdj then
-                bestAdj = adj; bestPct = pct; bestU = u; bestDef = mx - cur
+            if pct < ratio then
+                if Aegis_SBR:PetRankedApart(cfg, u) then
+                    if adj < petAdj then petAdj = adj; petPct = pct; petU = u; petDef = mx - cur end
+                elseif adj < bestAdj then
+                    bestAdj = adj; bestPct = pct; bestU = u; bestDef = mx - cur
+                end
             end
         end
     end
+    if not bestU and Aegis_SBR:PetMayHave(cfg, petU, false) then return petU, petDef, petPct end
+    if bestU and petU and UnitExists("target") and UnitIsUnit(petU, "target") then return petU, petDef, petPct end
     return bestU, bestDef, bestPct
 end
 
