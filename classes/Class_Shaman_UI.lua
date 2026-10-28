@@ -101,6 +101,8 @@ function M:BuildBody(ui, parent)
     L:Header("Heal priority", "restoration")
     self.prioRow = L:Row{ key = "healPrio", label = "Use priority list", onToggle = set("healPrio") }
     self.prioTargetRow = L:Row{ key = "healPrioTarget", label = "Your target first", onToggle = set("healPrioTarget") }
+    self.petPrioRow = L:Row{ label = "Pet priority",
+        slider = { key = "petPriority", min = 0, max = 2, step = 1, suffix = "", onChange = set("petPriority") } }
 
     L:Header("Priority list", "restoration", function()
         return ui.buf and (ui.buf.healPrio or ui.buf.healPrioTarget) and true or false
@@ -128,6 +130,7 @@ function M:BuildBody(ui, parent)
 
     ui:Tip(self.prioRow.cb, "Use priority list", "On a near tie, heal the listed players first: position 1 before position 2, both before anyone unlisted.", "A handicap, not a strict order - position 2 counts as 20%% healthier than it is, unlisted players as 35%%. Somebody in real trouble always outranks a scratched tank, because eligibility reads real health and only the ORDER is adjusted.")
     ui:Tip(self.prioTargetRow.cb, "Your target first", "While you have a friendly target selected it is considered first, ahead of the list.")
+    ui:Tip(self.petPrioRow.slider, "Pet priority", "0 never heal pets, 1 only when no player needs healing, 2 treat pets like players.", "A pet you have targeted is always considered. At 2 a pet on the priority list is healed first like a tank - target it and use Add target.")
     ui:Tip(self.prioAddBtn, "Add target", "Adds your current target to the end of the list.", "Names, not raid slots, so the list survives a regroup. The same list decides who is dispelled first.")
     ui:Tip(self.prioClearBtn, "Clear", "Empties the priority list.")
 
@@ -341,6 +344,13 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.prioRow, buf.healPrio)
 
     ui:BindCheck(self.prioTargetRow, buf.healPrioTarget)
+    local pp = buf.petPriority or 1
+    self.petPrioRow.slider:SetValue(pp)
+    if self.petPrioRow.slider.valText then
+        local lbl = "never"
+        if pp == 1 then lbl = "spare only" elseif pp >= 2 then lbl = "like players" end
+        self.petPrioRow.slider.valText:SetText(lbl)
+    end
     local plist = buf.healPrioList or {}
     for i = 1, table.getn(self.prioBtns) do
         self.prioBtns[i].value:SetText(plist[i] or "|cff666666(empty)|r")

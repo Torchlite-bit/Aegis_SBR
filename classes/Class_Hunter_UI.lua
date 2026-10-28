@@ -179,6 +179,10 @@ function M:BuildBody(ui, parent)
     self.cdRow = L:Row{ key = "popCDs", label = "Pop cooldowns every press", onToggle = set("popCDs") }
     self.cdEliteRow = L:Row{ key = "autoCDElite", label = "Pop on elites and bosses", onToggle = set("autoCDElite") }
     self.rfRow = L:Row{ key = "useRapidFire", label = "Rapid Fire", spell = "Rapid Fire", onToggle = set("useRapidFire") }
+    self.trinketRows = {}
+    for i = 1, 2 do
+        self.trinketRows[i] = L:Row{ key = "useTrinket" .. i, label = "Trinket " .. i, onToggle = set("useTrinket" .. i) }
+    end
 
     -- (7. defensive cooldowns: not built yet - its triggers are still to be
     --  decided. Feign Death cancels everything, so a wrong trigger is worse than
@@ -248,6 +252,9 @@ function M:BuildBody(ui, parent)
     end
 
     ui:Tip(self.kcRow.cb, "Kill Command", "Fired the moment it becomes usable: after you land a critical strike on the current target.")
+    for i = 1, 2 do
+        ui:Tip(self.trinketRows[i].cb, "Trinket " .. i .. " with cooldowns", "Uses the trinket in this slot together with the cooldowns above, whenever its own cooldown is ready - for an attack power or haste trinket such as Devilsaur Eye.", "Off by default: only switch it on for a trinket that belongs in the fight. Greyed out when the trinket has no \"Use:\" effect. Not on a target about to die.")
+    end
     ui:Tip(self.rfRow.cb, "Rapid Fire", "Included when cooldowns fire. At range only - it speeds up ranged attacks and nothing else, so in melee it is kept for when you step back.")
     ui:Tip(self.bwRow.cb, "Bestial Wrath", "Situational: press it yourself when the tank's aggro is safe, or for a fear, sleep or execute phase. Switched on, it fires together with the cooldowns.", "Skipped without a live pet - it grants the pet Scent of Blood.")
     ui:Tip(self.petRow.cb, "Pet attack", "Sends your pet onto the target each press.")
@@ -380,6 +387,14 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.cdRow, get("popCDs"))
     ui:BindCheck(self.cdEliteRow, get("autoCDElite"))
     ui:BindCheck(self.rfRow, get("useRapidFire") ~= false)
+    for i = 1, 2 do
+        local row = self.trinketRows[i]
+        local name, use = Aegis_SBR:TrinketInfo(i)
+        ui:BindCheck(row, get("useTrinket" .. i))
+        row.label:SetText("Trinket " .. i .. ": " .. (name or "none") .. ((name and not use) and " (no use)" or ""))
+        if use then row.cb:Enable(); ui:Color(row.label, ui.COL.white)
+        else row.cb:Disable(); ui:Color(row.label, ui.COL.grey) end
+    end
 end
 
 -- Open the shared window for this class.

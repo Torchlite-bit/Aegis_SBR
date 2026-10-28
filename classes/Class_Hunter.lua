@@ -29,7 +29,7 @@ local M = Aegis_SBR:NewClassModule("HUNTER")
 M.uiTitle = "Hunter"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 1354
+M.uiHeight = 1410
 M.meleeAutoAttack = false   -- managed here: Auto Shot (ranged) or Attack (melee)
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
@@ -1428,6 +1428,8 @@ function M:Rotate(cfg)
             and UnitExists("pet") and not UnitIsDead("pet") then
             self:PickExtra("Bestial Wrath")
         end
+        -- Trinkets with a "Use:" effect, where their switch is on.
+        Aegis_SBR:UseTrinkets(cfg)
     end
     -- Kill Command is rotational for BM: fire in combat (off GCD) once a crit
     -- of ours has armed it - see KillCommandArmed.
