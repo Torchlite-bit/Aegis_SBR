@@ -37,6 +37,8 @@ function M:BuildBody(ui, parent)
         slider = { key = "healThreshold", min = 0, max = 100, step = 5, suffix = "%", onChange = set("healThreshold") } }
     self.flashHealRow = L:Row{ key = "useFlashHeal", label = "Flash Heal", spell = "Flash Heal", onToggle = set("useFlashHeal"),
         slider = { key = "flashHealPct", min = 0, max = 100, step = 5, suffix = "%", onChange = set("flashHealPct") } }
+    self.lesserHealRow = L:Row{ key = "useLesserHeal", label = "Lesser Heal above", spell = "Lesser Heal", onToggle = set("useLesserHeal"),
+        slider = { key = "lesserHealPct", min = 0, max = 100, step = 5, suffix = "%", onChange = set("lesserHealPct") } }
     self.greaterHealRow = L:Row{ key = "useGreaterHeal", label = "Greater Heal", spell = "Greater Heal", onToggle = set("useGreaterHeal") }
     self.pwShieldRow = L:Row{ key = "usePWShield", label = "Power Word: Shield", spell = "Power Word: Shield", onToggle = set("usePWShield") }
     self.renewRow = L:Row{ key = "useRenew", label = "Renew", spell = "Renew", onToggle = set("useRenew") }
@@ -110,6 +112,8 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.useWandRow.slider, "Wand below mana", "Your mana percent under which the filler drops to the wand to let mana regenerate.")
     ui:Tip(self.healAtRow.slider, "Heal members below", "Members below this health get healed; lower ranks are chosen for small deficits.")
     ui:Tip(self.flashHealRow.cb, "Flash Heal", "Fast, expensive heal reserved for emergencies so it does not drain your mana.")
+    ui:Tip(self.lesserHealRow.cb, "Lesser Heal above", "Members under the heal line but above this health get Lesser Heal (downranked, usually rank 3) instead of Heal or Greater Heal.", "Cheap and efficient with +healing. Below the line Heal and Greater Heal take over, below the Flash Heal line the shield and Flash Heal. Renew still goes first where it is on.")
+    ui:Tip(self.lesserHealRow.slider, "Lesser Heal above", "Health percent above which Lesser Heal is used.")
     ui:Tip(self.greaterHealRow.cb, "Greater Heal", "Big, slow heal used (downranked) for large deficits.")
     ui:Tip(self.flashHealRow.slider, "Flash only below", "Health percent under which Flash Heal is allowed as an emergency heal.")
     ui:Tip(self.pwShieldRow.cb, "Power Word: Shield", "Below the Flash Heal line: the shield first, then Flash Heal - but only when there is no Weakened Soul, the over-bubble guard.")
@@ -170,6 +174,10 @@ function M:RefreshBody(ui, buf)
     self.flashHealRow.slider:SetValue(buf.flashHealPct or 0); self.flashHealRow.slider.valText:SetText((buf.flashHealPct or 0) .. "%")
     ui:BindCheck(self.flashHealRow, buf.useFlashHeal, "Flash Heal")
     ui:BindCheck(self.greaterHealRow, buf.useGreaterHeal, "Greater Heal")
+    ui:BindCheck(self.lesserHealRow, buf.useLesserHeal, "Lesser Heal")
+    local lhp = buf.lesserHealPct or 80
+    self.lesserHealRow.slider:SetValue(lhp); self.lesserHealRow.slider.valText:SetText(lhp .. "%")
+    ui:SliderEnable(self.lesserHealRow.slider, (buf.healMode and buf.useLesserHeal) and true or false)
     ui:BindCheck(self.pwShieldRow, buf.usePWShield, "Power Word: Shield")
     ui:BindCheck(self.renewRow, buf.useRenew, "Renew")
     ui:BindCheck(self.prayerRow, buf.usePrayer, "Prayer of Healing")

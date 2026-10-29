@@ -4,6 +4,22 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.53 — Lesser Heal band, Flash Heal on real health
+
+### 🔧 Priest
+
+- **Lesser Heal above** (new, off by default, line at 80%): members under the heal line but above
+  this health get downranked Lesser Heal instead of Heal or Greater Heal. Book of Prayer does not
+  swap it. Renew still comes first where it is on. Suggested by a holy priest as the most
+  mana-efficient heal for light damage.
+- **Lesser Heal values:** the rank picker counted every rank with a 1.5 s cast. Each rank now uses
+  its own cast time (1.5 / 2.0 / 2.5 s) and the low-level penalty (learned at 1, 4 and 10), so
+  rank 3 gets about 45% of the +healing bonus.
+- **Flash Heal line on real health:** a heal still on its way lifted the target over the line, so
+  it got Renew instead of the shield and Flash Heal. The emergency now reads the real health.
+
+---
+
 ## v1.2.52 — Book of Prayer and Inspiration
 
 ### 🔧 Priest

@@ -39,7 +39,7 @@ local M = Aegis_SBR:NewClassModule("PRIEST")
 M.uiTitle = "Priest"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 872
+M.uiHeight = 900
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
@@ -162,6 +162,11 @@ M.HEAL_HEAL = { 310, 500, 685, 900 }                              -- Heal
 M.HEAL_MANA = { 155, 205, 255, 305 }
 M.LH_HEAL = { 55, 95, 150 }                                       -- Lesser Heal
 M.LH_MANA = { 30, 45, 65 }
+-- Lesser Heal casts 1.5 / 2.0 / 2.5 s by rank and is learned at levels 1, 4
+-- and 10, so its +healing share is cut by the low-level penalty (3.75% per
+-- level under 20): rank 3 gets about 45% of the bonus.
+M.LH_CAST  = { 1.5, 2.0, 2.5 }
+M.LH_LEVEL = { 1, 4, 10 }
 
 -- ---------- gear +healing scan (own tooltip, unique global name) ----------
 local healScanTip = CreateFrame("GameTooltip", "Aegis_SBR_PriestHealScan", nil, "GameTooltipTemplate")
@@ -304,6 +309,10 @@ function M:NormalizeProfile(c)
     -- buff up. Off by default: about 7 to 10 casts per proc.
     if c.useInspiration == nil then c.useInspiration = false end
     if c.inspirationMana == nil then c.inspirationMana = 60 end
+    -- Heal mode: Lesser Heal for the lightly hurt - between the heal line and
+    -- this health, instead of Heal / Greater Heal. Off by default.
+    if c.useLesserHeal == nil then c.useLesserHeal = false end
+    if c.lesserHealPct == nil then c.lesserHealPct = 80 end
     if c.useLightwell == nil then c.useLightwell = false end
     if c.healPower == nil then c.healPower = 0 end
     return c
@@ -652,6 +661,17 @@ function M:HealMods()
     return 1 + 0.02 * self:TalentRank("Spiritual Healing")
 end
 
+-- Lesser Heal per rank: its own cast time and the low-level penalty.
+function M:LesserHealEffs(mods, healPower)
+    local t = {}
+    for r = 1, table.getn(self.LH_HEAL) do
+        local pen = 1 - (20 - self.LH_LEVEL[r]) * 0.0375
+        if pen < 0 then pen = 0 end
+        t[r] = (self.LH_HEAL[r] + (self.LH_CAST[r] / 3.5) * pen * (healPower or 0)) * mods
+    end
+    return t
+end
+
 function M:EffHeals(baseHeals, coeff, mods, healPower)
     local t = {}
     for r = 1, table.getn(baseHeals) do
@@ -748,6 +768,7 @@ function M:DoHeal(cfg)
     local fhEff   = self:EffHeals(self.FH_HEAL, C15, mods, hp)
     local ghEff   = self:EffHeals(self.GH_HEAL, C30, mods, hp)
     local healEff = self:EffHeals(self.HEAL_HEAL, C30, mods, hp)
+    local lhEff   = self:LesserHealEffs(mods, hp)
 
     -- AoE: Prayer of Healing, fronted by Inner Focus (instant, off-GCD) to wipe
     -- its mana cost. Inner Focus on one press, the prayer on the next.
@@ -768,7 +789,10 @@ function M:DoHeal(cfg)
     -- then Flash Heal (reserved for this so it does not drain the pool on
     -- routine damage). Renew and the shield used to sit behind the direct
     -- heals, which always found an affordable rank, so they never went out.
-    local emergency = pct <= (cfg.flashHealPct or 40) / 100
+    -- Read on the REAL health: a heal still on its way does not lift the
+    -- target out of the emergency (it used to get Renew instead of Flash Heal).
+    local realPct = UnitHealth(unit) / UnitHealthMax(unit)
+    local emergency = realPct <= (cfg.flashHealPct or 40) / 100
     if emergency and cfg.usePWShield and self:ShieldOK(unit) then
         self:CastOn("Power Word: Shield", unit); return true
     end
@@ -782,6 +806,14 @@ function M:DoHeal(cfg)
         and not self:UnitHasAura(unit, "Renew", false, "Spell_Holy_Renew") then
         self.renewThrottle[UnitName(unit) or "?"] = GetTime()
         self:CastOn("Renew", unit); return true
+    end
+
+    -- Lightly hurt, above the Lesser Heal line: Lesser Heal, downranked. Cheap
+    -- enough that Book of Prayer does not swap it.
+    if not emergency and cfg.useLesserHeal and self:KnowsSpell("Lesser Heal")
+        and pct >= (cfg.lesserHealPct or 80) / 100 then
+        local lh, amt = self:PickRank("Lesser Heal", lhEff, self.LH_MANA, deficit, mana)
+        if lh then self:CommitHeal(unit, amt, 2.5); self:CastOn(lh, unit); return true end
     end
 
     -- Book of Prayer: the direct heal the steps below would choose is swapped
@@ -822,7 +854,6 @@ function M:DoHeal(cfg)
     if h then self:CommitHeal(unit, amt, 3.0); self:CastOn(h, unit); return true end
     local fh2, amt2 = self:PickRank("Flash Heal", fhEff, self.FH_MANA, deficit, mana)
     if fh2 then self:CommitHeal(unit, amt2, 1.5); self:CastOn(fh2, unit); return true end
-    local lhEff = self:EffHeals(self.LH_HEAL, C15, mods, hp)
     local lh, amt3 = self:PickRank("Lesser Heal", lhEff, self.LH_MANA, deficit, mana)
     if lh then self:CommitHeal(unit, amt3, 2.0); self:CastOn(lh, unit); return true end
 
