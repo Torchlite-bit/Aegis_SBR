@@ -290,6 +290,11 @@ function M:NormalizeProfile(c)
     if c.useRenew == nil then c.useRenew = true end
     if c.usePrayer == nil then c.usePrayer = false end
     if c.prayerCount == nil then c.prayerCount = 3 end
+    -- Prayer of Healing counts only members below this health (and in a raid
+    -- only your own party, the one it heals).
+    if c.prayerPct == nil then c.prayerPct = 70 end
+    -- The shield only below this health, and only in combat.
+    if c.shieldPct == nil then c.shieldPct = 40 end
     if c.useInnerFocus == nil then c.useInnerFocus = true end
     if c.offensiveWeave == nil then c.offensiveWeave = false end
     -- Heal mode, between heals: Smite / Holy Fire only above this mana, and
@@ -637,8 +642,27 @@ function M:WorstHurt(ratio, cfg)
 end
 
 -- How many reachable members are below ratio (for the AoE heal trigger).
-function M:HurtCount(ratio)
-    local units = self:GroupUnits()
+-- Your own party: the player and, in a raid, the members of the same
+-- subgroup. Prayer of Healing heals only these.
+function M:OwnPartyUnits()
+    local nr = (GetNumRaidMembers and GetNumRaidMembers()) or 0
+    if nr == 0 then return self:GroupUnits() end
+    local me = UnitName("player")
+    local roster, mine = {}, nil
+    for i = 1, nr do
+        local name, _, sub = GetRaidRosterInfo(i)
+        roster[i] = sub
+        if name == me then mine = sub end
+    end
+    local units = {}
+    for i = 1, nr do
+        if roster[i] and roster[i] == mine then table.insert(units, "raid" .. i) end
+    end
+    return units
+end
+
+function M:HurtCount(ratio, units)
+    units = units or self:GroupUnits()
     local n = 0
     for i = 1, table.getn(units) do
         local u = units[i]
@@ -773,7 +797,7 @@ function M:DoHeal(cfg)
     -- AoE: Prayer of Healing, fronted by Inner Focus (instant, off-GCD) to wipe
     -- its mana cost. Inner Focus on one press, the prayer on the next.
     if cfg.usePrayer and self:KnowsSpell("Prayer of Healing")
-        and self:HurtCount(ratio) >= (cfg.prayerCount or 3) then
+        and self:HurtCount((cfg.prayerPct or 70) / 100, self:OwnPartyUnits()) >= (cfg.prayerCount or 3) then
         if cfg.useInnerFocus and self:KnowsSpell("Inner Focus") and self:OwnCDReady("Inner Focus")
             and not self:HasBuff("Inner Focus") then
             self:Pick("Inner Focus", "free cast next"); return true
@@ -793,7 +817,10 @@ function M:DoHeal(cfg)
     -- target out of the emergency (it used to get Renew instead of Flash Heal).
     local realPct = UnitHealth(unit) / UnitHealthMax(unit)
     local emergency = realPct <= (cfg.flashHealPct or 40) / 100
-    if emergency and cfg.usePWShield and self:ShieldOK(unit) then
+    -- The shield on its own line, in combat only: out of combat the 500 mana
+    -- are better spent on a heal.
+    local shieldNow = cfg.usePWShield and self.inCombat and realPct <= (cfg.shieldPct or 40) / 100
+    if emergency and shieldNow and self:ShieldOK(unit) then
         self:CastOn("Power Word: Shield", unit); return true
     end
     if emergency and cfg.useFlashHeal and self:KnowsSpell("Flash Heal") then
@@ -858,7 +885,7 @@ function M:DoHeal(cfg)
     if lh then self:CommitHeal(unit, amt3, 2.0); self:CastOn(lh, unit); return true end
 
     -- No direct heal affordable: the shield still costs less than any of them.
-    if cfg.usePWShield and self:ShieldOK(unit) then
+    if cfg.usePWShield and self.inCombat and self:ShieldOK(unit) then
         self:CastOn("Power Word: Shield", unit); return true
     end
     return false

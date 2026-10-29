@@ -4,6 +4,22 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.54 — shield and Prayer of Healing lines
+
+### 🔧 Priest
+
+- **Power Word: Shield below** (new slider, default 40%): the shield had no line of its own and
+  went out below the Flash Heal line, also out of combat. It now goes out below its own line and
+  only in combat, both in the emergency and when no direct heal is affordable. Between the Flash
+  Heal line and the shield line Flash Heal goes out at once. The line works inside the Flash Heal
+  line.
+- **Prayer of Healing below** (new slider, default 70%): Prayer of Healing went out as soon as 3
+  members were under the normal heal line, so it ran the mana down on light damage. It now counts
+  only members below its own line. In a raid it counted the whole raid; it now counts only your
+  own party, the one it heals.
+
+---
+
 ## v1.2.53 — Lesser Heal band, Flash Heal on real health
 
 ### 🔧 Priest

@@ -40,9 +40,11 @@ function M:BuildBody(ui, parent)
     self.lesserHealRow = L:Row{ key = "useLesserHeal", label = "Lesser Heal above", spell = "Lesser Heal", onToggle = set("useLesserHeal"),
         slider = { key = "lesserHealPct", min = 0, max = 100, step = 5, suffix = "%", onChange = set("lesserHealPct") } }
     self.greaterHealRow = L:Row{ key = "useGreaterHeal", label = "Greater Heal", spell = "Greater Heal", onToggle = set("useGreaterHeal") }
-    self.pwShieldRow = L:Row{ key = "usePWShield", label = "Power Word: Shield", spell = "Power Word: Shield", onToggle = set("usePWShield") }
+    self.pwShieldRow = L:Row{ key = "usePWShield", label = "Power Word: Shield below", spell = "Power Word: Shield", onToggle = set("usePWShield"),
+        slider = { key = "shieldPct", min = 0, max = 100, step = 5, suffix = "%", onChange = set("shieldPct") } }
     self.renewRow = L:Row{ key = "useRenew", label = "Renew", spell = "Renew", onToggle = set("useRenew") }
-    self.prayerRow = L:Row{ key = "usePrayer", label = "Prayer of Healing", spell = "Prayer of Healing", onToggle = set("usePrayer") }
+    self.prayerRow = L:Row{ key = "usePrayer", label = "Prayer of Healing below", spell = "Prayer of Healing", onToggle = set("usePrayer"),
+        slider = { key = "prayerPct", min = 0, max = 100, step = 5, suffix = "%", onChange = set("prayerPct") } }
     self.innerFocusRow = L:Row{ key = "useInnerFocus", label = "Inner Focus", spell = "Inner Focus", onToggle = set("useInnerFocus") }
     self.offensiveRow = L:Row{ key = "offensiveWeave", label = "Weave Smite/Holy Fire above mana", spell = "Smite", onToggle = set("offensiveWeave"),
         slider = { key = "healNukeMana", min = 0, max = 100, step = 5, suffix = "%", onChange = set("healNukeMana") } }
@@ -116,9 +118,11 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.lesserHealRow.slider, "Lesser Heal above", "Health percent above which Lesser Heal is used.")
     ui:Tip(self.greaterHealRow.cb, "Greater Heal", "Big, slow heal used (downranked) for large deficits.")
     ui:Tip(self.flashHealRow.slider, "Flash only below", "Health percent under which Flash Heal is allowed as an emergency heal.")
-    ui:Tip(self.pwShieldRow.cb, "Power Word: Shield", "Below the Flash Heal line: the shield first, then Flash Heal - but only when there is no Weakened Soul, the over-bubble guard.")
+    ui:Tip(self.pwShieldRow.cb, "Power Word: Shield", "In combat, below the health on the right (and the Flash Heal line): the shield first, then Flash Heal - but only when there is no Weakened Soul, the over-bubble guard.", "Never out of combat. Also used when no direct heal is affordable.")
+    ui:Tip(self.pwShieldRow.slider, "Shield below", "Health percent under which the shield goes out. It works inside the Flash Heal line: above that line no shield.")
     ui:Tip(self.renewRow.cb, "Renew", "On a member under the heal line but above the Flash Heal line: Renew first when it is missing, the direct heal on the next press.")
-    ui:Tip(self.prayerRow.cb, "Prayer of Healing", "Group heal when several members are hurt at once.")
+    ui:Tip(self.prayerRow.cb, "Prayer of Healing", "Group heal when at least 3 members of your own party are below the health on the right.", "In a raid only your own party counts - the one Prayer of Healing heals. Above the line the single-target heals take over.")
+    ui:Tip(self.prayerRow.slider, "Prayer of Healing below", "Health percent under which a member counts for Prayer of Healing.")
     ui:Tip(self.innerFocusRow.cb, "Inner Focus on AoE", "Pop Inner Focus before Prayer of Healing to negate its mana cost.")
     ui:Tip(self.offensiveRow.cb, "Weave Smite/Holy Fire", "When no one needs healing, cast Holy Fire and Smite on your target - while your mana is above the value on the right.", "Heals always come first: a Smite or Holy Fire still casting is stopped as soon as somebody drops under the heal line. Skipped in Shadowform. Needs an enemy targeted (or the Assist targeting mode).")
     ui:Tip(self.offensiveRow.slider, "Smite above mana", "Mana percent above which the weave nukes. Below it the wand takes over, if switched on.")
@@ -179,8 +183,14 @@ function M:RefreshBody(ui, buf)
     self.lesserHealRow.slider:SetValue(lhp); self.lesserHealRow.slider.valText:SetText(lhp .. "%")
     ui:SliderEnable(self.lesserHealRow.slider, (buf.healMode and buf.useLesserHeal) and true or false)
     ui:BindCheck(self.pwShieldRow, buf.usePWShield, "Power Word: Shield")
+    local shp = buf.shieldPct or 40
+    self.pwShieldRow.slider:SetValue(shp); self.pwShieldRow.slider.valText:SetText(shp .. "%")
+    ui:SliderEnable(self.pwShieldRow.slider, (buf.healMode and buf.usePWShield) and true or false)
     ui:BindCheck(self.renewRow, buf.useRenew, "Renew")
     ui:BindCheck(self.prayerRow, buf.usePrayer, "Prayer of Healing")
+    local php = buf.prayerPct or 70
+    self.prayerRow.slider:SetValue(php); self.prayerRow.slider.valText:SetText(php .. "%")
+    ui:SliderEnable(self.prayerRow.slider, (buf.healMode and buf.usePrayer) and true or false)
     ui:BindCheck(self.innerFocusRow, buf.useInnerFocus, "Inner Focus")
     ui:BindCheck(self.offensiveRow, buf.offensiveWeave, "Smite")
     local hnm = buf.healNukeMana or 50
