@@ -209,6 +209,7 @@ function M:BuildBody(ui, parent)
     -- not with three unrelated rows in between.
     L:Header("Heal priority", "heal")
     self.prioTargetRow = L:Row{ key = "healPrioTarget", label = "Your target first", onToggle = set("healPrioTarget") }
+    self.listOnlyRow = L:Row{ key = "healListOnly", label = "Heal only the list", onToggle = set("healListOnly") }
     self.aggroRow = L:Row{ key = "healAggro", label = "Prefer who is under attack", onToggle = set("healAggro") }
     self.precastRow = L:Row{ key = "healPrecast", label = "Pre-heal who has aggro", onToggle = set("healPrecast") }
     self.petPrioRow = L:Row{ label = "Pet priority",
@@ -340,6 +341,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.petPrioRow.slider, "Pet priority", "0 never heal pets, 1 only when no player needs healing, 2 treat pets like players.", "A pet you have targeted is always considered, whatever this is set to.")
     ui:Tip(self.ohRow.slider, "Cancel cast at", "Abandon a heal already in flight once this share of it would be pure overheal - somebody else healed first, or the target stopped taking damage.", "0 is off: a started cast always finishes. Cancelling is visible and surprising, so it is opt-in. The mana is saved either way.")
     ui:Tip(self.ohDelayRow.slider, "not before", "Grace period before a cancel may fire, so a cast is never cut the instant it starts.")
+    ui:Tip(self.listOnlyRow.cb, "Heal only the list", "Heal only the players on the priority list below, and yourself - for a raid healer assigned to the main tank.", "Group heals stand down while it is on, since they would heal the others too. With the list empty it heals as usual. Dispelling is not affected.")
     ui:Tip(self.prioTargetRow.cb, "Your target first", "While you have a friendly target selected, it is treated as position 1 - ahead of the list.", "Selecting somebody is the clearest statement of intent there is, so it overrides the list rather than adding to it.")
     ui:Tip(self.aggroRow.cb, "Prefer who is under attack", "A group member something is actually attacking outranks one who is merely sitting at a low bar.", "Aggro is read by chaining unit tokens: the mob a group member is fighting, and who that mob is hitting back. A member losing health also counts, which covers a mob nobody has targeted. It only ever pushes the SAFE down the order.")
     ui:Tip(self.selfRow.slider, "Heal yourself below", "Your own health is only worth a cast below this. 0 treats you like any other group member.", "A healer has more ways out of trouble than anyone else - stepping out of a cleave is often enough - so 70% on yourself is rarely worth the cast that somebody else needs.")
@@ -535,6 +537,7 @@ function M:RefreshBody(ui, buf)
 
     ui:BindCheck(self.prioRow, buf.healPrio)
     ui:BindCheck(self.prioTargetRow, buf.healPrioTarget)
+    ui:BindCheck(self.listOnlyRow, buf.healListOnly)
     ui:BindCheck(self.aggroRow, buf.healAggro)
     ui:BindCheck(self.precastRow, buf.healPrecast)
 

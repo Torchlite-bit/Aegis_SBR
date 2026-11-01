@@ -1,4 +1,4 @@
-# Aegis: Single Button Rotation (v1.2.54)
+# Aegis: Single Button Rotation (v1.2.55)
 
 **One button. Your whole rotation.**
 
@@ -391,6 +391,8 @@ Cat (DPS), Bear (Tank), Balance (Caster/Moonkin), and **Restoration** (group hea
 > **What the client already knows.** Abilities are no longer cast without the weapon they require (*Shield Slam*, *Shield Block* and *Shield Bash* need a shield; *Backstab* and *Ambush* need a dagger), and *Backstab* is no longer chosen from the front — vanilla has no facing API, but UnitXP_SP3 does. Both checks are **three-state**: an item the client has not cached yet, or a locale whose subtype strings are unknown, answers *"cannot tell"* and changes nothing. Refusing an ability because we failed to identify a weapon would be the worse bug.
 
 > **What the client says when it refuses.** A refused cast is the addon's only evidence for several things it cannot ask about directly, so the messages are matched against the client's own strings — both the `SPELL_FAILED_` and the `ERR_` families, since a melee ability answers with the second, and normalised so a trailing period cannot decide it. A refusal about **us** (facing, movement, resources) clears the spell's throttle and nothing more; only a refusal about the **unit** (line of sight, range) can drop somebody from the heal list, and only while the cast on them is the last thing sent. Cooldown refusals are recognised and deliberately acted on by neither: Nampower can answer "not ready yet" for a press it then fires anyway.
+
+> **Heal only the list (Priest, Druid, Shaman, Paladin).** A switch in the heal priority section, off by default: only the players on the priority list and yourself are healed — for a raid healer assigned to the main tank. Group heals (*Prayer of Healing*, *Holy Nova*, *Wild Growth*, *Chain Heal*) stand down while it is on. With the list empty it heals as usual; dispelling is not affected.
 
 > **Pets are healed too (Priest, Druid, Shaman, Paladin).** A **Pet priority** slider in the heal priority section: 0 never heals a pet, 1 (default) only when no player needs healing or when the pet is your target, 2 ranks pets like players. At 2 a pet on the priority list is healed first like a tank — target it and press *Add target*.
 

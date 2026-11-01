@@ -39,7 +39,7 @@ local M = Aegis_SBR:NewClassModule("PRIEST")
 M.uiTitle = "Priest"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 900
+M.uiHeight = 928
 M.meleeAutoAttack = false   -- caster, no white melee swing
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
@@ -271,6 +271,8 @@ function M:NormalizeProfile(c)
     -- list decides who is dispelled first, where order is the only lever.
     if c.healPrio == nil then c.healPrio = false end
     if c.healPrioTarget == nil then c.healPrioTarget = false end
+    -- Heal only the names on the priority list (and yourself).
+    if c.healListOnly == nil then c.healListOnly = false end
     if type(c.healPrioList) ~= "table" then c.healPrioList = {} end
     -- Dispelling. Off by default: it spends a global cooldown that would
     -- otherwise be a heal, and which afflictions are worth removing is a
@@ -618,7 +620,8 @@ function M:WorstHurt(ratio, cfg)
     for i = 1, table.getn(units) do
         local u = units[i]
         if UnitExists(u) and UnitIsConnected(u) and not UnitIsDeadOrGhost(u)
-            and UnitIsFriend("player", u) and UnitHealthMax(u) > 0 and self:Reachable(u) then
+            and UnitIsFriend("player", u) and UnitHealthMax(u) > 0 and self:Reachable(u)
+            and Aegis_SBR:ListAllows(cfg, u) then
             local mx = UnitHealthMax(u)
             local cur = UnitHealth(u) + self:PendingFor(u)
             if cur > mx then cur = mx end
@@ -796,7 +799,7 @@ function M:DoHeal(cfg)
 
     -- AoE: Prayer of Healing, fronted by Inner Focus (instant, off-GCD) to wipe
     -- its mana cost. Inner Focus on one press, the prayer on the next.
-    if cfg.usePrayer and self:KnowsSpell("Prayer of Healing")
+    if cfg.usePrayer and self:KnowsSpell("Prayer of Healing") and not Aegis_SBR:ListOnlyActive(cfg)
         and self:HurtCount((cfg.prayerPct or 70) / 100, self:OwnPartyUnits()) >= (cfg.prayerCount or 3) then
         if cfg.useInnerFocus and self:KnowsSpell("Inner Focus") and self:OwnCDReady("Inner Focus")
             and not self:HasBuff("Inner Focus") then
@@ -988,7 +991,8 @@ function M:Rotate(cfg)
         -- the same mana line. It also heals the group. Requested by a priest
         -- who pressed it by hand between the rotation's heals. With no count
         -- from the nameplates, the target in melee range counts as one.
-        if cfg.useHolyNova and nukeOK and not shadowform and self:KnowsSpell("Holy Nova") then
+        if cfg.useHolyNova and nukeOK and not shadowform and self:KnowsSpell("Holy Nova")
+            and not Aegis_SBR:ListOnlyActive(cfg) then
             local n = Aegis_SBR:CountEnemiesNear(HOLY_NOVA_RADIUS)
             if n == nil then n = (hasEnemy and Aegis_SBR:InMeleeRange()) and 1 or 0 end
             if n >= (cfg.holyNovaCount or 3) then

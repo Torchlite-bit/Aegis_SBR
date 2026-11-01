@@ -18,7 +18,7 @@ local M = Aegis_SBR:NewClassModule("PALADIN")
 M.uiTitle = "Paladin"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 850
+M.uiHeight = 878
 
 -- Chat output is shared in the core; this shim keeps call sites unchanged.
 local function msgOut(text, r, g, b) Aegis_SBR:Msg(text, r, g, b) end
@@ -431,6 +431,8 @@ function M:NormalizeProfile(c)
     if type(c.healPrioList) ~= "table" then c.healPrioList = {} end
     -- Your current friendly target counts as position 1 while it is selected.
     if c.healPrioTarget == nil then c.healPrioTarget = false end
+    -- Heal only the names on the priority list (and yourself).
+    if c.healListOnly == nil then c.healListOnly = false end
     -- Only heal YOURSELF below this. A healer has more ways out of trouble than
     -- anyone else - stepping out of a cleave is often enough - so being at 70%
     -- is not a reason to spend a cast on yourself. 0 turns the exception off and
@@ -1860,7 +1862,7 @@ function M:WorstHurtNow(ratio, cfg)
         local u = units[i]
         if UnitExists(u) and UnitIsConnected(u) and not UnitIsDeadOrGhost(u)
             and UnitIsFriend("player", u) and UnitHealthMax(u) > 0 and self:Reachable(u)
-            and not self:GroupFiltered(cfg, raidIndex(u)) then
+            and not self:GroupFiltered(cfg, raidIndex(u)) and Aegis_SBR:ListAllows(cfg, u) then
             local mx = UnitHealthMax(u)
             -- Our own heal in flight, plus whatever other healers have coming.
             local cur = UnitHealth(u) + self:PendingFor(u) + self:IncomingHeal(u)

@@ -65,6 +65,7 @@ function M:BuildBody(ui, parent)
     L:Header("Heal priority")
     self.prioRow = L:Row{ key = "healPrio", label = "Use priority list", onToggle = set("healPrio") }
     self.prioTargetRow = L:Row{ key = "healPrioTarget", label = "Your target first", onToggle = set("healPrioTarget") }
+    self.listOnlyRow = L:Row{ key = "healListOnly", label = "Heal only the list", onToggle = set("healListOnly") }
     self.petPrioRow = L:Row{ label = "Pet priority",
         slider = { key = "petPriority", min = 0, max = 2, step = 1, suffix = "", onChange = set("petPriority") } }
 
@@ -88,6 +89,7 @@ function M:BuildBody(ui, parent)
     L:Finish()
 
     ui:Tip(self.prioRow.cb, "Use priority list", "On a near tie, heal the listed players first: position 1 before position 2, both before anyone unlisted.", "A handicap, not a strict order - position 2 counts as 20%% healthier than it is, unlisted players as 35%%. Somebody in real trouble always outranks a scratched tank, because eligibility reads real health and only the ORDER is adjusted.")
+    ui:Tip(self.listOnlyRow.cb, "Heal only the list", "Heal only the players on the priority list below, and yourself - for a raid healer assigned to the main tank.", "Group heals stand down while it is on, since they would heal the others too. With the list empty it heals as usual. Dispelling is not affected.")
     ui:Tip(self.prioTargetRow.cb, "Your target first", "While you have a friendly target selected it is considered first, ahead of the list.")
     ui:Tip(self.petPrioRow.slider, "Pet priority", "0 never heal pets, 1 only when no player needs healing, 2 treat pets like players.", "A pet you have targeted is always considered. At 2 a pet on the priority list is healed first like a tank - target it and use Add target.")
     ui:Tip(self.prioAddBtn, "Add target", "Adds your current target to the end of the list.", "Names, not raid slots, so the list survives a regroup. The same list decides who is dispelled first.")
@@ -225,6 +227,7 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.prioRow, buf.healPrio)
 
     ui:BindCheck(self.prioTargetRow, buf.healPrioTarget)
+    ui:BindCheck(self.listOnlyRow, buf.healListOnly)
     local pp = buf.petPriority or 1
     self.petPrioRow.slider:SetValue(pp)
     if self.petPrioRow.slider.valText then

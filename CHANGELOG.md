@@ -4,6 +4,19 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.55 — heal only the list
+
+### 🔧 Priest, Druid, Shaman, Paladin
+
+- **Heal only the list** (new, off by default, in the heal priority section): a raid healer
+  assigned to the main tank could not keep the rotation off the rest of the raid. With the switch
+  on, only the names on the priority list and the healer are healed; a pet only when its name is
+  on the list. Prayer of Healing, Holy Nova, Wild Growth and Chain Heal stand down, since they heal
+  the others too. With the list empty it heals as usual, so a forgotten entry never leaves the
+  healer idle. Dispelling is not affected. Fill the list with *Add target*.
+
+---
+
 ## v1.2.54 — shield and Prayer of Healing lines
 
 ### 🔧 Priest
