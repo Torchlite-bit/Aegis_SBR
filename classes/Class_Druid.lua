@@ -33,7 +33,7 @@ local M = Aegis_SBR:NewClassModule("DRUID")
 M.uiTitle = "Druid"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 822
+M.uiHeight = 850
 
 -- Each panel tab keeps its own settings layer (Aegis_SBR:TabView): a change
 -- made on one tab stays on that tab.
@@ -153,6 +153,8 @@ function M:NormalizeProfile(c)
     -- list decides who is dispelled first, where order is the only lever.
     if c.healPrio == nil then c.healPrio = false end
     if c.healPrioTarget == nil then c.healPrioTarget = false end
+    -- Heal only the names on the priority list (and yourself).
+    if c.healListOnly == nil then c.healListOnly = false end
     -- Pets in the heal list: 0 never, 1 when no player needs it, 2 like players.
     if c.petPriority == nil then c.petPriority = 1 end
     if type(c.healPrioList) ~= "table" then c.healPrioList = {} end
@@ -1126,7 +1128,7 @@ function M:WorstHurt(ratio, cfg)
     for i = 1, table.getn(units) do
         local u = units[i]
         if UnitExists(u) and not UnitIsDeadOrGhost(u) and UnitIsFriend("player", u)
-            and UnitHealthMax(u) > 0 and self:Reachable(u) then
+            and UnitHealthMax(u) > 0 and self:Reachable(u) and Aegis_SBR:ListAllows(cfg, u) then
             local mx = UnitHealthMax(u)
             local cur = UnitHealth(u) + self:PendingFor(u)
             local pct = cur / mx
@@ -1304,6 +1306,7 @@ function M:RotateResto(cfg)
 
     -- AoE: Wild Growth when several are hurt (Turtle addition, if learned).
     if cfg.useWildGrowth and self:KnowsSpell("Wild Growth") and self:OwnCDReady("Wild Growth")
+        and not Aegis_SBR:ListOnlyActive(cfg)
         and self:HurtCount(ratio) >= (cfg.wildGrowthCount or 4) then
         self:CastOn("Wild Growth", unit); return
     end

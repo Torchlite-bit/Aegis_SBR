@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.54",
+    ver = "1.2.55",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -1174,6 +1174,27 @@ function Aegis_SBR:PrioRemove(cfg, idx)
     if not idx or not cfg.healPrioList[idx] then return false end
     table.remove(cfg.healPrioList, idx)
     return true
+end
+
+-- "Heal only the list": a raid healer assigned to the main tank heals only
+-- the names on the priority list, and themselves. Group heals stand down
+-- (they would heal the others too). An empty list heals as usual, so a
+-- forgotten entry never leaves the healer idle. Dispelling is not affected.
+function Aegis_SBR:ListOnlyActive(cfg)
+    return cfg and cfg.healListOnly and type(cfg.healPrioList) == "table"
+        and table.getn(cfg.healPrioList) > 0 and true or false
+end
+
+function Aegis_SBR:ListAllows(cfg, unit)
+    if not self:ListOnlyActive(cfg) then return true end
+    if UnitIsUnit(unit, "player") then return true end
+    local name = UnitName(unit)
+    if not name then return false end
+    local list = cfg.healPrioList
+    for i = 1, table.getn(list) do
+        if list[i] == name then return true end
+    end
+    return false
 end
 
 -- Handicap from the list alone, 0 when the feature is off or the list is empty.
