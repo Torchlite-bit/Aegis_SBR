@@ -219,7 +219,7 @@ function M:BuildBody(ui, parent)
     -- Seven rows, every one of them meaningless while the switch above is off -
     -- so they only exist while it is on.
     L:Header("Priority list", "heal", function()
-        return ui.buf and ui.buf.healPrio and true or false
+        return ui.buf and (ui.buf.healPrio or ui.buf.healListOnly) and true or false
     end)
     self.prioAddBtn = L:Button{ label = "Add target", onClick = function()
         if ui.buf then M:PrioAdd(ui.buf, UnitName("target")); ui:Refresh() end

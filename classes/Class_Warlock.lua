@@ -352,6 +352,7 @@ wlCastEventFrame:SetScript("OnEvent", function()
                     M.dotImmune[guid .. "|" .. name] = GetTime()
                     M.dotThrottle[name] = nil
                     M.dotPending[name] = nil
+                    M:ForgetDot(guid, name)
                     return true
                 end
             end
@@ -360,10 +361,15 @@ wlCastEventFrame:SetScript("OnEvent", function()
             return
         end
         if not (string.find(arg1, "resist") or string.find(arg1, "miss")) then return end
+        -- The "mine" record goes too: it is written when the cast is sent, so
+        -- after a resist it would claim another warlock's copy on the target
+        -- as ours, and the DoT was not cast again until that copy ran out.
+        local tid = M:TargetId()
         for name in pairs(M.dotTex) do
             if string.find(arg1, name, 1, true) then
                 M.dotThrottle[name] = nil
                 M.dotPending[name] = nil
+                M:ForgetDot(tid, name)
                 return
             end
         end
@@ -372,6 +378,7 @@ wlCastEventFrame:SetScript("OnEvent", function()
             if string.find(arg1, name, 1, true) then
                 M.dotThrottle[name] = nil
                 M.dotPending[name] = nil
+                M:ForgetDot(tid, name)
                 return
             end
         end
@@ -393,6 +400,8 @@ wlCastEventFrame:SetScript("OnEvent", function()
     -- rotation may wait for the NEXT one is built from these, so it tracks the
     -- connection instead of a number somebody picked once.
     M:NoteConfirmLatency(GetTime() - pend.t)
+    -- Refused by the client: never applied, so not ours either.
+    if arg3 == "FAIL" then M:ForgetDot(pend.id, name) end
     if arg3 == "CAST" then
         -- One arriving confirmation is the proof that confirmations arrive on
         -- this client. Until that has happened even once, QueueDot stamps the
@@ -1682,6 +1691,13 @@ end
 -- Whose DoT is on the target? The model lives in the core (DebuffMine) because
 -- every class that keeps a debuff up has the same question; here it only needs
 -- this warlock's duration table, Rapid Deterioration included.
+-- Drop the record that this DoT on this target is ours (see QueueDot, which
+-- writes it on send).
+function M:ForgetDot(targetId, spellName)
+    if not targetId or not spellName then return end
+    Aegis_SBR.debuffLedger[tostring(targetId) .. "|" .. spellName] = nil
+end
+
 function M:DotIsMine(spellName)
     return Aegis_SBR:DebuffMine(spellName, self:TargetId())
 end
@@ -1715,6 +1731,19 @@ function M:ApplyDot(spellName, texFrag, interval)
         and Aegis_SBR:TargetDebuffCount() >= DEBUFF_CAP then
         if self:Tracing() then self:Trace(spellName .. " pushed off, target at the debuff limit") end
         return "up"
+    end
+    -- Not on the target at all: ours is gone (expired early, dispelled,
+    -- replaced), so the record goes, and a copy that shows up afterwards -
+    -- another warlock's - is no longer taken for ours. Not while our own cast
+    -- may still be on its way, and not at the debuff limit (handled above).
+    if ((texFrag ~= nil) or Aegis_SBR:CanResolveDebuffNames())
+        and not self:TargetDebuffUp(spellName, texFrag)
+        and Aegis_SBR:TargetDebuffCount() < DEBUFF_CAP then
+        local tid = self:TargetId()
+        local r0, p0 = self.dotThrottle[spellName], self.dotPending[spellName]
+        local recent = (r0 and r0.id == tid and r0.t and (GetTime() - r0.t) <= interval)
+            or (p0 and p0.id == tid)
+        if not recent then self:ForgetDot(tid, spellName) end
     end
     -- Immune to this one: report it as handled so the DoT chain moves on to the
     -- next spell instead of stopping here for the rest of the fight.

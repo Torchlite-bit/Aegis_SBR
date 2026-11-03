@@ -101,7 +101,7 @@ function M:BuildBody(ui, parent)
         slider = { key = "petPriority", min = 0, max = 2, step = 1, suffix = "", onChange = set("petPriority") } }
 
     L:Header("Priority list", "tree", function()
-        return ui.buf and (ui.buf.healPrio or ui.buf.healPrioTarget) and true or false
+        return ui.buf and (ui.buf.healPrio or ui.buf.healPrioTarget or ui.buf.healListOnly) and true or false
     end)
     self.prioAddBtn = L:Button{ label = "Add target", onClick = function()
         if ui.buf then Aegis_SBR:PrioAdd(ui.buf, UnitName("target")); ui:Refresh() end
