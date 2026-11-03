@@ -101,19 +101,20 @@ function M:BuildBody(ui, parent)
         slider = { key = "petPriority", min = 0, max = 2, step = 1, suffix = "", onChange = set("petPriority") } }
 
     L:Header("Priority list", "tree", function()
-        return ui.buf and (ui.buf.healPrio or ui.buf.healPrioTarget or ui.buf.healListOnly) and true or false
+        local b = ui.buf and M:TabView(ui.buf, M)
+        return b and (b.healPrio or b.healPrioTarget or b.healListOnly) and true or false
     end)
     self.prioAddBtn = L:Button{ label = "Add target", onClick = function()
-        if ui.buf then Aegis_SBR:PrioAdd(ui.buf, UnitName("target")); ui:Refresh() end
+        if ui.buf then Aegis_SBR:PrioAdd(M:TabView(ui.buf, M), UnitName("target")); ui:Refresh() end
     end }
     self.prioClearBtn = L:Button{ label = "Clear", onClick = function()
-        if ui.buf then ui.buf.healPrioList = {}; ui:Refresh() end
+        if ui.buf then M:TabView(ui.buf, M).healPrioList = {}; ui:Refresh() end
     end }
     self.prioBtns = {}
     for i = 1, 5 do
         local idx = i
         self.prioBtns[idx] = L:Button{ label = idx .. ".", onClick = function()
-            if ui.buf then Aegis_SBR:PrioRemove(ui.buf, idx); ui:Refresh() end
+            if ui.buf then Aegis_SBR:PrioRemove(M:TabView(ui.buf, M), idx); ui:Refresh() end
         end }
     end
 

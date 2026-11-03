@@ -219,13 +219,14 @@ function M:BuildBody(ui, parent)
     -- Seven rows, every one of them meaningless while the switch above is off -
     -- so they only exist while it is on.
     L:Header("Priority list", "heal", function()
-        return ui.buf and (ui.buf.healPrio or ui.buf.healListOnly) and true or false
+        local b = ui.buf and M:TabView(ui.buf, M)
+        return b and (b.healPrio or b.healListOnly) and true or false
     end)
     self.prioAddBtn = L:Button{ label = "Add target", onClick = function()
-        if ui.buf then M:PrioAdd(ui.buf, UnitName("target")); ui:Refresh() end
+        if ui.buf then M:PrioAdd(M:TabView(ui.buf, M), UnitName("target")); ui:Refresh() end
     end }
     self.prioClearBtn = L:Button{ label = "Clear", onClick = function()
-        if ui.buf then ui.buf.healPrioList = {}; ui:Refresh() end
+        if ui.buf then M:TabView(ui.buf, M).healPrioList = {}; ui:Refresh() end
     end }
     -- Five slots is a party plus one; a raid MT/OT pair fits in the top two,
     -- which are the only positions that carry their own handicap anyway.
@@ -233,7 +234,7 @@ function M:BuildBody(ui, parent)
     for i = 1, 5 do
         local idx = i
         self.prioBtns[idx] = L:Button{ label = idx .. ".", onClick = function()
-            if ui.buf then M:PrioRemove(ui.buf, idx); ui:Refresh() end
+            if ui.buf then M:PrioRemove(M:TabView(ui.buf, M), idx); ui:Refresh() end
         end }
     end
 

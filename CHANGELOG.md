@@ -4,6 +4,18 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.57 — priority list on the healer tab
+
+### 🔧 Paladin, Druid, Shaman
+
+- **Priority list hidden:** these classes keep their settings per tab. The switches wrote to the
+  healer tab, but the list read the base settings to decide whether to show, so it stayed hidden
+  even with *Use priority list* on. *Add target*, *Clear* and the remove buttons also wrote to the
+  base settings, while the rotation reads the tab's own list once it has one. All of it now uses
+  the active tab. The priest has no tabs and was not affected.
+
+---
+
 ## v1.2.56 — warlock DoTs beside other warlocks, the list in view
 
 ### 🔧 Warlock
