@@ -4,6 +4,27 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.56 — warlock DoTs beside other warlocks, the list in view
+
+### 🔧 Warlock
+
+- **Another warlock's DoT taken for yours:** the record that a DoT on the target is yours is
+  written when the cast is sent. After a resist it stayed, so with another warlock's Siphon Life
+  on the mob ours counted as running and was not cast again until theirs ran out; Dark Harvest
+  and Drain Soul went out instead. The same happened when our Corruption fell off and another
+  warlock's was applied right after. The record is now dropped on a resist, miss, immunity or a
+  cast the client refuses, and when the DoT is not on the target at all (not while our own cast
+  is still on its way, and not at the 16-debuff limit, where the 1.2.48 hold stays).
+- The DoT order in a reported log was the configured one (primary curse 1, Corruption 2, Curse
+  of Agony 3, Siphon Life 4); no change there.
+
+### 🔧 Priest, Druid, Shaman, Paladin
+
+- **Priority list in view:** with only *Heal only the list* on, the list was hidden, so it could
+  not be filled. It now shows up with that switch too.
+
+---
+
 ## v1.2.55 — heal only the list
 
 ### 🔧 Priest, Druid, Shaman, Paladin
