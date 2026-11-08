@@ -329,6 +329,7 @@ wlCastEventFrame:SetScript("OnEvent", function()
         M.dotImmune = {}
         M.dotLanded = {}
         M.dotSeenOn = {}
+        M.dotHold = {}
         return
     end
     if event == "CHAT_MSG_SPELL_SELF_DAMAGE" then
@@ -1174,6 +1175,14 @@ local CHANNEL_GRACE = 0.25
 -- re-sent. Covers the round trip after the cast completes; the cast time itself
 -- is added separately, per spell and with talents.
 local CAST_LAND_MARGIN = 1.0
+-- After a DoT was sent, the whole rotation waits this long for it to show on
+-- the target. Past it, while the interval still runs, the chain moves on to
+-- the next DoT or the filler instead of standing still: in a raid a DoT that
+-- does not show (target full) used to hold everything for three seconds per
+-- send.
+local DOT_LAND_WAIT = 1.0
+-- A DoT sent twice on one target and never seen there pauses this long.
+local DOT_UNSEEN_HOLD = 15
 
 local CONFIRM_MIN = 0.6
 local CONFIRM_MAX = 2.0
@@ -1341,6 +1350,14 @@ function M:CurseTex(name)
     if not name then return nil end
     if self.curseTex[name] then return self.curseTex[name] end
     local mem = self:CurseTexMemory()
+    -- Where the client reads debuff names (SuperWoW) the curse is found by its
+    -- name, and a learned icon is only a risk: in a raid another player's
+    -- debuff appears in the same moment and gets learned instead (seen: Sunder
+    -- Armor stored for Curse of the Elements). Such an entry is dropped.
+    if Aegis_SBR:CanResolveDebuffNames() then
+        if mem and mem[name] then mem[name] = nil end
+        return nil
+    end
     return mem and mem[name] or nil
 end
 
@@ -1377,6 +1394,7 @@ function M:TargetTexSet()
 end
 
 function M:BeginCurseLearn(spell, id)
+    if Aegis_SBR:CanResolveDebuffNames() then return end
     if self:CurseTex(spell) then return end
     if not self:CurseTexMemory() then return end
     self.curseLearn = { spell = spell, id = id, t = GetTime(), before = self:TargetTexSet() }
@@ -1592,6 +1610,8 @@ M.dotLanded = {}
 M.dotSeenEver = {}
 -- Our DoT read back on this target at least once, by "target|spell".
 M.dotSeenOn = {}
+-- DoTs paused on a target after two unseen sends, by "target|spell".
+M.dotHold = {}
 -- A target carries at most this many debuffs (Turtle WoW).
 local DEBUFF_CAP = 16
 
@@ -1605,6 +1625,18 @@ function M:NoteDotUnseen(spellName, id)
     if not self.dotSeenEver[spellName] then return false end
     local key = tostring(id) .. "|" .. spellName
     if (self.dotLanded[key] or 0) < 2 then return false end
+    -- Without cast confirmations the count is of SENDS, which is no proof of
+    -- immunity: the target may only be full. A pause, not the whole fight.
+    if not M.castEventSeen then
+        self.dotLanded[key] = nil
+        self.dotHold[key] = { untilT = GetTime() + DOT_UNSEEN_HOLD,
+            capped = Aegis_SBR:TargetDebuffCount() >= DEBUFF_CAP }
+        if self:Tracing() then
+            self:Trace(string.format("%s: sent twice, never seen on the target - paused %ds (debuffs=%d)",
+                spellName, DOT_UNSEEN_HOLD, Aegis_SBR:TargetDebuffCount()))
+        end
+        return true
+    end
     local _, guid = UnitExists("target")
     if guid then self.dotImmune[guid .. "|" .. spellName] = GetTime() end
     self.dotLanded[key] = nil
@@ -1669,6 +1701,10 @@ function M:QueueDot(spellName, id)
         self.dotPending[spellName] = { id = id, t = now }
         if not M.castEventSeen then
             self.dotThrottle[spellName] = { id = id, t = now }
+            -- No confirmations on this client: count the send instead, so the
+            -- unseen check (NoteDotUnseen) still has something to go on.
+            local key = tostring(id) .. "|" .. spellName
+            self.dotLanded[key] = (self.dotLanded[key] or 0) + 1
         end
         -- Per TARGET, unlike dotThrottle, which holds only the most recent cast
         -- of each spell and is overwritten the instant you dot a second mob -
@@ -1719,7 +1755,18 @@ function M:ApplyDot(spellName, texFrag, interval)
         self.dotSeenEver[spellName] = true
         self.dotLanded[dotKey] = nil
         self.dotSeenOn[dotKey] = true
+        self.dotHold[dotKey] = nil
         return "up"
+    end
+    -- Paused after two unseen sends (see NoteDotUnseen). Ends early when the
+    -- target was full then and a slot has come free since.
+    local hold = self.dotHold[dotKey]
+    if hold then
+        if GetTime() < hold.untilT
+            and not (hold.capped and Aegis_SBR:TargetDebuffCount() < DEBUFF_CAP) then
+            return "up"
+        end
+        self.dotHold[dotKey] = nil
     end
     -- Pushed off by the debuff limit: ours was on this target and should still
     -- be running (the ledger says so), but it is gone and the target is full.
@@ -1790,7 +1837,8 @@ function M:ApplyDot(spellName, texFrag, interval)
             and not self:TargetDebuffUp(spellName, texFrag) then
             self:CurseTexStrike(spellName)
         end
-        if detectable then return "wait" else return "up" end
+        if detectable and (now - rec.t) <= DOT_LAND_WAIT then return "wait" end
+        return "up"
     end
     -- A cast already sent is still awaiting CAST/FAIL confirmation, and this is
     -- the one early exit that holds the WHOLE rotation without casting anything.
@@ -2569,7 +2617,8 @@ function M:Rotate(cfg)
             local sp, tex = order[i][1], order[i][2]
             up = up .. " " .. sp .. "=" .. (tex and (self:TargetHasTexture(tex) and "Y" or "n") or "?")
         end
-        self:Trace("dots" .. up .. " mana=" .. string.format("%.0f", self:ManaPct())
+        self:Trace("dots" .. up .. " debuffs=" .. Aegis_SBR:TargetDebuffCount()
+            .. " mana=" .. string.format("%.0f", self:ManaPct())
             .. " dotstop=" .. (dotStopHp > 0 and (dotsSuppressed and "Y" or "n") or "-"))
     end
 
