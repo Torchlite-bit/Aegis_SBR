@@ -4,6 +4,29 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.58 — warlock in raids: no stall on unseen DoTs
+
+### 🔧 Warlock
+
+From a press log of a raid with three warlocks.
+
+- **Curse icons learned wrong:** for a curse without a listed icon the addon learned the icon
+  that appeared on the target after the cast. In a raid another player's debuff appears at the
+  same moment, so Curse of the Elements was stored with Sunder Armor's icon, later with another
+  wrong one, and read as up or missing at random. Where SuperWoW reads debuff names, icons are no
+  longer learned and a stored one is dropped; the curse is found by name.
+- **Rotation standing still:** after each DoT the whole rotation waited the full three-second
+  interval for it to show. A DoT that never showed (most likely a full target) was sent, waited
+  for, and sent again, and nothing else went out. The wait is now at most one second; after it
+  the chain goes on to the next DoT or the filler while the interval runs.
+- **Unseen DoTs pause:** "sent twice, never seen" only counted confirmed casts, and this client
+  gets no confirmations. Sends now count there; a DoT sent twice on one target without ever
+  showing pauses for 15 seconds, ending sooner when it shows or, if the target was full, when a
+  slot frees up. Confirmed casts keep the old rule (immune for the fight).
+- **Trace:** the `dots` line shows the target's debuff count (`debuffs=N`).
+
+---
+
 ## v1.2.57 — priority list on the healer tab
 
 ### 🔧 Paladin, Druid, Shaman
