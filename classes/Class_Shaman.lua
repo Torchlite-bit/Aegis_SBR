@@ -35,7 +35,7 @@ local M = Aegis_SBR:NewClassModule("SHAMAN")
 M.uiTitle = "Shaman"
 -- Rotate runs under Aegis_SBR:Preview without casting (see Pick/Later).
 M.previewReady = true
-M.uiHeight = 754
+M.uiHeight = 782
 
 -- Each panel tab keeps its own settings layer (Aegis_SBR:TabView): a change
 -- made on one tab stays on that tab.
@@ -255,6 +255,9 @@ function M:NormalizeProfile(c)
     if c.useTaunt == nil then c.useTaunt = false end
     -- Restoration (heal) profile fields
     if c.healThreshold == nil then c.healThreshold = 90 end
+    -- Size the heal for the damage still coming during its cast (the recent
+    -- damage rate times the cast time). Off by default.
+    if c.healLookahead == nil then c.healLookahead = false end
     -- Heal / dispel priority. A list of player names, in order: position 1 is
     -- healed first on a near tie, position 2 next, everyone else last. The same
     -- list decides who is dispelled first, where order is the only lever.
@@ -642,6 +645,55 @@ function M:CureStep(cfg, worst)
     return true
 end
 
+-- Damage taken over the last few seconds, per member (by name, the key that
+-- survives a regroup). Health drops between two samples count; heals in
+-- between only lower what is seen, never add to it.
+local DMG_WINDOW = 3
+local DMG_SAMPLE = 0.2
+M.dmgLast, M.dmgLog = {}, {}
+function M:SampleDamage(u)
+    local nm = UnitName(u)
+    if not nm then return end
+    local now, hp = GetTime(), UnitHealth(u)
+    local last = self.dmgLast[nm]
+    if last and (now - last.t) < DMG_SAMPLE then return end
+    if last and hp < last.hp then
+        local log = self.dmgLog[nm]
+        if not log then log = {}; self.dmgLog[nm] = log end
+        table.insert(log, { t = now, d = last.hp - hp })
+    end
+    self.dmgLast[nm] = { t = now, hp = hp }
+end
+
+-- Health lost per second over the window.
+function M:DamageRate(u)
+    local log = self.dmgLog[UnitName(u) or "?"]
+    if not log then return 0 end
+    local now, sum, i = GetTime(), 0, 1
+    while i <= table.getn(log) do
+        if (now - log[i].t) > DMG_WINDOW then table.remove(log, i)
+        else sum = sum + log[i].d; i = i + 1 end
+    end
+    return sum / DMG_WINDOW
+end
+
+-- The deficit a heal of this cast time should cover: what is missing now,
+-- plus the damage the recent rate brings until it lands. A rank 1 at 90%
+-- that is outrun during its cast, followed by the top rank, costs more than
+-- one mid rank. Off: the deficit as it is.
+function M:Lookahead(cfg, unit, deficit, castTime)
+    if not cfg.healLookahead or castTime <= 0 then return deficit end
+    local extra = self:DamageRate(unit) * castTime
+    if extra <= 0 then return deficit end
+    local d = deficit + extra
+    local mx = UnitHealthMax(unit)
+    if mx and mx > 0 and d > mx then d = mx end
+    if self:Tracing() then
+        self:Trace(string.format("lookahead %s +%.0f over %.1fs", UnitName(unit) or "?", d - deficit, castTime))
+    end
+    return d
+end
+
 function M:WorstHurt(ratio, cfg)
     local units = Aegis_SBR:HealUnits(cfg, self:GroupUnits())
     local wU, wDef, wPct, wBest = nil, 0, 1, 0
@@ -650,6 +702,7 @@ function M:WorstHurt(ratio, cfg)
     local pU, pDef, pPct, pBest = nil, 0, 1, 0
     for i = 1, table.getn(units) do
         local u = units[i]
+        if cfg and cfg.healLookahead and UnitExists(u) then self:SampleDamage(u) end
         if UnitExists(u) and not UnitIsDeadOrGhost(u) and UnitIsFriend("player", u)
             and UnitHealthMax(u) > 0 and self:Reachable(u) and Aegis_SBR:ListAllows(cfg, u) then
             local mx = UnitHealthMax(u)
@@ -1308,19 +1361,21 @@ function M:RotateRestoration(cfg)
         -- Single-target emergency: fast Lesser Healing Wave (wins over AoE).
         if cfg.useLesserHW ~= false and self:KnowsSpell("Lesser Healing Wave")
             and pct <= (cfg.lhwPct or 50) / 100 then
-            local lhw, amt = self:PickRank("Lesser Healing Wave", lhwEff, self.LHW_MANA, deficit, mana)
+            local lhw, amt = self:PickRank("Lesser Healing Wave", lhwEff, self.LHW_MANA, self:Lookahead(cfg, unit, deficit, 1.5), mana)
             if lhw then self:CommitHeal(unit, amt, 1.5); self:CastOn(lhw, unit); return end
         end
 
         -- AoE: Chain Heal when several are hurt.
         if cfg.useChainHeal ~= false and self:KnowsSpell("Chain Heal") and not Aegis_SBR:ListOnlyActive(cfg)
             and self:HurtCount(ratio) >= (cfg.chainHealCount or 3) then
-            local ch, amt = self:PickRank("Chain Heal", chEff, self.CH_MANA, deficit, mana)
+            local ch, amt = self:PickRank("Chain Heal", chEff, self.CH_MANA, self:Lookahead(cfg, unit, deficit, 2.5), mana)
             if ch then self:CommitHeal(unit, amt, 2.5); self:CastOn(ch, unit); return end
         end
 
         -- Bread-and-butter: downranked Healing Wave sized to the deficit.
-        local hw, amt = self:PickRank("Healing Wave", hwEff, self.HW_MANA, deficit, mana)
+        -- Improved Healing Wave takes 0.1s per rank off the 3s cast.
+        local hwCast = 3.0 - 0.1 * self:TalentRank("Improved Healing Wave")
+        local hw, amt = self:PickRank("Healing Wave", hwEff, self.HW_MANA, self:Lookahead(cfg, unit, deficit, hwCast), mana)
         if hw then self:CommitHeal(unit, amt, 3.0); self:CastOn(hw, unit); return end
     end
 

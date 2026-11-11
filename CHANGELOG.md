@@ -4,6 +4,20 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.59 — shaman: count damage during the cast
+
+### 🔧 Shaman (Restoration)
+
+- **Count damage during the cast** (new, off by default): the heal rank was sized to the health
+  missing at the press. A target that kept taking damage during the cast got a rank 1 at 90%,
+  then needed the top rank right after, which costs more than one mid rank. With the switch on,
+  the damage the target took over the last 3 seconds is carried over the cast time (Healing Wave
+  3 s less Improved Healing Wave, Chain Heal 2.5 s, Lesser Healing Wave 1.5 s) and added to the
+  deficit, up to the target's maximum health. It cannot see damage before it starts and briefly
+  overheals when the damage stops. The trace shows `lookahead`.
+
+---
+
 ## v1.2.58 — warlock in raids: no stall on unseen DoTs
 
 ### 🔧 Warlock

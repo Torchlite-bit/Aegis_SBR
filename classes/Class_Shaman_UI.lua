@@ -76,6 +76,7 @@ function M:BuildBody(ui, parent)
     self.restoSection = L:Header("Restoration (Heal)", "restoration")
     self.htRow = L:Row{ label = "Heal below",
         slider = { key = "healThreshold", min = 50, max = 100, step = 5, suffix = "%", onChange = set("healThreshold") } }
+    self.lookaheadRow = L:Row{ key = "healLookahead", label = "Count damage during the cast", onToggle = set("healLookahead") }
     self.hpowRow = L:Row{ label = "Heal power", sub = "+healing for downranks",
         slider = { key = "healPower", min = 0, max = 2000, step = 50, suffix = "", onChange = set("healPower") } }
     self.manaTideRow = L:Row{ key = "useManaTide", label = "Mana Tide", spell = "Mana Tide Totem", onToggle = set("useManaTide"),
@@ -149,6 +150,7 @@ function M:BuildBody(ui, parent)
     ui:Tip(self.blRow.cb, "Bloodlust", "Self melee/cast haste burst (Turtle: self-only). Used in combat when off cooldown.")
     ui:Tip(self.tauntRow.cb, "Earthshaker Slam", "Tank taunt, cast only when the target is not already attacking you. Requires a shield.")
     ui:Tip(self.htRow.slider, "Heal threshold", "An ally below this health counts as hurt and pulls a heal. Everything in this section keys off it.")
+    ui:Tip(self.lookaheadRow.cb, "Count damage during the cast", "Sizes the heal for the damage still coming until it lands: the damage the target took in the last 3 seconds, carried over the cast time. Picks a fitting mid rank at once instead of a rank 1 that is outrun, followed by the top rank.", "Off by default. Cannot see damage coming before it starts, and overheals briefly when the damage stops.")
     ui:Tip(self.hpowRow.slider, "Heal power", "Your bonus healing (+heal) from gear. Used to size downranks so each heal just covers the deficit.", "Leave at 0 to heal by rank only.")
     ui:Tip(self.manaTideRow.cb, "Mana Tide Totem", "Dropped when your own mana runs low, to refill the party.")
     ui:Tip(self.nsRow.cb, "Nature's Swiftness", "Pop NS (or Ancestral Swiftness) for an instant max Healing Wave when someone is in real trouble.")
@@ -261,6 +263,7 @@ function M:RefreshBody(ui, buf)
     ui:BindCheck(self.manaTideRow, buf.useManaTide ~= false, "Mana Tide Totem")
     ui:BindCheck(self.nsRow, buf.useNSCombo ~= false)
     ui:BindCheck(self.lhwRow, buf.useLesserHW ~= false, "Lesser Healing Wave")
+    ui:BindCheck(self.lookaheadRow, buf.healLookahead)
     ui:BindCheck(self.chainRow, buf.useChainHeal ~= false, "Chain Heal")
     ui:BindCheck(self.totemsRow, buf.useTotems ~= false)
     ui:BindCheck(self.aoeFireRow, buf.aoeFireTotems)
@@ -308,7 +311,7 @@ function M:RefreshBody(ui, buf)
 
     self.restoSection:SetDimmed(not isResto)
     -- BindCheck re-enables every box; keep the resto toggles inert off-spec.
-    local restoCBs = { self.manaTideRow, self.nsRow, self.lhwRow, self.chainRow, self.weaveRow }
+    local restoCBs = { self.manaTideRow, self.nsRow, self.lhwRow, self.chainRow, self.weaveRow, self.lookaheadRow }
     for i = 1, table.getn(restoCBs) do
         if isResto then restoCBs[i].cb:Enable() else restoCBs[i].cb:Disable() end
     end
