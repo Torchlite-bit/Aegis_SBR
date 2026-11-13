@@ -17,7 +17,7 @@
 -- ============================================================
 
 Aegis_SBR = {
-    ver = "1.2.59",
+    ver = "1.2.60",
     classes = {},     -- token -> module table
     active = nil,      -- the module for this character's class
     Loaded = false,
@@ -2642,6 +2642,37 @@ function Aegis_SBR:FearActive()
         end
     end
     self.fearActive = found
+    return found
+end
+
+-- Silenced: spells are refused, physical abilities still go. ClassicAPI's
+-- loss-of-control data where present, otherwise the player's debuffs by name
+-- (SuperWoW spell id). Cached like DisarmActive.
+local SILENCE_TTL = 0.5
+function Aegis_SBR:SilenceActive()
+    local now = GetTime()
+    if (self.silenceCheckAt or 0) + SILENCE_TTL > now then return self.silenceActive end
+    self.silenceCheckAt = now
+    local found = false
+    if self:Capability("loc") and self:LossOfControl("SILENCE") then
+        found = true
+    elseif SpellInfo then
+        for i = 1, 16 do
+            local tex, _, d3, d4, d5 = UnitDebuff("player", i)
+            if not tex then break end
+            local id
+            if type(d3) == "number" then id = d3
+            elseif type(d4) == "number" then id = d4
+            elseif type(d5) == "number" then id = d5 end
+            if id and id < -1 then id = id + 65536 end
+            local n = id and SpellInfo(id)
+            if n then
+                local l = string.lower(n)
+                if string.find(l, "silenc") or l == "spell lock" then found = true; break end
+            end
+        end
+    end
+    self.silenceActive = found
     return found
 end
 

@@ -60,6 +60,8 @@ local STING_QUEUE_HOLD = 1.5
 local ARCANE_MANA_FLOOR = 50
 -- Aimed Shot on cooldown is skipped on a target measured to die sooner.
 local AIMED_MIN_TTK = 5
+-- A trap the client refused is skipped this long, so the press reaches melee.
+local TRAP_REFUSED_HOLD = 2
 
 -- Experimental Ammunition (Marksmanship talent): each Aimed Shot leaves one
 -- effect that empowers the next shot of one kind - Enchanted Ammunition the
@@ -1561,14 +1563,27 @@ function M:Rotate(cfg)
     -- hunter without the talent had a trap offered on every cooldown and
     -- refused on every one. Out of combat, on the pull, anyone may place one.
     local trapOK = (not inCombat) or self:TalentRank(TALENT_UNTAMED_TRAPPER) > 0
+    -- Silenced, or the trap was just refused for any other reason: skipped,
+    -- so the press goes on to the melee branch. A trap sent into a silence
+    -- was refused on every press, and the melee abilities never came.
+    local function trapFree(name)
+        return not (Aegis_SBR.SpellRefusedAnySince
+            and Aegis_SBR:SpellRefusedAnySince(name, GetTime() - TRAP_REFUSED_HOLD))
+    end
+    if trapOK and Aegis_SBR:SilenceActive() then
+        trapOK = false
+        if self:Tracing() then self:Trace("silenced, trap skipped") end
+    end
     if not trapOK then
         -- nothing: the trap is simply not available right now
     elseif aoe then
-        if cfg.useExplosiveTrap and self:KnowsSpell("Explosive Trap") and self:IsReady("Explosive Trap") then
+        if cfg.useExplosiveTrap and self:KnowsSpell("Explosive Trap") and self:IsReady("Explosive Trap")
+            and trapFree("Explosive Trap") then
             if self:Pick("Explosive Trap", "AoE, on cooldown") then return end
         end
     else
-        if cfg.useImmolationTrap and self:KnowsSpell("Immolation Trap") and self:IsReady("Immolation Trap") then
+        if cfg.useImmolationTrap and self:KnowsSpell("Immolation Trap") and self:IsReady("Immolation Trap")
+            and trapFree("Immolation Trap") then
             if self:Pick("Immolation Trap", "on cooldown") then return end
         end
     end

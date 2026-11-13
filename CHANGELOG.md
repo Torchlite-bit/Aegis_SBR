@@ -4,6 +4,19 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.60 — hunter traps under a silence
+
+### 🔧 Hunter (Survival / melee)
+
+- **Silenced, no melee:** the trap step sits ahead of the melee branch and only checked that the
+  trap was known, off cooldown and affordable. Silenced, the trap was sent on every press and
+  refused, so Raptor Strike and Mongoose Bite never came until the silence ended. A silence on the
+  player is now detected (ClassicAPI loss of control, else the player's debuffs by name), and a
+  trap the client refused for any reason is skipped for 2 seconds; the press goes on to melee.
+  The trace shows `silenced, trap skipped`.
+
+---
+
 ## v1.2.59 — shaman: count damage during the cast
 
 ### 🔧 Shaman (Restoration)
