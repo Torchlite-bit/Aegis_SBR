@@ -433,6 +433,14 @@ M.CURSES = {
 -- Set form of the list above, for "is this spell a curse" tests.
 M.curseIsA = {}
 for i = 1, table.getn(M.CURSES) do M.curseIsA[M.CURSES[i]] = true end
+-- Curses without damage: the same effect whoever cast them, and they do not
+-- stack. Another warlock's copy is as good as ours, so it counts as up.
+-- Curse of Agony and Curse of Doom deal damage per caster and stay ours only.
+M.sharedCurse = {
+    ["Curse of Weakness"] = true, ["Curse of Recklessness"] = true,
+    ["Curse of the Elements"] = true, ["Curse of Shadow"] = true,
+    ["Curse of Tongues"] = true,
+}
 
 M.curseTex = {
     ["Curse of Agony"] = "Spell_Shadow_CurseOfSargeras",
@@ -1751,6 +1759,12 @@ end
 function M:ApplyDot(spellName, texFrag, interval)
     interval = interval or 3
     local dotKey = tostring(self:TargetId()) .. "|" .. spellName
+    if self.sharedCurse[spellName] and self:TargetDebuffUp(spellName, texFrag)
+        and not self:DotIsMine(spellName) then
+        if self:Tracing() then self:Trace(spellName .. " up (shared, another warlock's)") end
+        self.dotHold[dotKey] = nil
+        return "up"
+    end
     if self:TargetDebuffUp(spellName, texFrag) and self:DotIsMine(spellName) then
         self.dotSeenEver[spellName] = true
         self.dotLanded[dotKey] = nil
