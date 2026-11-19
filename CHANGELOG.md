@@ -4,6 +4,19 @@ All notable changes to **Aegis: Single Button Rotation** (formerly **AutoRota**)
 
 ---
 
+## v1.2.61 — warlock: shared curses
+
+### 🔧 Warlock
+
+- **Curse cast over another warlock's:** since 1.2.56 a curse counted as up only when it was
+  ours. With another warlock's Curse of Recklessness on the target the rotation kept casting its
+  own. Curses without damage - Weakness, Recklessness, the Elements, Shadow, Tongues - do the same
+  whoever cast them and do not stack, so any copy on the target now counts as up. Curse of Agony
+  and Curse of Doom (also Agony as the secondary curse) still count only our own. The trace shows
+  `up (shared, another warlock's)`.
+
+---
+
 ## v1.2.60 — hunter traps under a silence
 
 ### 🔧 Hunter (Survival / melee)
